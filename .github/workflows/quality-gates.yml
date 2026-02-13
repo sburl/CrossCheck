@@ -1,0 +1,161 @@
+name: Quality Gates
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  markdown-lint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Lint Markdown files
+        uses: DavidAnson/markdownlint-cli2-action@07035fd053f7be764496c0f8d8f9f41f98305101 # v22.0.0
+        with:
+          globs: |
+            **/*.md
+            !garbage/**
+          config: .markdownlint.json
+
+  json-validation:
+    name: JSON Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Validate JSON files
+        run: |
+          for file in settings.template.json .github/workflows/*.json .github/markdown-link-check-config.json .markdownlint.json; do
+            if [ -f "$file" ]; then
+              echo "Validating $file..."
+              jq empty "$file" || exit 1
+            fi
+          done
+
+  shellcheck:
+    name: Shell Script Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run shellcheck on scripts
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        with:
+          scandir: './scripts'
+          severity: warning
+
+      - name: Run shellcheck on git hooks
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        with:
+          scandir: './git-hooks'
+          severity: warning
+
+  link-check:
+    name: Markdown Link Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Check links in markdown
+        uses: gaurav-nelson/github-action-markdown-link-check@5c5dfc0ac2e225883c0e5f03a85311ec2830d368 # v1
+        with:
+          config-file: '.github/markdown-link-check-config.json'
+          check-modified-files-only: 'no'
+
+  hook-docs-consistency:
+    name: Hook Documentation Consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify hook regex matches documentation
+        run: |
+          # Extract regex from hook script (handles double quotes)
+          HOOK_REGEX=$(grep -E 'grep -qE "' scripts/codex-commit-review.sh | sed -E 's/.*grep -qE "(.*)".*/\1/')
+
+          # Test patterns that SHOULD match
+          for msg in "feat: add feature" "fix: bug" "refactor: code" "test: add tests" \
+                     "feat(ui): update" "fix(P2): critical" "feat!: breaking" "feat(core)!: major"; do
+            if ! echo "$msg" | grep -qE "^$HOOK_REGEX"; then
+              echo "❌ FAIL: Hook should match '$msg' but doesn't"
+              echo "   Regex: $HOOK_REGEX"
+              exit 1
+            fi
+          done
+
+          # Test patterns that SHOULD NOT match
+          for msg in "chore: update deps" "docs: fix typo" "WIP: in progress" "Revert previous"; do
+            if echo "$msg" | grep -qE "^$HOOK_REGEX"; then
+              echo "❌ FAIL: Hook should NOT match '$msg' but does"
+              echo "   Regex: $HOOK_REGEX"
+              exit 1
+            fi
+          done
+
+          # Verify docs mention breaking changes
+          if ! grep -q "breaking" CODEX-PROMPTS.md; then
+            echo "❌ FAIL: Docs don't mention breaking change support"
+            exit 1
+          fi
+
+          # Verify skip mechanism is correct (SKIP_CODEX_REVIEW, not --no-verify)
+          # Allow --no-verify in explanatory context (e.g., "has no effect", "doesn't work")
+          # but fail if it appears as a recommended command (e.g., "git commit --no-verify")
+          BAD_LINES=$(grep -n -- "--no-verify" CODEX-PROMPTS.md scripts/install-codex-hooks.sh 2>/dev/null \
+            | grep -iv "no effect\|doesn't work\|does not work\|won't work\|will not work\|only affects\|not.* affect" || true)
+          if [ -n "$BAD_LINES" ]; then
+            echo "❌ FAIL: Docs recommend --no-verify (doesn't work for post-commit)"
+            echo "   Offending lines:"
+            echo "$BAD_LINES"
+            echo "   (Lines explaining why --no-verify doesn't work are allowed)"
+            exit 1
+          fi
+
+          if ! grep -q "SKIP_CODEX_REVIEW" CODEX-PROMPTS.md scripts/install-codex-hooks.sh; then
+            echo "❌ FAIL: Docs don't mention SKIP_CODEX_REVIEW mechanism"
+            exit 1
+          fi
+
+          # Verify "feature commits" wording (not "every commit")
+          if ! grep -q -i "feature commit" CODEX-PROMPTS.md; then
+            echo "❌ FAIL: Docs don't clarify feature-commits-only behavior"
+            exit 1
+          fi
+
+          echo "✅ Hook regex and docs are consistent"
+
+  doc-metadata:
+    name: Documentation Metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify all markdown docs have timestamps
+        run: |
+          # Find all markdown files (null-delimited for whitespace safety)
+          # Only check first 20 lines of each file to avoid matching examples in body
+          # (some files have long YAML frontmatter before timestamps)
+          git ls-files -z '*.md' | while IFS= read -r -d '' file; do
+            HEADER=$(head -20 "$file")
+
+            # Check for Created timestamp in header
+            if ! echo "$HEADER" | grep -q '^\*\*Created:\*\* [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-[0-9]\{2\}-[0-9]\{2\}'; then
+              echo "❌ FAIL: $file missing 'Created' timestamp in header (first 20 lines)"
+              echo "   Expected format: **Created:** YYYY-MM-DD-HH-MM"
+              exit 1
+            fi
+
+            # Check for Last Updated timestamp in header
+            if ! echo "$HEADER" | grep -q '^\*\*Last Updated:\*\* [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-[0-9]\{2\}-[0-9]\{2\}'; then
+              echo "❌ FAIL: $file missing 'Last Updated' timestamp in header (first 20 lines)"
+              echo "   Expected format: **Last Updated:** YYYY-MM-DD-HH-MM"
+              exit 1
+            fi
+          done
+
+          echo "✅ All markdown files have proper timestamps"

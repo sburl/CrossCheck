@@ -1,0 +1,169 @@
+#!/bin/bash
+# Pre-push hook: Final verification before pushing to remote
+# Addresses: Documentation standards, development markers
+
+echo "🚀 Running pre-push checks..."
+
+# Get the current branch
+current_branch=$(git branch --show-current)
+
+# Get remote branch name (if it exists)
+# shellcheck disable=SC2016,SC1083  # @{u} is git syntax, not shell variable
+remote_branch=$(git rev-parse --abbrev-ref @{u} 2>/dev/null || echo "origin/$current_branch")
+
+# Check if remote branch actually exists
+if ! git rev-parse --verify "$remote_branch" >/dev/null 2>&1; then
+    # No upstream exists - this is first push
+    echo "ℹ️  No upstream branch found - this appears to be first push"
+    echo "   Skipping diff-based checks (no remote to compare against)"
+    echo "   Pre-push validation will run on subsequent pushes"
+    # Still run pre-check marker validation below
+    remote_branch=""
+fi
+
+# 1. Verify all markdown files have timestamps (skip if no upstream)
+if [ -n "$remote_branch" ]; then
+    echo "  📝 Verifying doc timestamps..."
+    modified_md_files=$(git diff --name-only "$remote_branch"..HEAD 2>/dev/null | grep '\.md$' || true)
+else
+    # No upstream - check all tracked md files instead
+    echo "  📝 Verifying doc timestamps (all files, no upstream to diff)..."
+    modified_md_files=$(git ls-files '*.md' || true)
+fi
+
+if [ -n "$modified_md_files" ]; then
+    # shellcheck disable=SC2086  # intentional word splitting on file list
+    for file in $modified_md_files; do
+        if [ -f "$file" ]; then
+            if ! grep -q "^\*\*Last Updated:\*\*" "$file"; then
+                echo "  ❌ $file: missing timestamp metadata"
+                echo "     All markdown files need Created and Last Updated timestamps"
+                exit 1
+            fi
+        fi
+    done
+fi
+
+# 2. Check for TODO/FIXME/WIP in committed code (only added content lines, not diff headers)
+echo "  🔍 Checking for development markers..."
+# Use ^\+[^+] to exclude diff metadata lines (+++ b/file)
+# Exception: TODO.md is Claude's session scratchpad filename - allow references to it
+# Exception: exclude lines that define the pattern we're searching for (meta)
+marked_lines=$(git diff "$remote_branch"..HEAD 2>/dev/null | grep -E '^\+[^+]' | grep -E '\b(TODO|FIXME|WIP|XXX|HACK)\b' | grep -v 'TODO\.md' | grep -v '(TODO|FIXME' || true)
+if [ -n "$marked_lines" ]; then
+    echo "  ⚠️  Development markers found (TODO/FIXME/WIP/XXX/HACK)"
+    echo "     Consider removing or documenting these before push"
+    if [ -t 0 ]; then
+        read -p "     Push anyway? (y/N) " -n 1 -r < /dev/tty
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        echo "     Non-interactive: allowing push (run in terminal to confirm)"
+    fi
+fi
+
+# 3. Verify no merge conflicts markers
+echo "  🔀 Checking for merge conflict markers..."
+# Look for conflict markers in added/modified lines (starts with +)
+if git diff "$remote_branch"..HEAD 2>/dev/null | grep -E '^\+' | grep -qE '(<<<<<<<|=======|>>>>>>>)'; then
+    echo "  ❌ Merge conflict markers found in committed code"
+    echo "     Resolve conflicts before pushing"
+    exit 1
+fi
+
+# 4. Pre-PR quality checks (integrates with Claude Code workflow)
+# Check if pre-checks were run recently (within last hour)
+# Cross-platform hash (md5sum on Linux, md5 on macOS)
+if command -v md5sum >/dev/null 2>&1; then
+    REPO_HASH=$(git rev-parse --show-toplevel | md5sum | cut -d' ' -f1)
+elif command -v md5 >/dev/null 2>&1; then
+    REPO_HASH=$(git rev-parse --show-toplevel | md5 -q)
+else
+    # Fallback: use base64 encoding of path (full hash to avoid collisions)
+    REPO_HASH=$(git rev-parse --show-toplevel | base64 | tr -d '=\n/')
+fi
+PRE_CHECK_MARKER="/tmp/CrossCheck-prechecks-$REPO_HASH"
+
+echo "  🔍 Checking for pre-PR quality checks..."
+
+# Skip if marker exists and is fresh (within 1 hour)
+if [ -f "$PRE_CHECK_MARKER" ]; then
+    # Try Linux first (stat -c), then macOS (stat -f), then fallback to 0
+    marker_age=$(($(date +%s) - $(stat -c %Y "$PRE_CHECK_MARKER" 2>/dev/null || stat -f %m "$PRE_CHECK_MARKER" 2>/dev/null || echo 0)))
+    if [ "$marker_age" -lt 3600 ]; then
+        echo "  ✅ Pre-checks ran recently (${marker_age}s ago)"
+    else
+        rm -f "$PRE_CHECK_MARKER"
+    fi
+fi
+
+# DESIGN: Only enforce pre-checks when pushing to main/master
+# Feature branches are intentionally free - iterate without friction
+# Quality gates apply at PR merge time, not during feature development
+if [ ! -f "$PRE_CHECK_MARKER" ] && ([ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]); then
+    echo ""
+    echo "  ⛔ BLOCKED: Pre-push quality checks required before pushing to $current_branch"
+    echo ""
+    echo "  🤖 Claude Code: Run these commands:"
+    echo ""
+    echo "     /techdebt && /pre-pr-check && touch $PRE_CHECK_MARKER && git push"
+    echo ""
+    echo "  📋 What this does:"
+    echo "     1. /techdebt      - Find and eliminate technical debt"
+    echo "     2. /pre-pr-check  - Comprehensive pre-PR checklist"
+    echo "     3. touch marker   - Record that checks passed (valid 1 hour)"
+    echo "     4. git push       - Retry push (will succeed with marker present)"
+    echo ""
+    echo "  👤 If you're human:"
+    echo "     Run checks manually, then: touch $PRE_CHECK_MARKER && git push"
+    echo ""
+    echo "  Note: --no-verify is blocked by permissions (policy enforcement)"
+    echo ""
+    exit 1
+fi
+
+# 5. Lightweight security scan (runs every push)
+echo "  🔒 Running security checks..."
+
+# Dependency audit (npm)
+if [ -f "package-lock.json" ] && command -v npm >/dev/null 2>&1; then
+    audit_output=$(npm audit --audit-level=high --json 2>/dev/null || true)
+    high_vulns=$(echo "$audit_output" | grep -o '"high":[0-9]*' | grep -o '[0-9]*' || echo "0")
+    crit_vulns=$(echo "$audit_output" | grep -o '"critical":[0-9]*' | grep -o '[0-9]*' || echo "0")
+    if [ "$high_vulns" != "0" ] || [ "$crit_vulns" != "0" ]; then
+        echo "  ⚠️  npm audit: $high_vulns high, $crit_vulns critical vulnerabilities"
+        echo "     Run: npm audit fix"
+    fi
+fi
+
+# Dependency audit (pip)
+if [ -f "requirements.txt" ] && command -v pip-audit >/dev/null 2>&1; then
+    if ! pip-audit --strict --desc 2>/dev/null; then
+        echo "  ⚠️  pip-audit found vulnerabilities. Run: pip-audit --fix"
+    fi
+fi
+
+# Re-scan for secrets in all staged changes since remote
+if [ -n "$remote_branch" ]; then
+    if git diff "$remote_branch"..HEAD | grep -E '^\+' | grep -qiE '(api_key|apikey|password|secret|token)(\s*[=:]\s*)["\x27]?(sk-|pk-|[a-zA-Z0-9_-]{20,})["\x27]?'; then
+        echo "  ❌ Possible secret detected in changes being pushed"
+        echo "     Review carefully before pushing"
+        exit 1
+    fi
+fi
+
+# 6. Git history reminder (detect rebased or amended commits)
+if [ -n "$remote_branch" ]; then
+    # Check if local history diverged from remote (sign of rebase/amend)
+    diverged_commits=$(git log "$remote_branch"..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$diverged_commits" -gt 0 ]; then
+        echo "  📝 Pushing $diverged_commits commit(s). Git history rules (docs/rules/git-history.md):"
+        echo "     • Main: NEVER rebase, amend, or force-push"
+        echo "     • Feature branches: keep messy commits (shows real work)"
+        echo "     • Only clean up genuine noise (wip, temp, typos)"
+    fi
+fi
+
+echo "✅ Pre-push checks passed"

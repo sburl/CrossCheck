@@ -1,0 +1,94 @@
+#!/bin/bash
+# Pre-commit hook: Quality gates before commit
+# Addresses: Timestamp lag, secrets detection, code quality
+
+set -e
+
+echo "🔍 Running pre-commit checks..."
+
+# 1. Doc timestamp verification (addresses recurring lag issue)
+echo "  📝 Checking doc timestamps..."
+today=$(date +%Y-%m-%d)
+# shellcheck disable=SC2013  # word splitting on filenames is intentional (no spaces in .md paths)
+for file in $(git diff --cached --name-only --diff-filter=ACM | grep '\.md$'); do
+    if [ -f "$file" ]; then
+        if ! grep -q "^\*\*Last Updated:\*\* $today" "$file"; then
+            echo "  ⚠️  $file: timestamp not updated to today ($today)"
+            echo "     Run: /doc-timestamp or manually update"
+            echo "     Skipping check (warning only)"
+            # Don't block, just warn
+        fi
+    fi
+done
+
+# 2. Protect user-content/ directory (human-only zone)
+if git diff --cached --name-only | grep -q '^user-content/'; then
+    echo "  ❌ Files in user-content/ directory are being committed"
+    echo "     user-content/ is a human-only zone - agents must never modify it"
+    echo "     If YOU (the human) made these changes intentionally:"
+    echo "       git commit --no-verify  (humans only -- agents are blocked from this)"
+    exit 1
+fi
+
+# 3. Secrets detection
+echo "  🔒 Checking for secrets..."
+
+# Check for common API key patterns (only in added lines, not deletions)
+if git diff --cached | grep -E '^\+' | grep -qiE '(api_key|apikey|password|secret|token|aws_access|private_key|bearer|auth|credential)(\s*[=:]\s*)["\x27]?(sk-|pk-|[a-zA-Z0-9_-]{20,})["\x27]?'; then
+    echo "  ❌ Possible secret detected in staged changes"
+    echo "     Common patterns: API keys, tokens, passwords (20+ chars)"
+    echo "     Review carefully. If false positive: --no-verify is blocked by permissions"
+    exit 1
+fi
+
+# Check specifically for OpenAI/Anthropic API keys (these are never false positives)
+if git diff --cached | grep -E '^\+' | grep -qE '(OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY).*=.*["\x27]?sk-(proj-|ant-)?[a-zA-Z0-9]{20,}'; then
+    echo "  ❌ OpenAI/Anthropic API key detected - MUST NOT COMMIT"
+    echo "     Use environment variables: export OPENAI_API_KEY=\$YOUR_KEY"
+    exit 1
+fi
+
+# Check for .env files (only added/modified, not deletions)
+if git diff --cached --name-only --diff-filter=ACM | grep -qE '\.env$|\.env\.'; then
+    echo "  ❌ .env file in staged changes"
+    echo "     .env files should never be committed"
+    exit 1
+fi
+
+# 4. Check for debug statements
+echo "  🐛 Checking for debug code..."
+if git diff --cached | grep -qE '\b(console\.log|debugger|import pdb|breakpoint\(\)|print\()'; then
+    echo "  ⚠️  Debug statements found (console.log, debugger, pdb, breakpoint, print)"
+    echo "     Consider removing before commit"
+    # Don't block, just warn
+fi
+
+# 5. Verify tests exist for new code files
+echo "  🧪 Checking test coverage..."
+new_code_files=$(git diff --cached --name-only --diff-filter=A | grep -E '\.(py|ts|tsx|js|jsx)$' | grep -v -E '(test|spec|__tests__)' || true)
+
+if [ -n "$new_code_files" ]; then
+    # shellcheck disable=SC2086  # intentional word splitting on file list
+    for file in $new_code_files; do
+        # Check for corresponding test file
+        basename_no_ext=$(basename "${file%.*}")
+
+        # Look for test file in common patterns
+        if ! git ls-files | grep -qE "(test.*$basename_no_ext|$basename_no_ext.*test|$basename_no_ext.*spec|__tests__.*$basename_no_ext)"; then
+            echo "  ⚠️  No test file found for new file: $file"
+            echo "     Consider adding tests (warning only)"
+        fi
+    done
+fi
+
+# 6. Security-sensitive change detection
+security_files=$(git diff --cached --name-only | grep -iE '(auth|security|permission|credential|token|secret|crypto|encrypt|ssl|tls|cert|\.env|config/.*secret|middleware/auth)' || true)
+if [ -n "$security_files" ]; then
+    echo ""
+    echo "  🔒 Security-sensitive files detected in this commit:"
+    echo "$security_files" | sed 's/^/     /'
+    echo "     Review docs/rules/trust-model.md for trust boundaries and zero-trust rules."
+    echo ""
+fi
+
+echo "✅ Pre-commit checks passed"

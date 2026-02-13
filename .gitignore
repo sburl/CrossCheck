@@ -1,0 +1,17 @@
+garbage/
+
+# Personal/private files (use templates instead)
+.env
+.env.local
+settings.personal.json
+**/secrets/
+**/*.key
+**/*.pem
+
+# Legacy state files (now stored in git-common-dir)
+.claude/pr-counter.txt
+.claude/git-hooks-installed
+
+# User-specific overrides
+local-overrides/
+/blog

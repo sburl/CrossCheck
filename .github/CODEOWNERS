@@ -1,0 +1,8 @@
+# CODEOWNERS file for CrossCheck
+# AI-reviewed development environment configuration system.
+# Claude Code writes the code, Codex reviews it - ship production-quality software
+# with AI-powered code review and quality assurance.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+* @sburl

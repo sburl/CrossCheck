@@ -1,0 +1,24 @@
+{
+  "ignorePatterns": [
+    {
+      "pattern": "^http://localhost"
+    },
+    {
+      "pattern": "^https://example.com"
+    },
+    {
+      "pattern": "^https://github.com/sburl/CrossCheck"
+    },
+    {
+      "pattern": "^https://raw.githubusercontent.com"
+    },
+    {
+      "pattern": "^https://spencerburleigh\\.com/blog/"
+    }
+  ],
+  "timeout": "20s",
+  "retryOn429": true,
+  "retryCount": 2,
+  "fallbackRetryDelay": "30s",
+  "aliveStatusCodes": [200, 206]
+}

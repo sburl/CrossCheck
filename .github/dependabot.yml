@@ -1,0 +1,33 @@
+# Dependabot configuration for CrossCheck
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Monitors dependencies and opens PRs for updates.
+# Uncomment ecosystems relevant to your project.
+
+version: 2
+updates:
+  # GitHub Actions -- always active
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Node.js -- uncomment if you have a package.json
+  # - package-ecosystem: "npm"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #   open-pull-requests-limit: 5
+
+  # Python -- uncomment if you have requirements.txt or pyproject.toml
+  # - package-ecosystem: "pip"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #   open-pull-requests-limit: 5
+
+  # Docker -- uncomment if you have a Dockerfile
+  # - package-ecosystem: "docker"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"

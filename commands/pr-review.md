@@ -1,0 +1,93 @@
+---
+name: pr-review
+description: Initiate autonomous PR review process with Codex agent
+---
+
+**Created:** 2026-02-09-00-00
+**Last Updated:** 2026-02-09-00-00
+
+# PR Review with Codex Agent
+
+This command automates the multi-agent PR review process between Claude Code and Codex.
+
+## Step 1: Pre-Review Checklist
+
+Before starting the review:
+
+1. **Verify code assessment completed**
+   - Worked with coach and testing agents?
+   - All code tested?
+   - If tests failed 3x, is there a note in the PR?
+
+2. **Verify documentation updated**
+   - All relevant docs updated?
+   - Stale docs deleted?
+   - Timestamps updated on all modified docs?
+
+3. **Get PR number**
+   ```bash
+   gh pr list --head $(git branch --show-current)
+   ```
+
+If checklist incomplete, stop and complete it first.
+
+## Step 2: Initiate Codex Review
+
+Open a new terminal session for Codex agent:
+
+```bash
+# In new terminal, same repo directory
+codex "You are an expert in reviewing code for bugs, usability, and merge suitability. An agent has just performed work in this repo and submitted PR {PR_NUMBER}. Please use GitHub CLI to review this PR and assess its suitability to be merged into the branch it came from or to main. You are connected directly to the agent so speak directly to it. Your only responsibility is to find and report issues so you should not offer to perform any coding on behalf of the agent. If the code is allowed to be merged please say so. The other agent will only proceed with merging the code if you explicitly tell it to merge and where to merge it."
+```
+
+Replace {PR_NUMBER} with actual PR number from Step 1.
+
+## Step 3: Wait for Codex Response
+
+Copy the complete Codex response when ready.
+
+## Step 4: Claude Self-Assessment
+
+Tell the user:
+```
+A review agent shared the below feedback. I will now critically assess this feedback and change things as needed. I will only merge when explicitly told the PR can be merged and where to merge it.
+
+Codex Feedback:
+{paste complete Codex response here}
+```
+
+Then:
+1. Critically assess the feedback
+2. Make changes if you agree
+3. If you disagree, explain why
+4. DO NOT merge unless Codex explicitly said to merge and specified destination
+
+## Step 5: If Changes Made - Codex Follow-up
+
+If you made changes based on Codex feedback, provide this prompt to Codex:
+
+```bash
+codex "The other agent made updates based on your feedback and shared the following comments. Please evaluate if the code actually resolves the issues you shared. The other agent also shared the below comments which may provide context on their decisions. If the code is allowed to be merged please say so. The other agent will only proceed with merging the code if you explicitly tell it to merge and where to merge it. Response: {your complete response explaining changes}"
+```
+
+## Step 6: Continue Loop Until Approval
+
+Repeat Steps 3-5 until Codex explicitly approves merge with destination.
+
+## Step 7: Merge
+
+When Codex explicitly approves:
+```bash
+gh pr merge {PR_NUMBER} --merge  # or --squash or --rebase as appropriate
+```
+
+## Step 8: Return to Roadmap
+
+After merge, return to the roadmap/priorities and continue with next feature.
+
+## Automation Notes
+
+This process can be enhanced with:
+- Script to automatically pass messages between Claude and Codex sessions
+- WebSocket or file-based communication between terminals
+- Automated merge when specific approval phrase detected

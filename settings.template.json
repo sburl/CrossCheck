@@ -1,0 +1,204 @@
+{
+  "model": "sonnet",
+  "alwaysThinkingEnabled": true,
+
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git pull*)",
+      "Bash(git checkout*)",
+      "Bash(git branch*)",
+      "Bash(git merge*)",
+      "Bash(git reset --soft*)",
+      "Bash(git reset --mixed*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git stash*)",
+      "Bash(git tag*)",
+      "Bash(git fetch*)",
+      "Bash(git clone*)",
+      "Bash(git rm*)",
+      "Bash(gh pr*)",
+      "Bash(gh issue*)",
+      "Bash(gh repo*)",
+      "Bash(gh status*)",
+      "Bash(gh run*)",
+      "Bash(gh workflow*)",
+      "Bash(gh auth status*)",
+      "Bash(gh release*)",
+      "Bash(gh gist*)",
+      "Bash(cp*)",
+      "Bash(mv*)",
+      "Bash(mkdir*)",
+      "Bash(cat*)",
+      "Bash(head*)",
+      "Bash(tail*)",
+      "Bash(grep*)",
+      "Bash(find*)",
+      "Bash(ls*)",
+      "Bash(cd*)",
+      "Bash(pwd*)",
+      "Bash(echo*)",
+      "Bash(wc*)",
+      "Bash(sort*)",
+      "Bash(uniq*)",
+      "Bash(tr*)",
+      "Bash(cut*)",
+      "Bash(sed*)",
+      "Bash(awk*)",
+      "Bash(xargs*)",
+      "Bash(diff*)",
+      "Bash(curl*)",
+      "Bash(chmod*)",
+      "Bash(source*)",
+      "Bash(tee*)",
+      "Bash(jq*)",
+      "Bash(column*)",
+      "Bash(test*)",
+      "Bash(tree*)",
+      "Bash(lsof*)",
+      "Bash(pkill*)",
+      "Bash(timeout*)",
+      "Bash(if*)",
+      "Bash(then*)",
+      "Bash(else*)",
+      "Bash(fi)",
+      "Bash(python*)",
+      "Bash(python3*)",
+      "Bash(pip*)",
+      "Bash(pytest*)",
+      "Bash(poetry*)",
+      "Bash(uv*)",
+      "Bash(node*)",
+      "Bash(npm*)",
+      "Bash(npx*)",
+      "Bash(yarn*)",
+      "Bash(pnpm*)",
+      "Bash(cargo*)",
+      "Bash(go*)",
+      "Bash(make*)",
+      "Bash(sqlite3*)",
+      "Bash(psql*)",
+      "Bash(mysql*)",
+      "Bash(redis-cli*)",
+      "Bash(railway*)",
+      "Bash(vercel*)",
+      "Bash(launchctl*)",
+
+      "Bash(codex*)",
+      "Bash(dailybrief*)",
+
+      "Bash(cd * && find *)",
+      "Bash(find * | xargs *)",
+      "Bash(* | head *)",
+      "Bash(* | tail *)",
+      "Bash(* | grep *)",
+      "Bash(* | wc *)",
+      "Bash(* | sort *)",
+      "Bash(* | uniq *)",
+      "Bash(* > /tmp/*)",
+      "Bash(* >> /tmp/*)",
+      "Bash(cd * && npm *)",
+      "Bash(cd * && git *)",
+      "Bash(npm * && npm *)",
+      "Bash(git * && git *)",
+      "Bash(* 2>&1 | *)",
+      "Bash(* 2>&1 | grep *)",
+      "Bash(cd * && cd * && *)"
+    ],
+    "deny": [
+      "Bash(rm *)",
+      "Bash(rm -*)",
+      "Bash(git reset --hard*)",
+      "Bash(git filter-branch*)",
+      "Bash(git branch -D*)",
+      "Bash(git tag -d*)",
+      "Bash(git reflog expire*)",
+      "Bash(git gc --prune*)",
+      "Bash(git clean -f*)",
+      "Bash(git clean -fd*)",
+      "Bash(git commit*--no-verify*)",
+      "Bash(git commit*-n*)",
+      "Bash(git push*--no-verify*)",
+      "Bash(*--no-verify*)",
+      "Bash(*commit*-n*)",
+      "Bash(sudo *)",
+      "Bash(chmod 777*)",
+      "Bash(eval *)",
+      "Bash(docker *)",
+      "Bash(gh api*DELETE*)",
+      "Bash(gh api*-X DELETE*)",
+      "Bash(gh api *-X DELETE*)",
+      "Bash(*while read*)",
+      "Bash(*while IFS=*)",
+      "Bash(* | while *)",
+      "Bash(*for *; do*done*)",
+      "Bash(Bash(*))",
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(**/*credential*)",
+      "Read(**/*secret*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Write(.env*)",
+      "Write(**/.env*)",
+      "Write(~/.ssh/**)",
+      "Write(~/.aws/**)"
+    ],
+    "ask": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(*)",
+      "Bash(npm publish*)",
+      "Bash(cargo publish*)"
+    ]
+  },
+
+  "includeCoAuthoredBy": false,
+
+  "hooks": {
+    "_comment": "Suggested additions: (1) pre_tool_use to kill background processes before git operations, (2) post_tool_use to auto-update doc timestamps after edits. Uncomment and customize as needed.",
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Claude Code finished\" with title \"Claude Done\"'"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Input needed\" with title \"Claude Waiting\" sound name \"Ping\"'"
+          }
+        ]
+      }
+    ]
+  },
+
+  "statusLine": {
+    "type": "command",
+    "command": "input=$(cat); context=$(echo \"$input\" | jq -r '.context_window.remaining_percentage // empty'); branch=$(cd \"$(echo \"$input\" | jq -r '.workspace.current_dir')\" 2>/dev/null && git -c core.fileMode=false rev-parse --abbrev-ref HEAD 2>/dev/null || echo ''); if [ -n \"$context\" ] && [ -n \"$branch\" ]; then echo \"${context}% | ${branch}\"; elif [ -n \"$context\" ]; then echo \"${context}%\"; elif [ -n \"$branch\" ]; then echo \"${branch}\"; fi"
+  }
+}

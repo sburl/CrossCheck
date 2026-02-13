@@ -1,0 +1,20 @@
+# Local Preferences (Not usually version controlled)
+
+To use: copy this file to `CLAUDE.local.md` (which is gitignored).
+Personal preferences that apply only to your machine.
+
+## Example Preferences
+
+<!-- Uncomment and customize as needed:
+
+## Verbosity
+- Be concise. Skip explanations unless asked.
+
+## Editor
+- I use Cursor as my IDE.
+
+## Personality
+- Don't use emojis in code comments.
+- Use British English spelling.
+
+-->

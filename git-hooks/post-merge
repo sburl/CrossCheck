@@ -1,0 +1,104 @@
+#!/bin/bash
+# Post-merge hook: Cleanup and verification after PR merge
+# Addresses: 401 permission blocks (branch cleanup), CI verification pattern
+
+echo "🎉 Merge completed: running post-merge actions..."
+
+# 1. Delete merged feature branch (addresses 401 permission blocks)
+current_branch=$(git branch --show-current)
+if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
+    # Get the branch that was just merged
+    # Try multiple patterns to handle different git merge message formats
+    merged_branch=$(git reflog -1 | grep -oE "Merge .*branch '([^']+)'" | sed -E "s/.*'([^']+)'.*/\1/")
+
+    # Fallback: Try "merge <branch>:" format (common in GitHub PR merges)
+    if [ -z "$merged_branch" ]; then
+        merged_branch=$(git reflog -1 | grep -oE "merge ([^:]+):" | sed -E "s/merge ([^:]+):.*/\1/")
+    fi
+
+    # Fallback: Fast-forward pulls after GitHub PR merge
+    # Parse merge commit message from current pull for "Merge pull request #N from user/branch"
+    # Constrain to commits introduced by this pull (HEAD@{1}..HEAD) to avoid picking old merges
+    # shellcheck disable=SC2016,SC1083  # HEAD@{1} is git syntax, not shell variable
+    if [ -z "$merged_branch" ]; then
+        merged_branch=$(git log --merges --oneline HEAD@{1}..HEAD 2>/dev/null | head -1 | grep -oE "from [^/]+/([^ ]+)" | sed -E "s/from [^/]+\/([^ ]+).*/\1/")
+    fi
+
+    if [ -n "$merged_branch" ] && [ "$merged_branch" != "main" ] && [ "$merged_branch" != "master" ]; then
+        echo "  🗑️  Deleting local merged branch: $merged_branch"
+        git branch -d "$merged_branch" 2>/dev/null && echo "  ✅ Local branch deleted" || echo "  ℹ️  Branch already deleted or not found"
+
+        # Check if remote branch exists (but don't auto-delete - too risky in shared repos)
+        if git ls-remote --heads origin "$merged_branch" 2>/dev/null | grep -q "$merged_branch"; then
+            echo "  ℹ️  Remote branch still exists: origin/$merged_branch"
+            echo "     Delete manually: git push origin --delete $merged_branch"
+            echo "     Or use GitHub's auto-delete feature in PR settings"
+        fi
+    fi
+fi
+
+# 2. Check CI status (non-blocking, for awareness only)
+if command -v gh &> /dev/null; then
+    echo "  🔍 Checking CI status (non-blocking)..."
+
+    # Quick check - don't wait
+    ci_status=$(gh run list --limit 1 --json status,conclusion --jq '.[0] | "\(.status):\(.conclusion)"' 2>/dev/null || echo "unknown")
+
+    case "$ci_status" in
+        "completed:success")
+            echo "  ✅ CI passing"
+            ;;
+        "completed:failure")
+            echo "  ❌ CI failing after merge!"
+            echo "     View logs: gh run view --log-failed"
+            echo "     Reminder: Fix before next PR (Phase 5)"
+            ;;
+        "in_progress:"*)
+            echo "  ⏳ CI running in background"
+            echo "     Monitor: gh run watch"
+            echo "     Or continue working - hook won't block"
+            ;;
+        *)
+            echo "  ℹ️  CI status: $ci_status"
+            echo "     Check later: gh run list --limit 3"
+            ;;
+    esac
+else
+    echo "  ℹ️  gh CLI not found, skipping CI check"
+fi
+
+# 3. Update TODO.md to mark completed items
+if [ -f "TODO.md" ]; then
+    echo "  📝 Updating TODO.md..."
+    echo "" >> TODO.md
+    echo "## Merged: $(date '+%Y-%m-%d %H:%M')" >> TODO.md
+    echo "**Branch:** ${merged_branch:-unknown}" >> TODO.md
+    echo "**CI Status:** ${ci_status:-unknown}" >> TODO.md
+    echo "" >> TODO.md
+fi
+
+# 4. Track PR merges for assessment waterfall (every 3 PRs)
+# post-merge fires on `git pull` after a PR merge -- 1:1 proxy for "PR merged"
+PR_COUNTER_FILE="$(git rev-parse --git-common-dir)/hooks-pr-counter"
+if [ ! -f "$PR_COUNTER_FILE" ]; then
+    echo "0" > "$PR_COUNTER_FILE"
+fi
+
+pr_count=$(< "$PR_COUNTER_FILE")
+pr_count=$((pr_count + 1))
+echo "$pr_count" > "$PR_COUNTER_FILE"
+
+if [ "$pr_count" -ge 3 ]; then
+    echo ""
+    echo "📊 Assessment waterfall due (3 PRs merged). Run in order -- fix findings before moving to next step:"
+    echo ""
+    echo "   Step 1: /repo-assessment    ← Codex comprehensive quality review"
+    echo "   Step 2: /bug-review         ← Systematic failure mode audit"
+    echo "   Step 3: /security-review    ← Full security audit"
+    echo ""
+    echo "   Process each like a Codex review loop: run skill, address findings, verify, then next step."
+    echo ""
+    echo "0" > "$PR_COUNTER_FILE"
+fi
+
+echo "✅ Post-merge actions complete"

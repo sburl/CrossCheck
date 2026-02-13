@@ -1,0 +1,62 @@
+#!/bin/bash
+# Post-checkout hook: Clean environment after branch switch
+
+# shellcheck disable=SC2034  # prev_head, new_head used by git hook protocol
+prev_head=$1
+new_head=$2
+branch_checkout=$3
+
+# Only run on branch checkout (not file checkout)
+if [ "$branch_checkout" = "1" ]; then
+    echo "🔄 Branch switched: cleaning up environment"
+
+    # 1. Kill background processes from previous branch
+    # ONLY kill processes running in THIS repo (not globally)
+    repo_path=$(git rev-parse --show-toplevel)
+    echo "  🧹 Killing orphan background processes in $repo_path..."
+
+    # Use lsof to find processes with files open in this repo, then kill them
+    # This ensures we only kill processes for THIS repo, not other repos
+    if command -v lsof &> /dev/null; then
+        # Find PIDs of test/watch processes with files open in this repo
+        # Use awk to filter by COMMAND column (field 1) to avoid matching file paths
+        # Match common test runners: pytest*, jest*, vitest*, npm, node, python* running tests
+        pids=$(lsof +D "$repo_path" 2>/dev/null | awk 'NR>1 && ($1 ~ /(pytest|jest|vitest|npm|node|python)/) {print $2}' | sort -u || true)
+        if [ -n "$pids" ]; then
+            echo "$pids" | xargs kill 2>/dev/null || true
+            echo "  ✅ Killed repo-specific background processes"
+        fi
+    else
+        # Fallback: Use pkill with full path (less precise but better than global)
+        pkill -f "$repo_path.*pytest" 2>/dev/null || true
+        pkill -f "$repo_path.*jest" 2>/dev/null || true
+        pkill -f "$repo_path.*vitest" 2>/dev/null || true
+        pkill -f "$repo_path.*npm.*test" 2>/dev/null || true
+    fi
+
+    # 2. Clean up tmp files
+    if [ -d ".tmp" ]; then
+        echo "  🗑️  Cleaning .tmp directory..."
+        rm -rf .tmp/* 2>/dev/null || true
+    fi
+
+    # 3. Update TODO.md context (replace header, don't prepend)
+    if [ -f "TODO.md" ]; then
+        current_branch=$(git branch --show-current)
+        echo "  📝 Updating TODO.md branch context..."
+        # Strip any existing branch header lines, then prepend fresh one
+        sed -i.bak '/^## Current Branch:/d; /^[*]*Last switched:[*]*/d' TODO.md
+        # Remove leading blank lines left by stripping
+        sed -i.bak '/./,$!d' TODO.md
+        {
+            echo "## Current Branch: $current_branch"
+            echo "**Last switched:** $(date '+%Y-%m-%d %H:%M')"
+            echo ""
+            cat TODO.md
+        } > TODO.md.tmp
+        mv TODO.md.tmp TODO.md
+        rm -f TODO.md.bak
+    fi
+
+    echo "✅ Environment cleaned for new branch"
+fi

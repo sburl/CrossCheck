@@ -5,7 +5,7 @@
 
 **Build autonomous loops. Ship production-quality software.**
 
-Claude Code writes. Codex reviews. Hooks enforce. You orchestrate.
+**[Read the blog post](https://spencerburleigh.com/blog/2026/02/13/crosscheck/)** | Claude Code writes. Codex reviews. Hooks enforce. You orchestrate.
 
 ---
 
@@ -27,36 +27,7 @@ The key insight: **git hooks make compliance the path of least resistance.** The
 
 ---
 
-## How It Works
-
-### The Autonomous Loop
-
-**1. Plan** - Design the approach (automatic for complex tasks)
-**2. Build** - Agent writes code + tests on a feature branch, committing early and often
-**3. Verify** - Hooks catch secrets, enforce format, run tests. Failures block progress.
-**4. Review** - A different model reviews. Agent addresses feedback. Repeat until approved.
-**5. Ship** - PR merge with separate-identity approval. Branch auto-deleted.
-**6. Improve** - Periodic self-assessment identifies gaps. System gets better over time.
-
-**Feature branches = freedom.** No review friction during development.
-**Main branch = fortress.** Hooks + branch protection + identity separation protect production.
-
-### Layered Enforcement
-
-```
-┌─────────────────┐
-│ Git Hooks       │ Zero-trust gates at every commit, push, merge
-├─────────────────┤
-│ Quality Checks  │ /security-review (10 threat categories)
-│                 │ /bug-review (10 failure mode categories)
-├─────────────────┤
-│ Multi-Model     │ Claude writes, Codex reviews, different blind spots
-├─────────────────┤
-│ GitHub Rules    │ Separate-identity approval, squash-only, CODEOWNERS
-└─────────────────┘
-```
-
-### The Swiss Cheese Model
+## The Swiss Cheese Model of Accident Causation
 
 This is the same principle that made aviation the safest form of transport. Every safety layer has holes. No single layer is perfect. But stack enough layers with *uncorrelated* holes and the probability of a failure passing through all of them drops to near zero.
 
@@ -84,6 +55,95 @@ The holes in each layer are *uncorrelated* because they use different mechanisms
 
 ---
 
+## Layered Enforcement
+
+```
+┌─────────────────┐
+│ Git Hooks       │ Zero-trust gates at every commit, push, merge
+├─────────────────┤
+│ Quality Checks  │ /security-review (10 threat categories)
+│                 │ /bug-review (10 failure mode categories)
+├─────────────────┤
+│ Multi-Model     │ Claude writes, Codex reviews, different blind spots
+├─────────────────┤
+│ GitHub Rules    │ Separate-identity approval, squash-only, CODEOWNERS
+└─────────────────┘
+```
+
+**6 git hooks catch issues before they reach GitHub:**
+
+| Hook | When | Catches |
+|------|------|---------|
+| **pre-commit** | Before commit | Secrets, debug code, timestamps |
+| **commit-msg** | After message | Enforces conventional commits |
+| **post-commit** | After commit | Logs for Codex review |
+| **post-checkout** | Branch switch | Kills orphan processes |
+| **pre-push** | Before every push | Timestamps, markers, conflicts (+ /techdebt + /pre-pr-check on main) |
+| **post-merge** | After merge | Auto-deletes local branch |
+
+---
+
+## Why Codex?
+
+**I've tested multiple reviewers. Codex is more precise.**
+
+But here's the key: **Use an agent from a different lab than your developer agent.**
+
+```
+Claude (Anthropic) writes → Codex (OpenAI) reviews
+└─ Different training → Different blind spots → Better coverage
+```
+
+Each AI has blind spots. When those blind spots come from different training data and architectures, they're less correlated. One agent's weakness is another's strength. This is another application of the swiss cheese model -- and why multi-agent review catches more than single-agent development.
+
+---
+
+## The Autonomous Loop
+
+**1. Plan** - Design the approach (automatic for complex tasks)
+**2. Build** - Agent writes code + tests on a feature branch, committing early and often
+**3. Verify** - Hooks catch secrets, enforce format, run tests. Failures block progress.
+**4. Review** - A different model reviews. Agent addresses feedback. Repeat until approved.
+**5. Ship** - PR merge with separate-identity approval. Branch auto-deleted.
+**6. Improve** - Periodic self-assessment identifies gaps. System gets better over time.
+
+**Feature branches = freedom.** No review friction during development.
+**Main branch = fortress.** Hooks + branch protection + identity separation protect production.
+
+---
+
+## Core Principles
+
+**1. Autonomous by Default** - The agent solves its own problems. Escalate only after exhausting alternatives.
+
+**2. Zero Trust** - Test everything. Nothing works until proven. Hooks enforce, not remind.
+
+**3. Autonomous Loops** - Every workflow is a loop: build -> validate -> review -> improve. Structural enforcement at every step.
+
+**4. Feature Branches = Freedom, Main = Fortress** - All work on branches. Main requires separate-identity PR approval. Agent can't commit to main.
+
+**5. Multi-Model Review** - Claude writes, Codex reviews. Different training = different blind spots = better coverage.
+
+**6. Self-Improving** - Every 3 PRs: repo assessment -> bug review -> security review waterfall. The system audits itself.
+
+---
+
+## Results
+
+**Before CrossCheck:**
+- You write, you review, you fix, you ship → **You're the bottleneck**
+
+**After CrossCheck:**
+- Claude writes → Codex reviews → Claude fixes → Auto-validation → **Ship with confidence**
+
+**The difference:**
+- Secrets caught before commit
+- Tests written alongside code (not after)
+- Codex reviews in minutes (not days)
+- You orchestrate, AIs execute
+
+---
+
 ## Quick Start
 
 **One command installs everything:**
@@ -108,21 +168,6 @@ claude "Build user authentication"
 ---
 
 ## Detailed Setup
-
-### What Gets Installed
-
-**6 git hooks catch issues before they reach GitHub:**
-
-| Hook | When | Catches |
-|------|------|---------|
-| **pre-commit** | Before commit | Secrets, debug code, timestamps |
-| **commit-msg** | After message | Enforces conventional commits |
-| **post-commit** | After commit | Logs for Codex review |
-| **post-checkout** | Branch switch | Kills orphan processes |
-| **pre-push** | Before every push | Timestamps, markers, conflicts (+ /techdebt + /pre-pr-check on main) |
-| **post-merge** | After merge | Auto-deletes local branch |
-
-**Installed at:** `~/.claude/git-hooks/` (global hooks)
 
 ### GitHub Branch Protection Setup
 
@@ -216,50 +261,31 @@ git push
 
 ---
 
-## Why Codex?
+## Requirements
 
-**I've tested multiple reviewers. Codex is more precise.**
+- **[Claude Code CLI](https://code.claude.com)** -- The development agent
+- **Codex access** -- The review agent (or another model from a different lab)
+- **Git + GitHub CLI** (`gh`)
 
-But here's the key: **Use an agent from a different lab than your developer agent.**
-
-```
-Claude (Anthropic) writes → Codex (OpenAI) reviews
-└─ Different training → Different blind spots → Better coverage
-```
-
-Each AI has blind spots. When those blind spots come from different training data and architectures, they're less correlated. One agent's weakness is another's strength. This is another application of the swiss cheese model -- and why multi-agent review catches more than single-agent development.
+The core idea is two AI models from different labs: one writes, one reviews. This repo ships with Claude + Codex, but the architecture works with any pair. Different training data = different blind spots = better coverage.
 
 ---
 
-## Core Principles
+## Next Steps / What We're Thinking About
 
-**1. Autonomous by Default** - The agent solves its own problems. Escalate only after exhausting alternatives.
+**Persistent memory:** CLAUDE.md is static -- it doesn't know what the agent did last session, what's blocked, or what patterns have been learned. The missing piece is dynamic state that persists across sessions: task graphs, dependency tracking, learned patterns. Something like [Beads](https://github.com/steveyegge/beads) for dependency-aware task graphs, or a lightweight session log the agent can query on startup.
 
-**2. Zero Trust** - Test everything. Nothing works until proven. Hooks enforce, not remind.
+**Multi-channel agents:** [OpenClaw](https://openclaw.ai) as a gateway layer -- message tasks from your phone, agent works in a worktree, sends PR notification when done.
 
-**3. Autonomous Loops** - Every workflow is a loop: build -> validate -> review -> improve. Structural enforcement at every step.
+**Third model at merge gate:** Currently Claude writes and Codex reviews, but merge-to-main only has branch protection. Adding a third model (Gemini, Kimi, or another lab) as a final reviewer at the merge step would add another uncorrelated layer to the swiss cheese model -- a completely independent assessment of the full changeset before it hits production. The open question: does a third model add meaningful coverage, or are we into diminishing returns?
 
-**4. Feature Branches = Freedom, Main = Fortress** - All work on branches. Main requires separate-identity PR approval. Agent can't commit to main.
+**Safer CLI access:** CLIs (Railway, Vercel, `gh`, databases) are what keep loops autonomous -- the agent deploys without a human clicking a dashboard. But giving agents CLI access to production infrastructure is an unsolved trust problem. There's no granular permission layer between "full access" and "no access." Scoped tokens, dry-run defaults, approval gates for destructive operations. Necessary for truly autonomous deployment loops.
 
-**5. Multi-Model Review** - Claude writes, Codex reviews. Different training = different blind spots = better coverage.
+**Agent permissions:** Finer-grained control over which parts of the repo different agents can touch during parallel development. Right now worktrees provide isolation at the branch level, but within a worktree the agent has access to everything. Per-agent read/write boundaries on directories or files would reduce blast radius.
 
-**6. Self-Improving** - Every 3 PRs: repo assessment -> bug review -> security review waterfall. The system audits itself.
+**UI iteration loop:** The one autonomous loop we haven't cracked. Backend has clear loops (write -> test -> verify). UI needs visual evaluation -- does this component look right? Is the layout balanced? Screenshot-based feedback exists but AI's visual judgment is unreliable. This limits current applications to CLIs and simple landing pages. This is the frontier.
 
----
-
-## Results
-
-**Before CrossCheck:**
-- You write, you review, you fix, you ship → **You're the bottleneck**
-
-**After CrossCheck:**
-- Claude writes → Codex reviews → Claude fixes → Auto-validation → **Ship with confidence**
-
-**The difference:**
-- Secrets caught before commit
-- Tests written alongside code (not after)
-- Codex reviews in minutes (not days)
-- You orchestrate, AIs execute
+**Read the full story:** [spencerburleigh.com/blog/crosscheck](https://spencerburleigh.com/blog/crosscheck)
 
 ---
 
@@ -279,32 +305,6 @@ Each AI has blind spots. When those blind spots come from different training dat
 
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md#hook-error-reference)** - Hook-specific debugging
 - **[The Full Story](https://spencerburleigh.com/blog/crosscheck)** - Philosophy and story behind CrossCheck
-
----
-
-## Requirements
-
-- **[Claude Code CLI](https://code.claude.com)** -- The development agent
-- **Codex access** -- The review agent (or another model from a different lab)
-- **Git + GitHub CLI** (`gh`)
-
-The core idea is two AI models from different labs: one writes, one reviews. This repo ships with Claude + Codex, but the architecture works with any pair. Different training data = different blind spots = better coverage.
-
----
-
-## Next Steps / What We're Thinking About
-
-**Persistent memory:** [Beads](https://github.com/steveyegge/beads) for dependency-aware task graphs that persist across sessions.
-
-**Multi-channel agents:** [OpenClaw](https://openclaw.ai) as a gateway layer -- message tasks from your phone, agent works in a worktree, sends PR notification when done.
-
-**Third model at merge gate:** Adding a third model (Gemini, Kimi, or another lab) as a final reviewer at the merge-to-main step. This adds another uncorrelated layer to the swiss cheese model -- a completely independent assessment of the full changeset before it hits production. Claude writes, Codex reviews during development, third model assesses the complete PR.
-
-**Safer CLI access:** CLIs (Railway, Vercel, `gh`, databases) are what keep loops autonomous -- the agent deploys without a human clicking a dashboard. But giving agents CLI access to production infrastructure is an unsolved trust problem. Scoped tokens, dry-run defaults, approval gates for destructive operations. Necessary for truly autonomous deployment loops.
-
-**UI iteration loop:** The one autonomous loop we haven't cracked. Backend has clear loops (write -> test -> verify). UI needs visual evaluation. Screenshot-based feedback exists but is slow and unreliable. This is the frontier.
-
-**Read the full story:** [spencerburleigh.com/blog/crosscheck](https://spencerburleigh.com/blog/crosscheck)
 
 ---
 

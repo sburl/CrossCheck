@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-12-12-00
+**Last Updated:** 2026-02-14-15-48
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -146,28 +146,88 @@ Each AI has blind spots. When those blind spots come from different training dat
 
 ## Quick Start
 
-**One command installs everything:**
+**Prerequisites:**
+- [Claude Code CLI](https://code.claude.com)
+- Codex access (for reviews)
+- Git + GitHub CLI (`gh`)
+
+**Installation (5 minutes):**
+
+CrossCheck is designed to manage **multiple projects** from a single installation. Install it once alongside your projects, then enable it per-project.
+
+### 1. Clone CrossCheck Alongside Your Projects
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sburl/CrossCheck/main/scripts/bootstrap-crosscheck.sh | bash
+# Navigate to your projects folder
+cd ~/Documents/Developer  # Or wherever you keep projects
+
+# Clone CrossCheck at the same level as your other projects
+git clone https://github.com/sburl/CrossCheck.git
+
+# Your structure should look like:
+# ~/Documents/Developer/
+#   ├── CrossCheck/        (workflow repository)
+#   ├── MyApp/            (your project)
+#   ├── MyOtherApp/       (another project)
+#   └── ...
 ```
 
-**Then start building:**
+### 2. Run Bootstrap Script
 
 ```bash
-cd your-project
+cd CrossCheck
+./scripts/bootstrap-crosscheck.sh
+```
+
+This installs:
+- Skills to `~/.claude/commands/` (available in all projects)
+- Global `CLAUDE.md` that references CrossCheck
+- Claude Code settings with proper permissions
+
+### 3. Enable CrossCheck for Your Project(s)
+
+```bash
+# Go to any project where you want the workflow
+cd ../MyApp
+
+# Install git hooks
+~/.claude/CrossCheck/scripts/install-git-hooks.sh
+```
+
+### 4. Start Building
+
+```bash
 claude "Build user authentication"
 # Claude creates feature branch, writes code + tests, gets Codex review, ships
 ```
 
-**Prerequisites:**
-- [Claude Code CLI](https://code.claude.com)
-- Codex access (for reviews)
-- Git + GitHub CLI
+**That's it!** All 21 skills are now available in every project. See the [Global README](../README.md) for the full multi-project setup.
 
 ---
 
 ## Detailed Setup
+
+### Multi-Project Installation Model
+
+CrossCheck uses a **single source of truth** pattern:
+
+```
+~/Documents/Developer/          # Your projects folder
+├── README.md                  # Global overview (created by bootstrap)
+├── CLAUDE.md                  # Points to CrossCheck (created by bootstrap)
+│
+├── CrossCheck/                # 🎯 Workflow repository (you clone this)
+│   ├── CLAUDE.md             # Canonical workflow
+│   ├── QUICK-REFERENCE.md    # All skills & patterns
+│   ├── .claude/skills/       # 21 skills (symlinked globally)
+│   └── scripts/              # Installation scripts
+│
+└── YourProject/              # Your projects
+    ├── CLAUDE.md (optional)  # Project-specific overrides
+    └── .git/hooks/           # Installed per-project
+```
+
+**Key insight:** Skills install globally (`~/.claude/commands/`), hooks install per-project, documentation lives in CrossCheck.
 
 ### GitHub Branch Protection Setup
 
@@ -325,11 +385,28 @@ cd ~/path/to/CrossCheck
 
 ## Get Started
 
+**1. Clone alongside your projects:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sburl/CrossCheck/main/scripts/bootstrap-crosscheck.sh | bash
+cd ~/Documents/Developer  # Or your projects folder
+git clone https://github.com/sburl/CrossCheck.git
+cd CrossCheck
+./scripts/bootstrap-crosscheck.sh
+```
+
+**2. Enable for each project:**
+```bash
+cd ../YourProject
+~/.claude/CrossCheck/scripts/install-git-hooks.sh
+```
+
+**3. Build autonomously:**
+```bash
+claude "Build user authentication"
 ```
 
 **Build the loops. Trust the enforcement. Review the output.**
+
+See the [Global README](../README.md) for the full multi-project setup.
 
 ---
 

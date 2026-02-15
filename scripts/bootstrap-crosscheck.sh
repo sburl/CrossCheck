@@ -104,8 +104,14 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📚 What was installed:"
-echo "   • CrossCheck workflow at ~/.claude/CrossCheck/"
+if [ "$INSTALL_MODE" = "multi-project" ]; then
+    echo "   • CrossCheck workflow at $CROSSCHECK_DIR"
+    echo "   • Global CLAUDE.md at $PROJECTS_DIR/CLAUDE.md"
+else
+    echo "   • CrossCheck workflow at ~/.claude/CrossCheck/"
+fi
 echo "   • Global settings at ~/.claude/settings.json"
+echo "   • Skills at ~/.claude/commands/"
 echo "   • Git hooks for quality gates (if accepted)"
 echo "   • Codex review hooks (if accepted)"
 echo ""
@@ -115,8 +121,14 @@ echo "   1. Start Claude Code in any repo:"
 echo "      cd ~/your-project"
 echo "      claude"
 echo ""
-echo "   2. Claude will automatically load CLAUDE.md workflow"
-echo "      from ~/.claude/CrossCheck/"
+if [ "$INSTALL_MODE" = "multi-project" ]; then
+    echo "   2. Claude will automatically load CLAUDE.md workflow"
+    echo "      from $PROJECTS_DIR/CLAUDE.md (full workflow)"
+    echo "      Supporting docs: $CROSSCHECK_DIR/QUICK-REFERENCE.md, docs/rules/"
+else
+    echo "   2. Claude will automatically load CLAUDE.md workflow"
+    echo "      from ~/.claude/CrossCheck/"
+fi
 echo ""
 echo "   3. Set up a repo for autonomous work:"
 echo "      claude '/setup-automation'"
@@ -125,8 +137,11 @@ echo ""
 echo "   4. Optional customization:"
 echo "      • Edit: ~/.claude/settings.json (customize for your stack)"
 echo "      • Copy: CLAUDE.local.md.template → CLAUDE.local.md (personal prefs)"
-echo "      • Docs: ~/.claude/CrossCheck/README.md"
-echo "      • Setup: ~/.claude/CrossCheck/README.md#detailed-setup"
+if [ "$INSTALL_MODE" = "multi-project" ]; then
+    echo "      • Docs: $CROSSCHECK_DIR/README.md"
+else
+    echo "      • Docs: ~/.claude/CrossCheck/README.md"
+fi
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""

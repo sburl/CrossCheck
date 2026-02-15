@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-14-16-18
+**Last Updated:** 2026-02-14-16-21
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -190,8 +190,8 @@ This installs:
 # Go to any project where you want the workflow
 cd ../MyApp
 
-# Install git hooks
-~/.claude/CrossCheck/scripts/install-git-hooks.sh
+# Install git hooks (use relative path from CrossCheck)
+../CrossCheck/scripts/install-git-hooks.sh
 ```
 
 ### 4. Start Building
@@ -378,7 +378,7 @@ Both humans and AI agents can contribute.
 
 ```bash
 cd ~/path/to/CrossCheck
-~/.claude/CrossCheck/scripts/install-git-hooks.sh
+./scripts/install-git-hooks.sh
 ```
 
 ---
@@ -396,7 +396,7 @@ cd CrossCheck
 **2. Enable for each project:**
 ```bash
 cd ../YourProject
-~/.claude/CrossCheck/scripts/install-git-hooks.sh
+../CrossCheck/scripts/install-git-hooks.sh
 ```
 
 **3. Build autonomously:**

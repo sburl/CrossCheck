@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-14-15-48
+**Last Updated:** 2026-02-14-16-18
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -181,7 +181,7 @@ cd CrossCheck
 
 This installs:
 - Skills to `~/.claude/commands/` (available in all projects)
-- Global `CLAUDE.md` that references CrossCheck
+- Global `CLAUDE.md` in your projects folder (full workflow)
 - Claude Code settings with proper permissions
 
 ### 3. Enable CrossCheck for Your Project(s)
@@ -201,7 +201,7 @@ claude "Build user authentication"
 # Claude creates feature branch, writes code + tests, gets Codex review, ships
 ```
 
-**That's it!** All 21 skills are now available in every project. See the [Global README](../README.md) for the full multi-project setup.
+**That's it!** All 21 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
 
 ---
 
@@ -213,13 +213,13 @@ CrossCheck uses a **single source of truth** pattern:
 
 ```
 ~/Documents/Developer/          # Your projects folder
-├── README.md                  # Global overview (created by bootstrap)
-├── CLAUDE.md                  # Points to CrossCheck (created by bootstrap)
+├── CLAUDE.md                  # Full workflow (copied from CrossCheck)
 │
-├── CrossCheck/                # 🎯 Workflow repository (you clone this)
-│   ├── CLAUDE.md             # Canonical workflow
-│   ├── QUICK-REFERENCE.md    # All skills & patterns
-│   ├── .claude/skills/       # 21 skills (symlinked globally)
+├── CrossCheck/                # 🎯 Source repository
+│   ├── CLAUDE.md             # Source of truth for workflow
+│   ├── QUICK-REFERENCE.md    # Supporting reference (21 skills, tables)
+│   ├── docs/rules/           # Supporting docs (trust-model, git-history)
+│   ├── commands/             # 21 skills (copied to ~/.claude/commands/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
@@ -227,7 +227,7 @@ CrossCheck uses a **single source of truth** pattern:
     └── .git/hooks/           # Installed per-project
 ```
 
-**Key insight:** Skills install globally (`~/.claude/commands/`), hooks install per-project, documentation lives in CrossCheck.
+**Key insight:** Global CLAUDE.md = full workflow. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Skills install globally (`~/.claude/commands/`), hooks install per-project.
 
 ### GitHub Branch Protection Setup
 
@@ -405,8 +405,6 @@ claude "Build user authentication"
 ```
 
 **Build the loops. Trust the enforcement. Review the output.**
-
-See the [Global README](../README.md) for the full multi-project setup.
 
 ---
 

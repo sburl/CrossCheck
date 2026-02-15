@@ -71,6 +71,7 @@ fi
 echo "📝 Step 3: Configure settings..."
 if [ ! -f "$HOME/.claude/settings.json" ]; then
     echo "   Creating ~/.claude/settings.json from template..."
+    mkdir -p "$HOME/.claude"  # Ensure directory exists
     cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.claude/settings.json"
     echo "   ⚠️  TODO: Edit ~/.claude/settings.json to customize for your stack"
     echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"

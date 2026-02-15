@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-12-12-00
+**Last Updated:** 2026-02-14-16-21
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -146,28 +146,88 @@ Each AI has blind spots. When those blind spots come from different training dat
 
 ## Quick Start
 
-**One command installs everything:**
+**Prerequisites:**
+- [Claude Code CLI](https://code.claude.com)
+- Codex access (for reviews)
+- Git + GitHub CLI (`gh`)
+
+**Installation (5 minutes):**
+
+CrossCheck is designed to manage **multiple projects** from a single installation. Install it once alongside your projects, then enable it per-project.
+
+### 1. Clone CrossCheck Alongside Your Projects
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sburl/CrossCheck/main/scripts/bootstrap-crosscheck.sh | bash
+# Navigate to your projects folder
+cd ~/Documents/Developer  # Or wherever you keep projects
+
+# Clone CrossCheck at the same level as your other projects
+git clone https://github.com/sburl/CrossCheck.git
+
+# Your structure should look like:
+# ~/Documents/Developer/
+#   ├── CrossCheck/        (workflow repository)
+#   ├── MyApp/            (your project)
+#   ├── MyOtherApp/       (another project)
+#   └── ...
 ```
 
-**Then start building:**
+### 2. Run Bootstrap Script
 
 ```bash
-cd your-project
+cd CrossCheck
+./scripts/bootstrap-crosscheck.sh
+```
+
+This installs:
+- Skills to `~/.claude/commands/` (available in all projects)
+- Global `CLAUDE.md` in your projects folder (full workflow)
+- Claude Code settings with proper permissions
+
+### 3. Enable CrossCheck for Your Project(s)
+
+```bash
+# Go to any project where you want the workflow
+cd ../MyApp
+
+# Install git hooks (use relative path from CrossCheck)
+../CrossCheck/scripts/install-git-hooks.sh
+```
+
+### 4. Start Building
+
+```bash
 claude "Build user authentication"
 # Claude creates feature branch, writes code + tests, gets Codex review, ships
 ```
 
-**Prerequisites:**
-- [Claude Code CLI](https://code.claude.com)
-- Codex access (for reviews)
-- Git + GitHub CLI
+**That's it!** All 21 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
 
 ---
 
 ## Detailed Setup
+
+### Multi-Project Installation Model
+
+CrossCheck uses a **single source of truth** pattern:
+
+```
+~/Documents/Developer/          # Your projects folder
+├── CLAUDE.md                  # Full workflow (copied from CrossCheck)
+│
+├── CrossCheck/                # 🎯 Source repository
+│   ├── CLAUDE.md             # Source of truth for workflow
+│   ├── QUICK-REFERENCE.md    # Supporting reference (21 skills, tables)
+│   ├── docs/rules/           # Supporting docs (trust-model, git-history)
+│   ├── commands/             # 21 skills (copied to ~/.claude/commands/)
+│   └── scripts/              # Installation scripts
+│
+└── YourProject/              # Your projects
+    ├── CLAUDE.md (optional)  # Project-specific overrides
+    └── .git/hooks/           # Installed per-project
+```
+
+**Key insight:** Global CLAUDE.md = full workflow. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Skills install globally (`~/.claude/commands/`), hooks install per-project.
 
 ### GitHub Branch Protection Setup
 
@@ -318,15 +378,30 @@ Both humans and AI agents can contribute.
 
 ```bash
 cd ~/path/to/CrossCheck
-~/.claude/CrossCheck/scripts/install-git-hooks.sh
+./scripts/install-git-hooks.sh
 ```
 
 ---
 
 ## Get Started
 
+**1. Clone alongside your projects:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sburl/CrossCheck/main/scripts/bootstrap-crosscheck.sh | bash
+cd ~/Documents/Developer  # Or your projects folder
+git clone https://github.com/sburl/CrossCheck.git
+cd CrossCheck
+./scripts/bootstrap-crosscheck.sh
+```
+
+**2. Enable for each project:**
+```bash
+cd ../YourProject
+../CrossCheck/scripts/install-git-hooks.sh
+```
+
+**3. Build autonomously:**
+```bash
+claude "Build user authentication"
 ```
 
 **Build the loops. Trust the enforcement. Review the output.**

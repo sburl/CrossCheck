@@ -5,18 +5,18 @@
 commit_msg=$(< "$1")
 
 # Allow merge commits
-if echo "$commit_msg" | grep -q "^Merge"; then
+if echo "$commit_msg" | head -1 | grep -q "^Merge"; then
     exit 0
 fi
 
 # Allow revert commits
-if echo "$commit_msg" | grep -q "^Revert"; then
+if echo "$commit_msg" | head -1 | grep -q "^Revert"; then
     exit 0
 fi
 
 # Check conventional commit format
 # Format: type(scope)!: description
-if ! echo "$commit_msg" | grep -qE '^(feat|fix|refactor|test|docs|chore|style|perf|ci|build|revert)(\([a-zA-Z0-9_-]+\))?!?: .{10,}'; then
+if ! echo "$commit_msg" | head -1 | grep -qE '^(feat|fix|refactor|test|docs|chore|style|perf|ci|build|revert)(\([a-zA-Z0-9_-]+\))?!?: .{10,}'; then
     echo "❌ Commit message must follow conventional commits format"
     echo ""
     echo "Format: <type>[(scope)][!]: <description>"
@@ -40,7 +40,7 @@ if ! echo "$commit_msg" | grep -qE '^(feat|fix|refactor|test|docs|chore|style|pe
 fi
 
 # Warn about breaking changes
-if echo "$commit_msg" | grep -q "!:"; then
+if echo "$commit_msg" | head -1 | grep -q "!:"; then
     echo "⚠️  Breaking change detected (marked with !)"
     echo "   Ensure this is documented in commit body"
 fi

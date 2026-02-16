@@ -99,6 +99,23 @@ else
     echo "   Skipped Codex review hooks"
 fi
 
+# 5. Install skills (commands)
+echo "📝 Step 5: Install skills..."
+mkdir -p "$HOME/.claude/commands"
+cp "$CROSSCHECK_DIR/commands/"*.md "$HOME/.claude/commands/"
+skill_count=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
+echo "   ✅ Installed $skill_count skills to ~/.claude/commands/"
+echo ""
+
+# 6. Install agents (optional)
+echo "📝 Step 6: Install agents..."
+if [ -d "$CROSSCHECK_DIR/agents" ]; then
+    cp -r "$CROSSCHECK_DIR/agents/"* "$HOME/.claude/agents/" 2>/dev/null || true
+    echo "   ✅ Agents copied to ~/.claude/agents/"
+else
+    echo "   ⚠️  No agents directory found"
+fi
+
 echo ""
 echo "✅ CrossCheck Bootstrap Complete!"
 echo ""

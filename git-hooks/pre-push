@@ -49,9 +49,28 @@ if [ "${#missing_timestamps[@]}" -gt 0 ]; then
     echo "  The fix script will add timestamps using git history (falls back to"
     echo "  current date only for files with no git history)."
     echo ""
+    # Resolve fix script: repo-local first, then CrossCheck well-known paths
+    fix_script=""
+    repo_root=$(git rev-parse --show-toplevel)
+    for candidate in \
+        "$repo_root/scripts/fix-timestamps.sh" \
+        "${CROSSCHECK_DIR:-}/scripts/fix-timestamps.sh" \
+        "$HOME/.claude/CrossCheck/scripts/fix-timestamps.sh" \
+        "$HOME/Documents/Developer/CrossCheck/scripts/fix-timestamps.sh"; do
+        if [ -f "$candidate" ]; then
+            fix_script="$candidate"
+            break
+        fi
+    done
+
     echo "  🤖 Claude Code: Run this to auto-fix:"
     echo ""
-    echo "     bash \"\$(git rev-parse --show-toplevel)/scripts/fix-timestamps.sh\""
+    if [ -n "$fix_script" ]; then
+        echo "     bash \"$fix_script\""
+    else
+        echo "     bash \"\$(git rev-parse --show-toplevel)/scripts/fix-timestamps.sh\""
+        echo "     (If not found, check CROSSCHECK_DIR or ~/.claude/CrossCheck/)"
+    fi
     echo ""
     echo "     Then commit the changes and push again."
     echo ""

@@ -56,7 +56,7 @@ fi
 
 # 4. Check for debug statements
 echo "  🐛 Checking for debug code..."
-if git diff --cached | grep -qE '\b(console\.log|debugger|import pdb|breakpoint\(\)|print\()'; then
+if git diff --cached | grep -E '^\+' | grep -qE '\b(console\.log|debugger|import pdb|breakpoint\(\)|print\()'; then
     echo "  ⚠️  Debug statements found (console.log, debugger, pdb, breakpoint, print)"
     echo "     Consider removing before commit"
     # Don't block, just warn

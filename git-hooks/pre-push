@@ -25,28 +25,28 @@ fi
 # This checks existence of Created/Last Updated fields, not freshness.
 # Freshness (date is today) is only checked for edited files in pre-commit.
 echo "  📝 Verifying doc timestamps (all tracked .md files)..."
-missing_timestamps=""
-for file in $(git ls-files '*.md'); do
+missing_timestamps=()
+while IFS= read -r -d '' file; do
     [ -f "$file" ] || continue
     if ! grep -q '^\*\*Last Updated:\*\*' "$file" || ! grep -q '^\*\*Created:\*\*' "$file"; then
-        missing_timestamps="$missing_timestamps $file"
+        missing_timestamps+=("$file")
     fi
-done
+done < <(git ls-files -z -- '*.md')
 
-if [ -n "$missing_timestamps" ]; then
+if [ "${#missing_timestamps[@]}" -gt 0 ]; then
     echo ""
     echo "  ❌ Markdown files missing timestamp metadata:"
-    # shellcheck disable=SC2086  # intentional word splitting on file list
-    for file in $missing_timestamps; do
+    for file in "${missing_timestamps[@]}"; do
         echo "     - $file"
     done
     echo ""
     echo "  All .md files require **Created:** and **Last Updated:** fields."
-    echo "  The fix script will add timestamps using git history (not today's date)."
+    echo "  The fix script will add timestamps using git history (falls back to"
+    echo "  current date only for files with no git history)."
     echo ""
     echo "  🤖 Claude Code: Run this to auto-fix:"
     echo ""
-    echo "     bash \$(git rev-parse --show-toplevel)/scripts/fix-timestamps.sh"
+    echo "     bash \"\$(git rev-parse --show-toplevel)/scripts/fix-timestamps.sh\""
     echo ""
     echo "     Then commit the changes and push again."
     echo ""

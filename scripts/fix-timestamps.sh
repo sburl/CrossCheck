@@ -52,7 +52,7 @@ prepend_to_file() {
     mv "$tmp_file" "$file"
 }
 
-for file in $(git ls-files '*.md'); do
+while IFS= read -r -d '' file; do
     [ -f "$file" ] || continue
 
     has_created=$(grep -c '^\*\*Created:\*\*' "$file" || true)
@@ -70,6 +70,7 @@ for file in $(git ls-files '*.md'); do
     # Fallback to current date if no git history (untracked/new file)
     if [ -z "$last_modified" ]; then
         last_modified=$(date +"%Y-%m-%d-%H-%M")
+        echo "  ℹ️  $file: no git history, using current date as fallback"
     fi
     if [ -z "$first_committed" ]; then
         first_committed="$last_modified"
@@ -111,8 +112,8 @@ $timestamp_updated"
                 errors=$((errors + 1))
             fi
 
-        elif echo "$first_line" | grep -q '^# '; then
-            # Starts with heading: inject after it
+        elif echo "$first_line" | grep -q '^#'; then
+            # Starts with markdown heading (any level: #, ##, ###, etc.): inject after it
             inject_after_line "$file" 1 "$timestamp_block"
             echo "  ✅ $file: added timestamps after heading (created: $first_committed, updated: $last_modified)"
             fixed=$((fixed + 1))
@@ -124,7 +125,7 @@ $timestamp_updated"
             fixed=$((fixed + 1))
         fi
     fi
-done
+done < <(git ls-files -z -- '*.md')
 
 echo ""
 echo "📊 Results: $fixed fixed, $already_ok already OK, $errors errors"

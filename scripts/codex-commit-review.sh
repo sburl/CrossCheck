@@ -49,8 +49,15 @@ LOG_FILE="$HOME/.claude/codex-commit-reviews.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
 # Rotate log if it exceeds 2000 lines (prevent unbounded growth)
+# Use a lockfile to prevent concurrent rotation from losing entries
+LOCK_FILE="$LOG_FILE.lock"
 if [ -f "$LOG_FILE" ] && [ "$(wc -l < "$LOG_FILE")" -gt 2000 ]; then
-    tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+    if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
+        trap 'rm -f "$LOCK_FILE"' EXIT
+        tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+        rm -f "$LOCK_FILE"
+        trap - EXIT
+    fi
 fi
 
 # Write synchronously (avoids interleaved output from rapid commits)
@@ -60,7 +67,7 @@ fi
     echo "$PROMPT"
     echo ""
     echo "To review: Copy above prompt and send to Codex via Claude Code terminal"
-    echo "Or run: tail -f ~/.claude/codex-commit-reviews.log"
+    echo "Or run: tail -F ~/.claude/codex-commit-reviews.log"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 } >> "$LOG_FILE"
 

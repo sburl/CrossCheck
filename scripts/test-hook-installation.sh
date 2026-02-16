@@ -37,6 +37,11 @@ codex_log_has_new_match() {
     tail -n +"$((since + 1))" "$CODEX_LOG" 2>/dev/null | grep -q "$pattern"
 }
 
+# Isolate tests from user's global git config (core.hooksPath, aliases, etc.)
+# GIT_CONFIG_GLOBAL=/dev/null prevents the global config from leaking into test repos,
+# which would cause install-git-hooks.sh --yes to abort on core.hooksPath detection.
+export GIT_CONFIG_GLOBAL=/dev/null
+
 # Cleanup function
 cleanup() {
     echo "  🧹 Cleaning up test directories..."

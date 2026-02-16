@@ -7,19 +7,18 @@ set -e
 echo "🔍 Running pre-commit checks..."
 
 # 1. Doc timestamp verification (addresses recurring lag issue)
+# Canonical format: **Last Updated:** YYYY-MM-DD-HH-MM (matches doc-timestamp skill)
 echo "  📝 Checking doc timestamps..."
 today=$(date +%Y-%m-%d)
-# shellcheck disable=SC2013  # word splitting on filenames is intentional (no spaces in .md paths)
-for file in $(git diff --cached --name-only --diff-filter=ACM | grep '\.md$'); do
-    if [ -f "$file" ]; then
-        if ! grep -q "^\*\*Last Updated:\*\* $today" "$file"; then
-            echo "  ⚠️  $file: timestamp not updated to today ($today)"
-            echo "     Run: /doc-timestamp or manually update"
-            echo "     Skipping check (warning only)"
-            # Don't block, just warn
-        fi
+while IFS= read -r -d '' file; do
+    [ -f "$file" ] || continue
+    if ! grep -q "^\*\*Last Updated:\*\* $today" "$file"; then
+        echo "  ⚠️  $file: timestamp not updated to today ($today)"
+        echo "     Run: /doc-timestamp or manually update"
+        echo "     Skipping check (warning only)"
+        # Don't block, just warn
     fi
-done
+done < <(git diff --cached --name-only --diff-filter=ACM -z | grep -z '\.md$')
 
 # 2. Protect user-content/ directory (human-only zone)
 if git diff --cached --name-only | grep -q '^user-content/'; then

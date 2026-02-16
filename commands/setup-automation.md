@@ -108,8 +108,13 @@ mkdir -p do-work      # Task queue for autonomous work
 mkdir -p user-content      # Human-only zone (hook-protected)
 
 # Add READMEs to tracked directories (if not already present)
+SETUP_DATE=$(date +"%Y-%m-%d-%H-%M")
+
 if [ ! -f "do-work/README.md" ]; then
-    cat > do-work/README.md << 'DOWORK'
+    cat > do-work/README.md << DOWORK
+**Created:** $SETUP_DATE
+**Last Updated:** $SETUP_DATE
+
 # Task Queue
 
 Drop .md files here for the agent to process with /do-work.
@@ -119,7 +124,10 @@ DOWORK
 fi
 
 if [ ! -f "user-content/README.md" ]; then
-    cat > user-content/README.md << 'CONTENT'
+    cat > user-content/README.md << CONTENT
+**Created:** $SETUP_DATE
+**Last Updated:** $SETUP_DATE
+
 # Content (Human-Only Zone)
 
 Agents may read files here for context but must never modify them.

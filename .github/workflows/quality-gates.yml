@@ -29,7 +29,7 @@ jobs:
 
       - name: Validate JSON files
         run: |
-          for file in settings.template.json .github/workflows/*.json .github/markdown-link-check-config.json .markdownlint.json; do
+          for file in settings.template.json .github/workflows/*.json .github/rulesets/*.json .github/markdown-link-check-config.json .markdownlint.json; do
             if [ -f "$file" ]; then
               echo "Validating $file..."
               jq empty "$file" || exit 1

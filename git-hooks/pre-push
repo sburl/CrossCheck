@@ -103,8 +103,9 @@ fi
 
 # 3. Verify no merge conflicts markers
 echo "  🔀 Checking for merge conflict markers..."
-# Look for conflict markers in added/modified lines (starts with +)
-if git diff "$remote_branch"..HEAD 2>/dev/null | grep -E '^\+' | grep -qE '(<<<<<<<|=======|>>>>>>>)'; then
+# Match conflict markers at the start of added lines only (right after diff's + prefix)
+# This avoids false positives on decorative separators like # ============================
+if git diff "$remote_branch"..HEAD 2>/dev/null | grep -qE '^\+(<{7} |={7}$|>{7} )'; then
     echo "  ❌ Merge conflict markers found in committed code"
     echo "     Resolve conflicts before pushing"
     exit 1

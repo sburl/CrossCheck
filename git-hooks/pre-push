@@ -24,11 +24,13 @@ fi
 # 1. Verify ALL tracked markdown files have timestamp metadata
 # This checks existence of Created/Last Updated fields, not freshness.
 # Freshness (date is today) is only checked for edited files in pre-commit.
+# Uses committed content (git show HEAD:file) so unstaged local edits don't cause false blocks.
 echo "  📝 Verifying doc timestamps (all tracked .md files)..."
 missing_timestamps=()
 while IFS= read -r -d '' file; do
-    [ -f "$file" ] || continue
-    if ! grep -q '^\*\*Last Updated:\*\*' "$file" || ! grep -q '^\*\*Created:\*\*' "$file"; then
+    committed_content=$(git show "HEAD:$file" 2>/dev/null) || continue
+    if ! echo "$committed_content" | grep -q '^\*\*Last Updated:\*\*' || \
+       ! echo "$committed_content" | grep -q '^\*\*Created:\*\*'; then
         missing_timestamps+=("$file")
     fi
 done < <(git ls-files -z -- '*.md')

@@ -53,9 +53,13 @@ prepend_to_file() {
 }
 
 while IFS= read -r -d '' file; do
-    [ -f "$file" ] || continue
     # Skip symlinks — can't inject metadata into link targets
     [ -L "$file" ] && continue
+    # Skip files not present on disk (sparse checkout)
+    if [ ! -f "$file" ]; then
+        echo "  ⚠️  $file: tracked but not present on disk (sparse checkout?) — skipping"
+        continue
+    fi
 
     has_created=$(grep -c '^\*\*Created:\*\*' "$file" || true)
     has_updated=$(grep -c '^\*\*Last Updated:\*\*' "$file" || true)

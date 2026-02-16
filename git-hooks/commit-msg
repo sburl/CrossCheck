@@ -58,8 +58,18 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
             echo ""
             echo "🤖 Claude Code: Follow this workflow (DO NOT skip steps):"
             echo ""
+            # Resolve CrossCheck path dynamically
+            codex_script=""
+            repo_root=$(git rev-parse --show-toplevel 2>/dev/null)
+            for candidate in \
+                "${repo_root:+$repo_root/scripts/codex-approve-commit.sh}" \
+                "${CROSSCHECK_DIR:-}/scripts/codex-approve-commit.sh" \
+                "$HOME/.claude/CrossCheck/scripts/codex-approve-commit.sh" \
+                "$HOME/Documents/Developer/CrossCheck/scripts/codex-approve-commit.sh"; do
+                [ -n "$candidate" ] && [ -f "$candidate" ] && { codex_script="$candidate"; break; }
+            done
             echo "   Step 1: Get review prompt"
-            echo "   ~/.claude/CrossCheck/scripts/codex-approve-commit.sh"
+            echo "   ${codex_script:-\$(find ~/.claude ~/Documents/Developer -path '*/CrossCheck/scripts/codex-approve-commit.sh' 2>/dev/null | head -1)}"
             echo ""
             echo "   Step 2: Send prompt to Codex via terminal"
             echo "   Copy the output and paste to Codex in your terminal session"

@@ -21,27 +21,40 @@ if ! git rev-parse --verify "$remote_branch" >/dev/null 2>&1; then
     remote_branch=""
 fi
 
-# 1. Verify all markdown files have timestamps (skip if no upstream)
-if [ -n "$remote_branch" ]; then
-    echo "  📝 Verifying doc timestamps..."
-    modified_md_files=$(git diff --name-only "$remote_branch"..HEAD 2>/dev/null | grep '\.md$' || true)
-else
-    # No upstream - check all tracked md files instead
-    echo "  📝 Verifying doc timestamps (all files, no upstream to diff)..."
-    modified_md_files=$(git ls-files '*.md' || true)
-fi
+# 1. Verify ALL tracked markdown files have timestamp metadata
+# This checks existence of Created/Last Updated fields, not freshness.
+# Freshness (date is today) is only checked for edited files in pre-commit.
+echo "  📝 Verifying doc timestamps (all tracked .md files)..."
+missing_timestamps=""
+for file in $(git ls-files '*.md'); do
+    [ -f "$file" ] || continue
+    if ! grep -q '^\*\*Last Updated:\*\*' "$file" || ! grep -q '^\*\*Created:\*\*' "$file"; then
+        missing_timestamps="$missing_timestamps $file"
+    fi
+done
 
-if [ -n "$modified_md_files" ]; then
+if [ -n "$missing_timestamps" ]; then
+    echo ""
+    echo "  ❌ Markdown files missing timestamp metadata:"
     # shellcheck disable=SC2086  # intentional word splitting on file list
-    for file in $modified_md_files; do
-        if [ -f "$file" ]; then
-            if ! grep -q "^\*\*Last Updated:\*\*" "$file"; then
-                echo "  ❌ $file: missing timestamp metadata"
-                echo "     All markdown files need Created and Last Updated timestamps"
-                exit 1
-            fi
-        fi
+    for file in $missing_timestamps; do
+        echo "     - $file"
     done
+    echo ""
+    echo "  All .md files require **Created:** and **Last Updated:** fields."
+    echo "  The fix script will add timestamps using git history (not today's date)."
+    echo ""
+    echo "  🤖 Claude Code: Run this to auto-fix:"
+    echo ""
+    echo "     bash \$(git rev-parse --show-toplevel)/scripts/fix-timestamps.sh"
+    echo ""
+    echo "     Then commit the changes and push again."
+    echo ""
+    echo "  👤 Human: Same command, or manually add to each file:"
+    echo "     **Created:** YYYY-MM-DD-HH-MM"
+    echo "     **Last Updated:** YYYY-MM-DD-HH-MM"
+    echo ""
+    exit 1
 fi
 
 # 2. Check for TODO/FIXME/WIP in committed code (only added content lines, not diff headers)

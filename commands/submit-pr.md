@@ -114,7 +114,7 @@ Follow the `/pr-review` skill for the review process. Include the pre-review res
 
 The review loop (Codex feedback → assess → fix → re-review) is defined in `/pr-review` Steps 2-7. Do NOT merge unless Codex explicitly approves and specifies the merge destination.
 
-## Step 7: Post-Merge Automation
+## Step 5: Post-Merge Automation
 
 After merge, the `post-merge` git hook automatically:
 - Increments the PR counter (stored at `$(git rev-parse --git-common-dir)/hooks-pr-counter`)

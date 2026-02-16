@@ -23,14 +23,17 @@ if [ "$branch_checkout" = "1" ]; then
         # Use awk to filter by COMMAND column (field 1) to avoid matching file paths
         # Match common test runners: pytest*, jest*, vitest*, npm, node, python* running tests
         # Timeout after 5 seconds to avoid blocking checkout on large repos
-        if command -v timeout &> /dev/null; then
-            pids=$(timeout 5 lsof +D "$repo_path" 2>/dev/null | awk 'NR>1 && ($1 ~ /^(pytest|jest|vitest|npm|node|python)/) {print $2}' | sort -u || true)
-        elif command -v gtimeout &> /dev/null; then
-            pids=$(gtimeout 5 lsof +D "$repo_path" 2>/dev/null | awk 'NR>1 && ($1 ~ /^(pytest|jest|vitest|npm|node|python)/) {print $2}' | sort -u || true)
-        else
-            # No timeout command available; run lsof without timeout
-            pids=$(lsof +D "$repo_path" 2>/dev/null | awk 'NR>1 && ($1 ~ /^(pytest|jest|vitest|npm|node|python)/) {print $2}' | sort -u || true)
-        fi
+        # POSIX-compatible: run lsof in background, kill if it takes too long
+        lsof_out=$(mktemp)
+        lsof +D "$repo_path" > "$lsof_out" 2>/dev/null &
+        lsof_pid=$!
+        ( sleep 5 && kill "$lsof_pid" 2>/dev/null ) &
+        timer_pid=$!
+        wait "$lsof_pid" 2>/dev/null || true
+        kill "$timer_pid" 2>/dev/null || true
+        wait "$timer_pid" 2>/dev/null || true
+        pids=$(awk 'NR>1 && ($1 ~ /^(pytest|jest|vitest|npm|node|python)/) {print $2}' "$lsof_out" | sort -u || true)
+        rm -f "$lsof_out"
         if [ -n "$pids" ]; then
             echo "$pids" | xargs kill 2>/dev/null || true
             echo "  ✅ Killed repo-specific background processes"

@@ -17,11 +17,20 @@ if [ "$branch_checkout" = "1" ]; then
 
     # Use lsof to find processes with files open in this repo, then kill them
     # This ensures we only kill processes for THIS repo, not other repos
+    # Note: lsof +D can be slow on large repos, so we use a timeout
     if command -v lsof &> /dev/null; then
         # Find PIDs of test/watch processes with files open in this repo
         # Use awk to filter by COMMAND column (field 1) to avoid matching file paths
         # Match common test runners: pytest*, jest*, vitest*, npm, node, python* running tests
-        pids=$(lsof +D "$repo_path" 2>/dev/null | awk 'NR>1 && ($1 ~ /(pytest|jest|vitest|npm|node|python)/) {print $2}' | sort -u || true)
+        # Timeout after 5 seconds to avoid blocking checkout on large repos
+        if command -v timeout &> /dev/null; then
+            pids=$(timeout 5 lsof +D "$repo_path" 2>/dev/null | awk 'NR>1 && ($1 ~ /^(pytest|jest|vitest|npm|node|python)/) {print $2}' | sort -u || true)
+        elif command -v gtimeout &> /dev/null; then
+            pids=$(gtimeout 5 lsof +D "$repo_path" 2>/dev/null | awk 'NR>1 && ($1 ~ /^(pytest|jest|vitest|npm|node|python)/) {print $2}' | sort -u || true)
+        else
+            # No timeout command available; run lsof without timeout
+            pids=$(lsof +D "$repo_path" 2>/dev/null | awk 'NR>1 && ($1 ~ /^(pytest|jest|vitest|npm|node|python)/) {print $2}' | sort -u || true)
+        fi
         if [ -n "$pids" ]; then
             echo "$pids" | xargs kill 2>/dev/null || true
             echo "  ✅ Killed repo-specific background processes"

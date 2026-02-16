@@ -4,7 +4,7 @@ description: Initiate autonomous PR review process with Codex agent
 ---
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-09-00-00
+**Last Updated:** 2026-02-16-00-00
 
 # PR Review with Codex Agent
 
@@ -84,6 +84,11 @@ gh pr merge {PR_NUMBER} --merge  # or --squash or --rebase as appropriate
 ## Step 8: Return to Roadmap
 
 After merge, return to the roadmap/priorities and continue with next feature.
+
+## Relationship with /submit-pr
+
+`/submit-pr` is the full workflow: techdebt → pre-check → create PR → **this skill** (review loop).
+Use `/submit-pr` when starting from scratch. Use `/pr-review` directly when a PR already exists and just needs review.
 
 ## Automation Notes
 

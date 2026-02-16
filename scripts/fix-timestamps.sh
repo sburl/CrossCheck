@@ -4,6 +4,11 @@
 
 set -e
 
+# Clean up temp files on exit/interrupt
+TMPFILES=()
+cleanup_tmpfiles() { for f in "${TMPFILES[@]}"; do rm -f "$f"; done; }
+trap cleanup_tmpfiles EXIT
+
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
@@ -19,7 +24,7 @@ echo ""
 inject_after_line() {
     local file="$1" line_num="$2" text="$3"
     local tmp_file
-    tmp_file=$(mktemp)
+    tmp_file=$(mktemp); TMPFILES+=("$tmp_file")
     head -n "$line_num" "$file" > "$tmp_file"
     printf '\n%s\n' "$text" >> "$tmp_file"
     tail -n +"$((line_num + 1))" "$file" >> "$tmp_file"
@@ -31,7 +36,7 @@ inject_after_line() {
 inject_before_line() {
     local file="$1" line_num="$2" text="$3"
     local tmp_file
-    tmp_file=$(mktemp)
+    tmp_file=$(mktemp); TMPFILES+=("$tmp_file")
     if [ "$line_num" -gt 1 ]; then
         head -n "$((line_num - 1))" "$file" > "$tmp_file"
     else
@@ -47,7 +52,7 @@ inject_before_line() {
 prepend_to_file() {
     local file="$1" text="$2"
     local tmp_file
-    tmp_file=$(mktemp)
+    tmp_file=$(mktemp); TMPFILES+=("$tmp_file")
     printf '%s\n\n' "$text" | cat - "$file" > "$tmp_file"
     mv "$tmp_file" "$file"
 }

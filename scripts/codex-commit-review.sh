@@ -48,15 +48,21 @@ Severity: CRITICAL/HIGH only (skip medium/low for commit hooks)."
 LOG_FILE="$HOME/.claude/codex-commit-reviews.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
-(
-    echo "" >> "$LOG_FILE"
-    echo "=== Commit Review Needed: $(date +"%Y-%m-%d %H:%M:%S") ===" >> "$LOG_FILE"
-    echo "$PROMPT" >> "$LOG_FILE"
-    echo "" >> "$LOG_FILE"
-    echo "To review: Copy above prompt and send to Codex via Claude Code terminal" >> "$LOG_FILE"
-    echo "Or run: tail -f ~/.claude/codex-commit-reviews.log" >> "$LOG_FILE"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$LOG_FILE"
-) &
+# Rotate log if it exceeds 2000 lines (prevent unbounded growth)
+if [ -f "$LOG_FILE" ] && [ "$(wc -l < "$LOG_FILE")" -gt 2000 ]; then
+    tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+fi
+
+# Write synchronously (avoids interleaved output from rapid commits)
+{
+    echo ""
+    echo "=== Commit Review Needed: $(date +"%Y-%m-%d %H:%M:%S") ==="
+    echo "$PROMPT"
+    echo ""
+    echo "To review: Copy above prompt and send to Codex via Claude Code terminal"
+    echo "Or run: tail -f ~/.claude/codex-commit-reviews.log"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+} >> "$LOG_FILE"
 
 echo "📝 Commit logged for Codex review: $LOG_FILE" >&2
 

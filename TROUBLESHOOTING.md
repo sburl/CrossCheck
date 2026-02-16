@@ -481,27 +481,28 @@ See [commands/INSTALL.md](commands/INSTALL.md) for detailed skill installation.
 ## Tests Failing After Setup
 
 **Symptoms:**
-- Tests pass locally but fail in hook
+- Tests pass locally but fail in `/pre-pr-check`
 - "Test command not found" errors
+
+**Note:** The pre-push hook does NOT run tests directly. Tests are run by the
+`/pre-pr-check` skill (invoked by `/submit-pr`). The pre-push hook checks
+timestamps, markers, conflicts, and secrets.
 
 **Check test setup:**
 
 ```bash
 # For Node projects
 npm test
-# If this fails, hooks will fail too
 
 # For Python projects
 pytest
-# If this fails, hooks will fail too
 
-# Check which test command hook uses
-grep "test" ~/.claude/git-hooks/pre-push
+# Tests are run by /pre-pr-check, not by git hooks directly
 ```
 
 **Fix:**
 1. Ensure tests work manually first
-2. Hooks inherit your shell environment
+2. `/pre-pr-check` detects test commands from package.json, pytest.ini, etc.
 3. Check package.json has "test" script (Node)
 4. Check pytest is installed (Python)
 

@@ -192,12 +192,11 @@ vim ~/.claude/git-hooks/pre-commit
 **Common tweaks:**
 
 ```bash
-# 1. Allow TODO markers
-# Comment out lines ~45-50:
-# if grep -r "TODO\\|FIXME" . 2>/dev/null | grep -v ".git"; then
-#     echo "❌ Found TODO/FIXME markers"
-#     exit 1
-# fi
+# 1. TODO/FIXME markers
+# Note: pre-commit does NOT block on TODO markers.
+# The pre-push hook warns about TODO/FIXME/WIP in committed code
+# but allows push in non-interactive mode. To suppress warnings,
+# edit ~/.claude/git-hooks/pre-push and comment out the markers check.
 
 # 2. Disable secrets detection for specific patterns
 # Add to exceptions:

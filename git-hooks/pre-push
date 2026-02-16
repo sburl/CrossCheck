@@ -21,27 +21,64 @@ if ! git rev-parse --verify "$remote_branch" >/dev/null 2>&1; then
     remote_branch=""
 fi
 
-# 1. Verify all markdown files have timestamps (skip if no upstream)
-if [ -n "$remote_branch" ]; then
-    echo "  📝 Verifying doc timestamps..."
-    modified_md_files=$(git diff --name-only "$remote_branch"..HEAD 2>/dev/null | grep '\.md$' || true)
-else
-    # No upstream - check all tracked md files instead
-    echo "  📝 Verifying doc timestamps (all files, no upstream to diff)..."
-    modified_md_files=$(git ls-files '*.md' || true)
-fi
+# 1. Verify ALL tracked markdown files have timestamp metadata
+# This checks existence of Created/Last Updated fields, not freshness.
+# Freshness (date is today) is only checked for edited files in pre-commit.
+# Uses committed content (git show HEAD:file) so unstaged local edits don't cause false blocks.
+echo "  📝 Verifying doc timestamps (all tracked .md files)..."
+missing_timestamps=()
+while IFS= read -r -d '' file; do
+    # Skip symlinks and files not present on disk (sparse checkout)
+    [ -L "$file" ] && continue
+    [ -f "$file" ] || continue
+    committed_content=$(git show "HEAD:$file" 2>/dev/null) || continue
+    if ! echo "$committed_content" | grep -q '^\*\*Last Updated:\*\*' || \
+       ! echo "$committed_content" | grep -q '^\*\*Created:\*\*'; then
+        missing_timestamps+=("$file")
+    fi
+done < <(git ls-files -z -- '*.md')
 
-if [ -n "$modified_md_files" ]; then
-    # shellcheck disable=SC2086  # intentional word splitting on file list
-    for file in $modified_md_files; do
-        if [ -f "$file" ]; then
-            if ! grep -q "^\*\*Last Updated:\*\*" "$file"; then
-                echo "  ❌ $file: missing timestamp metadata"
-                echo "     All markdown files need Created and Last Updated timestamps"
-                exit 1
-            fi
+if [ "${#missing_timestamps[@]}" -gt 0 ]; then
+    echo ""
+    echo "  ❌ Markdown files missing timestamp metadata:"
+    for file in "${missing_timestamps[@]}"; do
+        echo "     - $file"
+    done
+    echo ""
+    echo "  All .md files require **Created:** and **Last Updated:** fields."
+    echo "  The fix script will add timestamps using git history (falls back to"
+    echo "  current date only for files with no git history)."
+    echo ""
+    # Resolve fix script: repo-local first, then CrossCheck well-known paths
+    fix_script=""
+    repo_root=$(git rev-parse --show-toplevel)
+    for candidate in \
+        "$repo_root/scripts/fix-timestamps.sh" \
+        "${CROSSCHECK_DIR:-}/scripts/fix-timestamps.sh" \
+        "$HOME/.claude/CrossCheck/scripts/fix-timestamps.sh" \
+        "$HOME/Documents/Developer/CrossCheck/scripts/fix-timestamps.sh"; do
+        if [ -f "$candidate" ]; then
+            fix_script="$candidate"
+            break
         fi
     done
+
+    echo "  🤖 Claude Code: Run this to auto-fix:"
+    echo ""
+    if [ -n "$fix_script" ]; then
+        echo "     bash \"$fix_script\""
+    else
+        echo "     bash \"\$(git rev-parse --show-toplevel)/scripts/fix-timestamps.sh\""
+        echo "     (If not found, check CROSSCHECK_DIR or ~/.claude/CrossCheck/)"
+    fi
+    echo ""
+    echo "     Then commit the changes and push again."
+    echo ""
+    echo "  👤 Human: Same command, or manually add to each file:"
+    echo "     **Created:** YYYY-MM-DD-HH-MM"
+    echo "     **Last Updated:** YYYY-MM-DD-HH-MM"
+    echo ""
+    exit 1
 fi
 
 # 2. Check for TODO/FIXME/WIP in committed code (only added content lines, not diff headers)

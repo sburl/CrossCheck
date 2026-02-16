@@ -4,7 +4,7 @@ description: Automated PR submission - runs pre-checks, creates PR, and starts r
 ---
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-09-00-00
+**Last Updated:** 2026-02-16-00-00
 
 # Submit PR (Automated)
 
@@ -108,46 +108,11 @@ EOF
 PR_NUMBER=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number')
 ```
 
-## Step 4: Generate Codex Review Prompt
+## Step 4: Initiate Codex Review
 
-**Generate Codex prompt with pre-review results:**
+Follow the `/pr-review` skill for the review process. Include the pre-review results from Step 1.5 in the Codex prompt so the reviewer knows what was already checked.
 
-```
-You are an expert in reviewing code for bugs, usability, and merge suitability. An agent has just performed work in this repo and submitted PR ${PR_NUMBER}.
-
-PRE-REVIEW CHECKS COMPLETED:
-[Include the pre-review documentation from Step 1.5]
-
-Please use GitHub CLI to review this PR and assess its suitability to be merged into the branch it came from or to main. Consider the pre-review checks that were already completed. You are connected directly to the agent so speak directly to it. Your only responsibility is to find and report issues so you should not offer to perform any coding on behalf of the agent. If the code is allowed to be merged please say so. The other agent will only proceed with merging the code if you explicitly tell it to merge and where to merge it.
-```
-
-## Step 5: Pause for User Action
-
-Tell the user:
-
-```
-✅ PR #${PR_NUMBER} created successfully!
-
-Pre-review checks completed:
-[Show summary from Step 1.5]
-
-Next steps:
-1. Open new terminal in same repo
-2. Run this Codex command (includes pre-review context):
-
-[Codex prompt with pre-review results]
-
-3. Copy Codex response and return to this session
-4. I'll continue from there
-```
-
-## Step 6: Wait for Codex Feedback
-
-When user provides Codex feedback, automatically:
-1. Critically assess feedback
-2. Make necessary changes
-3. Push fixes and continue review loop
-4. Merge when explicitly approved
+The review loop (Codex feedback → assess → fix → re-review) is defined in `/pr-review` Steps 2-7. Do NOT merge unless Codex explicitly approves and specifies the merge destination.
 
 ## Step 7: Post-Merge Automation
 

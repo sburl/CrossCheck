@@ -33,7 +33,7 @@ fi
 echo "  🔒 Checking for secrets..."
 
 # Check for common API key patterns (only in added lines, not deletions)
-if git diff --cached | grep -E '^\+' | grep -qiE '(api_key|apikey|password|secret|token|aws_access|private_key|bearer|auth|credential)(\s*[=:]\s*)["\x27]?(sk-|pk-|[a-zA-Z0-9_-]{20,})["\x27]?'; then
+if git diff --cached | grep -E '^\+[^+]' | grep -qiE '(api_key|apikey|password|secret|token|aws_access|private_key|bearer|auth|credential)(\s*[=:]\s*)["\x27]?(sk-|pk-|[a-zA-Z0-9_-]{20,})["\x27]?'; then
     echo "  ❌ Possible secret detected in staged changes"
     echo "     Common patterns: API keys, tokens, passwords (20+ chars)"
     echo "     Review carefully. If false positive: --no-verify is blocked by permissions"
@@ -41,7 +41,7 @@ if git diff --cached | grep -E '^\+' | grep -qiE '(api_key|apikey|password|secre
 fi
 
 # Check specifically for OpenAI/Anthropic API keys (these are never false positives)
-if git diff --cached | grep -E '^\+' | grep -qE '(OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY).*=.*["\x27]?sk-(proj-|ant-)?[a-zA-Z0-9]{20,}'; then
+if git diff --cached | grep -E '^\+[^+]' | grep -qE '(OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY).*=.*["\x27]?sk-(proj-|ant-)?[a-zA-Z0-9]{20,}'; then
     echo "  ❌ OpenAI/Anthropic API key detected - MUST NOT COMMIT"
     echo "     Use environment variables: export OPENAI_API_KEY=\$YOUR_KEY"
     exit 1
@@ -56,7 +56,7 @@ fi
 
 # 4. Check for debug statements
 echo "  🐛 Checking for debug code..."
-if git diff --cached | grep -E '^\+' | grep -qE '\b(console\.log|debugger|import pdb|breakpoint\(\)|print\()'; then
+if git diff --cached | grep -E '^\+[^+]' | grep -qE '\b(console\.log|debugger|import pdb|breakpoint\(\)|print\()'; then
     echo "  ⚠️  Debug statements found (console.log, debugger, pdb, breakpoint, print)"
     echo "     Consider removing before commit"
     # Don't block, just warn

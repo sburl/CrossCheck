@@ -110,10 +110,15 @@ echo ""
 # 6. Install agents (optional)
 echo "📝 Step 6: Install agents..."
 if [ -d "$CROSSCHECK_DIR/agents" ]; then
-    cp -r "$CROSSCHECK_DIR/agents/"* "$HOME/.claude/agents/" 2>/dev/null || true
-    echo "   ✅ Agents copied to ~/.claude/agents/"
+    mkdir -p "$HOME/.claude/agents"
+    if cp -r "$CROSSCHECK_DIR/agents/"* "$HOME/.claude/agents/" 2>/dev/null; then
+        agent_count=$(ls "$HOME/.claude/agents/" 2>/dev/null | wc -l | tr -d ' ')
+        echo "   ✅ Installed $agent_count agents to ~/.claude/agents/"
+    else
+        echo "   ⚠️  Failed to copy agents (check permissions)"
+    fi
 else
-    echo "   ⚠️  No agents directory found"
+    echo "   ⚠️  No agents directory found in $CROSSCHECK_DIR"
 fi
 
 echo ""

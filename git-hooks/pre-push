@@ -121,7 +121,7 @@ else
     # Fallback: use base64 encoding of path (full hash to avoid collisions)
     REPO_HASH=$(git rev-parse --show-toplevel | base64 | tr -d '=\n/')
 fi
-PRE_CHECK_MARKER="/tmp/CrossCheck-prechecks-$REPO_HASH"
+PRE_CHECK_MARKER="/tmp/CrossCheck-prechecks-${REPO_HASH}-${current_branch}"
 
 echo "  🔍 Checking for pre-PR quality checks..."
 
@@ -167,8 +167,13 @@ echo "  🔒 Running security checks..."
 # Dependency audit (npm)
 if [ -f "package-lock.json" ] && command -v npm >/dev/null 2>&1; then
     audit_output=$(npm audit --audit-level=high --json 2>/dev/null || true)
-    high_vulns=$(echo "$audit_output" | grep -o '"high":[0-9]*' | grep -o '[0-9]*' || echo "0")
-    crit_vulns=$(echo "$audit_output" | grep -o '"critical":[0-9]*' | grep -o '[0-9]*' || echo "0")
+    if command -v jq >/dev/null 2>&1; then
+        high_vulns=$(echo "$audit_output" | jq '.metadata.vulnerabilities.high // 0' 2>/dev/null || echo "0")
+        crit_vulns=$(echo "$audit_output" | jq '.metadata.vulnerabilities.critical // 0' 2>/dev/null || echo "0")
+    else
+        high_vulns=$(echo "$audit_output" | grep -o '"high":[0-9]*' | grep -o '[0-9]*' || echo "0")
+        crit_vulns=$(echo "$audit_output" | grep -o '"critical":[0-9]*' | grep -o '[0-9]*' || echo "0")
+    fi
     if [ "$high_vulns" != "0" ] || [ "$crit_vulns" != "0" ]; then
         echo "  ⚠️  npm audit: $high_vulns high, $crit_vulns critical vulnerabilities"
         echo "     Run: npm audit fix"

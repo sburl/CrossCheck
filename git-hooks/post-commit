@@ -51,7 +51,7 @@ HOOK_DIR="$(dirname "$0")/post-commit.d"
 if [ -d "$HOOK_DIR" ]; then
     for hook in "$HOOK_DIR"/*; do
         if [ -x "$hook" ] && [ -f "$hook" ]; then
-            "$hook" || true  # Don't fail entire commit if hook fails
+            "$hook" || echo "  ⚠️  post-commit extension $(basename "$hook") failed" >&2
         fi
     done
 fi

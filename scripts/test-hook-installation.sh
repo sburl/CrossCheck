@@ -52,8 +52,8 @@ trap cleanup EXIT
 # Poll for log match instead of fixed sleep (more robust on slow systems)
 wait_for_log_match() {
     local pattern="$1" since="$2" max_attempts="${3:-10}"
-    local i
-    for i in $(seq 1 "$max_attempts"); do
+    local _attempt
+    for _attempt in $(seq 1 "$max_attempts"); do
         if codex_log_has_new_match "$pattern" "$since"; then
             return 0
         fi

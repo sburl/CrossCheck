@@ -27,11 +27,9 @@ TEST_DIR=""
 # Isolate tests from user's global git config
 export GIT_CONFIG_GLOBAL=/dev/null
 
-# Cleanup function
+# Cleanup function — remove all test directories from this run (keyed by PID)
 cleanup() {
-    if [ -n "$TEST_DIR" ]; then
-        rm -rf "$TEST_DIR" 2>/dev/null || true
-    fi
+    rm -rf /tmp/hook-behavior-test-*-$$ 2>/dev/null || true
 }
 trap cleanup EXIT
 

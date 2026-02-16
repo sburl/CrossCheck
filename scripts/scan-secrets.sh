@@ -46,6 +46,10 @@ PATTERNS=(
 # Build combined regex
 COMBINED=$(IFS='|'; echo "${PATTERNS[*]}")
 
+# False-positive patterns: documentation examples, placeholder keys, markdown pattern tables
+# These appear in security-review.md, test files, and conversation logs that loaded those files
+FP_FILTER='AKIAIOSFODNN7EXAMPLE|sk-proj-abcdef|sk-proj-abc123|sk-proj-test|sk-proj-xxxx|sk-ant-xxxx|sk_live_xxxx|ghp_xxxx'
+
 FOUND=0
 
 echo "🔒 Secret Scanner"
@@ -56,14 +60,22 @@ echo ""
 echo "📁 Scanning working tree..."
 if command -v rg >/dev/null 2>&1; then
     # Use ripgrep if available (much faster)
+    # Exclude scanner docs and test files to avoid self-referential false positives
     matches=$(rg -n --no-heading -g '!.git' -g '!node_modules' -g '!*.lock' -g '!*.min.js' \
+        -g '!*security-review*' -g '!*scan-secrets*' -g '!*test-hook*' \
         "$COMBINED" . 2>/dev/null || true)
 else
     matches=$(grep -rn --include='*.py' --include='*.js' --include='*.ts' --include='*.tsx' \
         --include='*.jsx' --include='*.go' --include='*.rs' --include='*.java' \
         --include='*.yml' --include='*.yaml' --include='*.json' --include='*.toml' \
         --include='*.env*' --include='*.md' --include='*.sh' \
-        -E "$COMBINED" . 2>/dev/null | grep -v '.git/' || true)
+        -E "$COMBINED" . 2>/dev/null | grep -v '.git/' \
+        | grep -v 'security-review' | grep -v 'scan-secrets' | grep -v 'test-hook' || true)
+fi
+
+# Filter known false positives from working tree results
+if [ -n "$matches" ]; then
+    matches=$(echo "$matches" | grep -vE "$FP_FILTER" || true)
 fi
 
 if [ -n "$matches" ]; then
@@ -98,7 +110,8 @@ if [ "$SCAN_HISTORY" = true ]; then
     echo "📜 Scanning git history (this may take a moment)..."
     history_matches=""
     for pattern in "sk-proj-" "sk-ant-" "AKIA" "ghp_" "sk_live_" "AIza"; do
-        found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline 2>/dev/null | head -5 || true)
+        # Exclude security-review.md from history results (contains example patterns)
+        found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline -- ':!*security-review*' ':!*scan-secrets*' 2>/dev/null | head -5 || true)
         if [ -n "$found" ]; then
             history_matches="$history_matches\n  Pattern '$pattern' found in deleted history:\n$found"
         fi
@@ -131,12 +144,25 @@ if [ "$SCAN_LOGS" = true ]; then
     # Claude Code conversation logs
     CLAUDE_PROJECTS="$HOME/.claude/projects"
     if [ -d "$CLAUDE_PROJECTS" ]; then
-        claude_hits=$(grep -rl -E "$COMBINED" "$CLAUDE_PROJECTS" 2>/dev/null | head -10 || true)
+        claude_hits=$(grep -rl -E "$COMBINED" "$CLAUDE_PROJECTS" 2>/dev/null | head -20 || true)
         if [ -n "$claude_hits" ]; then
-            log_matches="$log_matches\n  Claude conversation logs with secrets:"
+            verified_hits=""
             while IFS= read -r f; do
-                log_matches="$log_matches\n     $f"
+                # Re-check each file: filter out known false positives
+                # (documentation examples, placeholder keys loaded into conversation context)
+                real=$(grep -E "$COMBINED" "$f" 2>/dev/null | grep -vE "$FP_FILTER" || true)
+                if [ -n "$real" ]; then
+                    verified_hits="${verified_hits}${f}
+"
+                fi
             done <<< "$claude_hits"
+            if [ -n "$verified_hits" ]; then
+                log_matches="$log_matches\n  Claude conversation logs with secrets:"
+                while IFS= read -r f; do
+                    [ -z "$f" ] && continue
+                    log_matches="$log_matches\n     $f"
+                done <<< "$verified_hits"
+            fi
         fi
     fi
 

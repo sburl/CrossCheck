@@ -28,6 +28,8 @@ fi
 echo "  📝 Verifying doc timestamps (all tracked .md files)..."
 missing_timestamps=()
 while IFS= read -r -d '' file; do
+    # Skip symlinks — git show returns the link target text, not the referenced content
+    [ -L "$file" ] && continue
     committed_content=$(git show "HEAD:$file" 2>/dev/null) || continue
     if ! echo "$committed_content" | grep -q '^\*\*Last Updated:\*\*' || \
        ! echo "$committed_content" | grep -q '^\*\*Created:\*\*'; then

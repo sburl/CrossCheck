@@ -1,4 +1,5 @@
 ---
+name: ensemble-opinion
 description: 'Get multi-model opinions on a problem (Claude + Gemini + Codex)'
 ---
 

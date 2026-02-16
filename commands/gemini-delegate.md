@@ -1,4 +1,5 @@
 ---
+name: gemini-delegate
 description: "Delegate a coding task to Google Gemini agent for autonomous execution"
 ---
 

@@ -238,7 +238,7 @@ mv old-file.js garbage/
 | `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Claude + Codex + Gemini |
 | `/pr-review` | Manual PR review needed | Standard Codex review handoff workflow |
 | `/repo-assessment` | Every 3 PRs | Comprehensive Codex analysis of repo state |
-| `/security-review` | Every ~4 PRs or on demand | Dependency audit, secrets scan, trust model check |
+| `/security-review` | Every 3 PRs (waterfall) or on demand | Dependency audit, secrets scan, trust model check |
 | `/bug-review` | On demand or before major release | AI code patterns, concurrency, memory leaks, error handling |
 
 ### Git Operations

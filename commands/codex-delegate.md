@@ -1,4 +1,5 @@
 ---
+name: codex-delegate
 description: "Delegate a coding task to OpenAI Codex agent for autonomous execution"
 ---
 

@@ -1,5 +1,5 @@
 **Created:** 2026-02-11-00-00
-**Last Updated:** 2026-02-16-18-38
+**Last Updated:** 2026-02-17-00-00
 
 # Security (Boundary-Based Trust)
 
@@ -9,7 +9,7 @@
 
 - Can rebase, force-push, experiment freely
 - Agents have full control
-- Still block: `rm`, `git reset --hard`, `.env` reads (Read tool + cat/head/tail), `sudo`, `docker`, `while read` loops, data-sending `curl`, `git config` for hooks/aliases
+- Still block: `rm`, `git reset --hard`, sensitive file reads (`.env`, `.ssh`, `.aws`, `.pem`, `.key` via Read tool + cat/head/tail/sed/awk/grep), `sudo`, `docker`, `while read` loops, data-sending `curl` (POST/PUT/PATCH/-d/-F/-T/--json/--upload), `git config` for hooks/aliases, `git commit -n` (--no-verify short form)
 
 ## Main branch (server-side - strict)
 

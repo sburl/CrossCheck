@@ -219,7 +219,7 @@ CrossCheck uses a **single source of truth** pattern:
 │   ├── CLAUDE.md             # Source of truth for workflow
 │   ├── QUICK-REFERENCE.md    # Supporting reference (21 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history)
-│   ├── commands/             # 21 skills (copied to ~/.claude/commands/)
+│   ├── skill-sources/        # 21 skills (copied to ~/.claude/commands/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects

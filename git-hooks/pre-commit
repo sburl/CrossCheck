@@ -64,21 +64,17 @@ fi
 
 # 5. Verify tests exist for new code files
 echo "  🧪 Checking test coverage..."
-new_code_files=$(git diff --cached --name-only --diff-filter=A | grep -E '\.(py|ts|tsx|js|jsx)$' | grep -v -E '(test|spec|__tests__)' || true)
+while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    # Check for corresponding test file
+    basename_no_ext=$(basename "${file%.*}")
 
-if [ -n "$new_code_files" ]; then
-    # shellcheck disable=SC2086  # intentional word splitting on file list
-    for file in $new_code_files; do
-        # Check for corresponding test file
-        basename_no_ext=$(basename "${file%.*}")
-
-        # Look for test file in common patterns
-        if ! git ls-files | grep -qE "(test.*$basename_no_ext|$basename_no_ext.*test|$basename_no_ext.*spec|__tests__.*$basename_no_ext)"; then
-            echo "  ⚠️  No test file found for new file: $file"
-            echo "     Consider adding tests (warning only)"
-        fi
-    done
-fi
+    # Look for test file in common patterns
+    if ! git ls-files | grep -qE "(test.*$basename_no_ext|$basename_no_ext.*test|$basename_no_ext.*spec|__tests__.*$basename_no_ext)"; then
+        echo "  ⚠️  No test file found for new file: $file"
+        echo "     Consider adding tests (warning only)"
+    fi
+done < <(git diff --cached --name-only --diff-filter=A | grep -E '\.(py|ts|tsx|js|jsx)$' | grep -v -E '(test|spec|__tests__)')
 
 # 6. Security-sensitive change detection
 security_files=$(git diff --cached --name-only | grep -iE '(auth|security|permission|credential|token|secret|crypto|encrypt|ssl|tls|cert|\.env|config/.*secret|middleware/auth)' || true)

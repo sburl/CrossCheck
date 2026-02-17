@@ -193,7 +193,7 @@ fi
 
 # Re-scan for secrets in all staged changes since remote
 if [ -n "$remote_branch" ]; then
-    if git diff "$remote_branch"..HEAD | grep -E '^\+' | grep -qiE '(api_key|apikey|password|secret|token)(\s*[=:]\s*)["\x27]?(sk-|pk-|[a-zA-Z0-9_-]{20,})["\x27]?'; then
+    if git diff "$remote_branch"..HEAD | grep -E '^\+[^+]' | grep -qiE '(api_key|apikey|password|secret|token)(\s*[=:]\s*)["\x27]?(sk-|pk-|[a-zA-Z0-9_-]{20,})["\x27]?'; then
         echo "  ❌ Possible secret detected in changes being pushed"
         echo "     Review carefully before pushing"
         exit 1

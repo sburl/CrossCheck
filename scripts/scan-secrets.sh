@@ -114,9 +114,9 @@ else
         --include='*.yml' --include='*.yaml' --include='*.json' --include='*.toml' \
         --include='*.env*' --include='*.md' --include='*.sh' \
         -E "$COMBINED" . 2>/dev/null | grep -v '.git/' \
-        | grep -v './skill-sources/security-review.md' \
-        | grep -v './scripts/scan-secrets.sh' \
-        | grep -v './scripts/test-hook-behavior.sh' || true)
+        | grep -Fv './skill-sources/security-review.md' \
+        | grep -Fv './scripts/scan-secrets.sh' \
+        | grep -Fv './scripts/test-hook-behavior.sh' || true)
 fi
 
 # Filter known false positives from working tree results
@@ -157,7 +157,7 @@ if [ "$SCAN_HISTORY" = true ]; then
     history_matches=""
     for pattern in "sk-proj-" "sk-ant-" "AKIA" "ghp_" "sk_live_" "AIza"; do
         # Exclude security-review.md from history results (contains example patterns)
-        found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline -- ':!skill-sources/security-review.md' ':!scripts/scan-secrets.sh' 2>/dev/null | head -5 || true)
+        found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline -- ':!skill-sources/security-review.md' ':!commands/security-review.md' ':!scripts/scan-secrets.sh' 2>/dev/null | head -5 || true)
         if [ -n "$found" ]; then
             history_matches="$history_matches\n  Pattern '$pattern' found in deleted history:\n$found"
         fi

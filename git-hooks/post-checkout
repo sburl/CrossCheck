@@ -53,21 +53,37 @@ if [ "$branch_checkout" = "1" ]; then
     fi
 
     # 3. Update TODO.md context (replace header, don't prepend)
+    # Use a lockfile to prevent concurrent worktree checkouts from corrupting TODO.md
     if [ -f "TODO.md" ]; then
         current_branch=$(git branch --show-current)
         echo "  📝 Updating TODO.md branch context..."
-        # Strip any existing branch header lines, then prepend fresh one
-        sed -i.bak '/^## Current Branch:/d; /^[*]*Last switched:[*]*/d' TODO.md
-        # Remove leading blank lines left by stripping
-        sed -i.bak '/./,$!d' TODO.md
-        {
-            echo "## Current Branch: $current_branch"
-            echo "**Last switched:** $(date '+%Y-%m-%d %H:%M')"
-            echo ""
-            cat TODO.md
-        } > TODO.md.tmp
-        mv TODO.md.tmp TODO.md
-        rm -f TODO.md.bak
+        lockfile="$(git rev-parse --git-common-dir)/todo-md.lock"
+        # Acquire lock (timeout after 5s to avoid blocking checkout)
+        lock_acquired=false
+        for _i in 1 2 3 4 5; do
+            if (set -C; echo $$ > "$lockfile") 2>/dev/null; then
+                lock_acquired=true
+                break
+            fi
+            sleep 1
+        done
+        if [ "$lock_acquired" = true ]; then
+            # Strip any existing branch header lines, then prepend fresh one
+            sed -i.bak '/^## Current Branch:/d; /^[*]*Last switched:[*]*/d' TODO.md
+            # Remove leading blank lines left by stripping
+            sed -i.bak '/./,$!d' TODO.md
+            {
+                echo "## Current Branch: $current_branch"
+                echo "**Last switched:** $(date '+%Y-%m-%d %H:%M')"
+                echo ""
+                cat TODO.md
+            } > TODO.md.tmp
+            mv TODO.md.tmp TODO.md
+            rm -f TODO.md.bak
+            rm -f "$lockfile"
+        else
+            echo "  ⚠️  Skipped TODO.md update (locked by another worktree)"
+        fi
     fi
 
     echo "✅ Environment cleaned for new branch"

@@ -36,7 +36,7 @@ echo ""
 # Verify CrossCheck source exists (for both global and local modes)
 if [ ! -d "$CROSSCHECK_DIR/git-hooks" ]; then
     echo "❌ Error: CrossCheck hooks not found at $CROSSCHECK_DIR/git-hooks"
-    echo "   Run: git clone https://github.com/sburl/CrossCheck.git ~/.claude/CrossCheck"
+    echo "   Run: git clone https://github.com/sburl/CrossCheck.git ~/.crosscheck"
     exit 1
 fi
 
@@ -160,15 +160,15 @@ else
     echo ""
     echo "Usage:"
     echo "  # Install in current repo:"
-    echo "  ~/.claude/CrossCheck/scripts/install-git-hooks.sh"
+    echo "  ~/.crosscheck/scripts/install-git-hooks.sh"
     echo ""
     echo "  # Install globally for all repos:"
-    echo "  ~/.claude/CrossCheck/scripts/install-git-hooks.sh --global"
+    echo "  ~/.crosscheck/scripts/install-git-hooks.sh --global"
     exit 1
 fi
 
 echo ""
-echo "📖 Documentation: ~/.claude/CrossCheck/README.md"
+echo "📖 Documentation: ~/.crosscheck/README.md"
 echo "🔍 What was installed:"
 echo "  • pre-commit: Quality gates (timestamps, secrets, debug code)"
 echo "  • commit-msg: Conventional commits enforcement"

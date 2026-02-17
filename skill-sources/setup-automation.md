@@ -16,13 +16,13 @@ When this skill is invoked, do the following:
 
 1. **Run the bootstrap script (if first-time setup):**
    ```bash
-   ~/.claude/CrossCheck/scripts/bootstrap-crosscheck.sh
+   ~/.crosscheck/scripts/bootstrap-crosscheck.sh
    ```
    This clones/updates CrossCheck, installs settings, and offers to install git hooks globally.
 
 2. **Or install git hooks for the current repo only:**
    ```bash
-   ~/.claude/CrossCheck/scripts/install-git-hooks.sh
+   ~/.crosscheck/scripts/install-git-hooks.sh
    ```
 
 3. **Then follow Steps 1-5 below** to initialize repo structure, GitHub config, and workflow docs.
@@ -66,7 +66,7 @@ When this skill is invoked, do the following:
 ### Step 1: Install Git Hooks
 
 ```bash
-~/.claude/CrossCheck/scripts/install-git-hooks.sh
+~/.crosscheck/scripts/install-git-hooks.sh
 ```
 
 This installs local git hooks that trigger during your git operations.
@@ -80,7 +80,7 @@ If you want CI/CD automation:
 mkdir -p .github/workflows
 
 # Copy quality gates workflow from CrossCheck
-CROSSCHECK_DIR="${CROSSCHECK_DIR:-$HOME/.claude/CrossCheck}"
+CROSSCHECK_DIR="${CROSSCHECK_DIR:-$HOME/.crosscheck}"
 cp "$CROSSCHECK_DIR/.github/workflows/quality-gates.yml" .github/workflows/quality-gates.yml
 
 # Commit and push
@@ -162,7 +162,7 @@ OWNERS
 fi
 
 # Dependabot -- dependency update monitoring
-CROSSCHECK_DIR="${CROSSCHECK_DIR:-$HOME/.claude/CrossCheck}"
+CROSSCHECK_DIR="${CROSSCHECK_DIR:-$HOME/.crosscheck}"
 if [ ! -f ".github/dependabot.yml" ]; then
     cp "$CROSSCHECK_DIR/.github/dependabot.yml" .github/dependabot.yml
     echo "  Edit .github/dependabot.yml to uncomment ecosystems you use (npm, pip, docker)"
@@ -182,7 +182,7 @@ git commit -m "chore: add GitHub config (CODEOWNERS, dependabot, branch protecti
 
 ```bash
 # Copy CLAUDE.md to repo
-CROSSCHECK_DIR="${CROSSCHECK_DIR:-$HOME/.claude/CrossCheck}"
+CROSSCHECK_DIR="${CROSSCHECK_DIR:-$HOME/.crosscheck}"
 cp "$CROSSCHECK_DIR/CLAUDE.md" ./CLAUDE.md
 
 # Customize for your project
@@ -312,10 +312,10 @@ Default is 3 PRs. To change to 5:
 
 ```bash
 # In git hooks (source of truth):
-# Edit ~/.claude/CrossCheck/git-hooks/post-merge
+# Edit ~/.crosscheck/git-hooks/post-merge
 # Change: if [ "$pr_count" -ge 3 ]; then
 # To: if [ "$pr_count" -ge 5 ]; then
-# Then reinstall hooks: ~/.claude/CrossCheck/scripts/install-git-hooks.sh
+# Then reinstall hooks: ~/.crosscheck/scripts/install-git-hooks.sh
 ```
 
 ## Troubleshooting
@@ -327,7 +327,7 @@ HOOKS_DIR="$(git rev-parse --git-common-dir)/hooks"
 ls -la "$HOOKS_DIR/"
 
 # Reinstall
-~/.claude/CrossCheck/scripts/install-git-hooks.sh
+~/.crosscheck/scripts/install-git-hooks.sh
 ```
 
 ### GitHub Actions not triggering

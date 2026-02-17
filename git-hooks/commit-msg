@@ -64,6 +64,7 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
             for candidate in \
                 "${repo_root:+$repo_root/scripts/codex-approve-commit.sh}" \
                 "${CROSSCHECK_DIR:-}/scripts/codex-approve-commit.sh" \
+                "$HOME/.crosscheck/scripts/codex-approve-commit.sh" \
                 "$HOME/.claude/CrossCheck/scripts/codex-approve-commit.sh" \
                 "$HOME/Documents/Developer/CrossCheck/scripts/codex-approve-commit.sh"; do
                 [ -n "$candidate" ] && [ -f "$candidate" ] && { codex_script="$candidate"; break; }

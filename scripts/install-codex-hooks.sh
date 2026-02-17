@@ -35,7 +35,7 @@ echo "🔧 Installing Codex git hooks..."
 # Verify CrossCheck source exists
 if [ ! -d "$CROSSCHECK_DIR/git-hooks" ] || [ ! -d "$CROSSCHECK_DIR/scripts" ]; then
     echo "❌ Error: CrossCheck not found at $CROSSCHECK_DIR"
-    echo "   Run: git clone https://github.com/sburl/CrossCheck.git ~/.claude/CrossCheck"
+    echo "   Run: git clone https://github.com/sburl/CrossCheck.git ~/.crosscheck"
     exit 1
 fi
 
@@ -165,10 +165,10 @@ else
     echo ""
     echo "Usage:"
     echo "  # Install in current repo:"
-    echo "  ~/.claude/CrossCheck/scripts/install-codex-hooks.sh"
+    echo "  ~/.crosscheck/scripts/install-codex-hooks.sh"
     echo ""
     echo "  # Install globally for all repos:"
-    echo "  ~/.claude/CrossCheck/scripts/install-codex-hooks.sh --global"
+    echo "  ~/.crosscheck/scripts/install-codex-hooks.sh --global"
     exit 1
 fi
 

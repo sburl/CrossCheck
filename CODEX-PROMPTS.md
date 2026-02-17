@@ -1,7 +1,7 @@
 # Codex Agent Review Prompts
 
 **Created:** 2026-02-02-14-50
-**Last Updated:** 2026-02-11-20-00
+**Last Updated:** 2026-02-16-00-00
 
 This file contains the exact prompts to use when coordinating with Codex agent for architecture review, test review, PR reviews, and repo assessments.
 
@@ -326,10 +326,10 @@ The hook logs a review prompt to `~/.claude/codex-commit-reviews.log` for asynch
 
 ```bash
 # Install for current repo only:
-~/.claude/CrossCheck/scripts/install-codex-hooks.sh
+~/.crosscheck/scripts/install-codex-hooks.sh
 
 # Install globally for all repos:
-~/.claude/CrossCheck/scripts/install-codex-hooks.sh --global
+~/.crosscheck/scripts/install-codex-hooks.sh --global
 ```
 
 The installer uses a `post-commit.d/` dispatcher pattern -- your existing post-commit hooks are preserved.

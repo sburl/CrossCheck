@@ -15,10 +15,23 @@ remote_branch=$(git rev-parse --abbrev-ref @{u} 2>/dev/null || echo "origin/$cur
 if ! git rev-parse --verify "$remote_branch" >/dev/null 2>&1; then
     # No upstream exists - this is first push
     echo "ℹ️  No upstream branch found - this appears to be first push"
-    echo "   Skipping diff-based checks (no remote to compare against)"
-    echo "   Pre-push validation will run on subsequent pushes"
-    # Still run pre-check marker validation below
+    echo "   Using origin/main as diff base for first push"
+    # Fall back to main/master for diff-based checks so first push isn't exempt
     remote_branch=""
+fi
+
+# Compute a diff base: prefer remote_branch, fall back to main/master for first push
+diff_base="$remote_branch"
+if [ -z "$diff_base" ]; then
+    if git rev-parse --verify origin/main >/dev/null 2>&1; then
+        diff_base="origin/main"
+    elif git rev-parse --verify origin/master >/dev/null 2>&1; then
+        diff_base="origin/master"
+    elif git rev-parse --verify main >/dev/null 2>&1; then
+        diff_base="main"
+    else
+        echo "  ℹ️  No diff base found; skipping diff-based checks"
+    fi
 fi
 
 # 1. Verify ALL tracked markdown files have timestamp metadata
@@ -83,33 +96,37 @@ if [ "${#missing_timestamps[@]}" -gt 0 ]; then
 fi
 
 # 2. Check for TODO/FIXME/WIP in committed code (only added content lines, not diff headers)
-echo "  🔍 Checking for development markers..."
-# Use ^\+[^+] to exclude diff metadata lines (+++ b/file)
-# Exception: TODO.md is Claude's session scratchpad filename - allow references to it
-# Exception: exclude lines that define the pattern we're searching for (meta)
-marked_lines=$(git diff "$remote_branch"..HEAD 2>/dev/null | grep -E '^\+[^+]' | grep -E '\b(TODO|FIXME|WIP|XXX|HACK)\b' | grep -v 'TODO\.md' | grep -v '(TODO|FIXME' || true)
-if [ -n "$marked_lines" ]; then
-    echo "  ⚠️  Development markers found (TODO/FIXME/WIP/XXX/HACK)"
-    echo "     Consider removing or documenting these before push"
-    if [ -t 0 ]; then
-        read -p "     Push anyway? (y/N) " -n 1 -r < /dev/tty
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
+if [ -n "$diff_base" ]; then
+    echo "  🔍 Checking for development markers..."
+    # Use ^\+[^+] to exclude diff metadata lines (+++ b/file)
+    # Exception: TODO.md is Claude's session scratchpad filename - allow references to it
+    # Exception: exclude lines that define the pattern we're searching for (meta)
+    marked_lines=$(git diff "${diff_base}..HEAD" 2>/dev/null | grep -E '^\+[^+]' | grep -E '\b(TODO|FIXME|WIP|XXX|HACK)\b' | grep -v 'TODO\.md' | grep -v '(TODO|FIXME' || true)
+    if [ -n "$marked_lines" ]; then
+        echo "  ⚠️  Development markers found (TODO/FIXME/WIP/XXX/HACK)"
+        echo "     Consider removing or documenting these before push"
+        if [ -t 0 ]; then
+            read -p "     Push anyway? (y/N) " -n 1 -r < /dev/tty
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                exit 1
+            fi
+        else
+            echo "     Non-interactive: allowing push (run in terminal to confirm)"
         fi
-    else
-        echo "     Non-interactive: allowing push (run in terminal to confirm)"
     fi
 fi
 
 # 3. Verify no merge conflicts markers
-echo "  🔀 Checking for merge conflict markers..."
-# Match conflict markers at the start of added lines only (right after diff's + prefix)
-# This avoids false positives on decorative separators like # ============================
-if git diff "$remote_branch"..HEAD 2>/dev/null | grep -qE '^\+(<{7} |={7}$|>{7} )'; then
-    echo "  ❌ Merge conflict markers found in committed code"
-    echo "     Resolve conflicts before pushing"
-    exit 1
+if [ -n "$diff_base" ]; then
+    echo "  🔀 Checking for merge conflict markers..."
+    # Match conflict markers at the start of added lines only (right after diff's + prefix)
+    # This avoids false positives on decorative separators like # ============================
+    if git diff "${diff_base}..HEAD" 2>/dev/null | grep -qE '^\+(<{7} |={7}$|>{7} )'; then
+        echo "  ❌ Merge conflict markers found in committed code"
+        echo "     Resolve conflicts before pushing"
+        exit 1
+    fi
 fi
 
 # 4. Pre-PR quality checks (integrates with Claude Code workflow)
@@ -191,9 +208,9 @@ if [ -f "requirements.txt" ] && command -v pip-audit >/dev/null 2>&1; then
     fi
 fi
 
-# Re-scan for secrets in all staged changes since remote
-if [ -n "$remote_branch" ]; then
-    if git diff "$remote_branch"..HEAD | grep -E '^\+[^+]' | grep -qiE '(api_key|apikey|password|secret|token)(\s*[=:]\s*)["\x27]?(sk-|pk-|[a-zA-Z0-9_-]{20,})["\x27]?'; then
+# Re-scan for secrets in all changes since diff base
+if [ -n "$diff_base" ]; then
+    if git diff "$diff_base"..HEAD | grep -E '^\+[^+]' | grep -qiE '(api_key|apikey|password|secret|token)(\s*[=:]\s*)["\x27]?(sk-|pk-|[a-zA-Z0-9_-]{20,})["\x27]?'; then
         echo "  ❌ Possible secret detected in changes being pushed"
         echo "     Review carefully before pushing"
         exit 1
@@ -201,9 +218,9 @@ if [ -n "$remote_branch" ]; then
 fi
 
 # 6. Git history reminder (detect rebased or amended commits)
-if [ -n "$remote_branch" ]; then
+if [ -n "$diff_base" ]; then
     # Check if local history diverged from remote (sign of rebase/amend)
-    diverged_commits=$(git log "$remote_branch"..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
+    diverged_commits=$(git log "$diff_base"..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
     if [ "$diverged_commits" -gt 0 ]; then
         echo "  📝 Pushing $diverged_commits commit(s). Git history rules (docs/rules/git-history.md):"
         echo "     • Main: NEVER rebase, amend, or force-push"

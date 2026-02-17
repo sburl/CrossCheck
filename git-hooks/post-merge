@@ -24,6 +24,16 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
         merged_branch=$(git log --merges --oneline HEAD@{1}..HEAD 2>/dev/null | head -1 | grep -oE "from [^/]+/([^ ]+)" | sed -E "s/from [^/]+\/([^ ]+).*/\1/")
     fi
 
+    # Fallback for squash merges: look at commit message subject for PR branch pattern
+    # GitHub squash merge subjects: "Title (#N)" — extract branch from recently deleted remote refs
+    if [ -z "$merged_branch" ]; then
+        # Check if HEAD commit message references a PR number
+        pr_num=$(git log -1 --format=%s 2>/dev/null | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+        if [ -n "$pr_num" ] && command -v gh >/dev/null 2>&1; then
+            merged_branch=$(gh pr view "$pr_num" --json headRefName --jq '.headRefName' 2>/dev/null || true)
+        fi
+    fi
+
     if [ -n "$merged_branch" ] && [ "$merged_branch" != "main" ] && [ "$merged_branch" != "master" ]; then
         echo "  🗑️  Deleting local merged branch: $merged_branch"
         git branch -d "$merged_branch" 2>/dev/null && echo "  ✅ Local branch deleted" || echo "  ℹ️  Branch already deleted or not found"
@@ -79,14 +89,21 @@ fi
 
 # 4. Track PR merges for assessment waterfall (every 3 PRs)
 # post-merge fires on `git pull` after a PR merge -- 1:1 proxy for "PR merged"
+# Guard: only increment if new commits were actually pulled (HEAD moved)
+# shellcheck disable=SC2016,SC1083  # HEAD@{1} is git syntax, not shell variable
+new_commits=$(git log --oneline HEAD@{1}..HEAD 2>/dev/null | wc -l | tr -d ' ')
 PR_COUNTER_FILE="$(git rev-parse --git-common-dir)/hooks-pr-counter"
 if [ ! -f "$PR_COUNTER_FILE" ]; then
     echo "0" > "$PR_COUNTER_FILE"
 fi
 
-pr_count=$(< "$PR_COUNTER_FILE")
-pr_count=$((pr_count + 1))
-echo "$pr_count" > "$PR_COUNTER_FILE"
+if [ "${new_commits:-0}" -gt 0 ]; then
+    pr_count=$(< "$PR_COUNTER_FILE")
+    pr_count=$((pr_count + 1))
+    echo "$pr_count" > "$PR_COUNTER_FILE"
+else
+    pr_count=$(< "$PR_COUNTER_FILE")
+fi
 
 if [ "$pr_count" -ge 3 ]; then
     echo ""

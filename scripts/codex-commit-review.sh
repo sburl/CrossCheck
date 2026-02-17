@@ -48,16 +48,49 @@ Severity: CRITICAL/HIGH only (skip medium/low for commit hooks)."
 LOG_FILE="$HOME/.claude/codex-commit-reviews.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
-(
-    echo "" >> "$LOG_FILE"
-    echo "=== Commit Review Needed: $(date +"%Y-%m-%d %H:%M:%S") ===" >> "$LOG_FILE"
-    echo "$PROMPT" >> "$LOG_FILE"
-    echo "" >> "$LOG_FILE"
-    echo "To review: Copy above prompt and send to Codex via Claude Code terminal" >> "$LOG_FILE"
-    echo "Or run: tail -f ~/.claude/codex-commit-reviews.log" >> "$LOG_FILE"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$LOG_FILE"
-) &
+# Rotate and append under a single lock to prevent concurrent writers from
+# losing entries during mv-based rotation (writer opens old inode, rotation
+# replaces file, writer appends to unlinked inode — entry lost).
+LOCK_FILE="$LOG_FILE.lock"
+LOG_ENTRY="$(cat <<ENTRY
 
-echo "📝 Commit logged for Codex review: $LOG_FILE" >&2
+=== Commit Review Needed: $(date +"%Y-%m-%d %H:%M:%S") ===
+$PROMPT
+
+To review: Copy above prompt and send to Codex via Claude Code terminal
+Or run: tail -F ~/.claude/codex-commit-reviews.log
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ENTRY
+)"
+
+# Acquire lock (noclobber = atomic create-or-fail), retry up to 2s
+acquired=false
+for _try in $(seq 1 20); do
+    if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
+        acquired=true
+        break
+    fi
+    sleep 0.1
+done
+
+if [ "$acquired" = true ]; then
+    trap 'rm -f "$LOCK_FILE"' EXIT
+    # Rotate if needed
+    if [ -f "$LOG_FILE" ] && [ "$(wc -l < "$LOG_FILE")" -gt 2000 ]; then
+        tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+    fi
+    # Append while still holding the lock (same inode guaranteed)
+    printf '%s\n' "$LOG_ENTRY" >> "$LOG_FILE"
+    rm -f "$LOCK_FILE"
+    trap - EXIT
+else
+    # Could not acquire lock after 2s — skip this entry to avoid racing
+    # with an active rotator (unlocked append can write to stale inode)
+    echo "⚠️  Codex review log busy, entry skipped (will appear in next commit)" >&2
+fi
+
+if [ "$acquired" = true ]; then
+    echo "📝 Commit logged for Codex review: $LOG_FILE" >&2
+fi
 
 exit 0

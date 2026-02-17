@@ -83,7 +83,7 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
    | **OpenAI** | `sk-proj-[A-Za-z0-9]{20,}` | `sk-proj-abc123...` |
    | **Anthropic** | `sk-ant-[A-Za-z0-9]{20,}` | `sk-ant-api03-...` |
    | **Google/Gemini** | `AIza[A-Za-z0-9_-]{35}` | `AIzaSyC...` |
-   | **AWS Access Key** | `AKIA[A-Z0-9]{16}` | `AKIAIOSFODNN7EXAMPLE` |
+   | **AWS Access Key** | `AKIA[A-Z0-9]{16}` | `AKIA...` |
    | **AWS Secret Key** | 40-char base64 after `aws_secret` | `wJalrXUtnFEMI/K7MDENG/...` |
    | **GitHub PAT** | `ghp_[A-Za-z0-9]{36}` | `ghp_xxxx...` |
    | **GitHub OAuth** | `gho_[A-Za-z0-9]{36}` | `gho_xxxx...` |

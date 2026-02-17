@@ -46,6 +46,53 @@ PATTERNS=(
 # Build combined regex
 COMBINED=$(IFS='|'; echo "${PATTERNS[*]}")
 
+# Known false-positive tokens: documentation examples, placeholder keys
+# These appear in security-review.md, test files, and conversation logs
+# Uses exact token matching (not substring) to avoid suppressing real secrets
+KNOWN_FPS=(
+    AKIAIOSFODNN7EXAMPLE    # AWS official example key ID
+    sk-proj-abcdef          # doc placeholder
+    sk-proj-abc123          # doc placeholder
+    sk-proj-test            # doc placeholder
+    sk-proj-xxxx            # doc placeholder
+    sk-ant-xxxx             # doc placeholder
+    sk_live_xxxx            # doc placeholder
+    ghp_xxxx                # doc placeholder
+)
+
+# Filter false positives by extracting matched tokens and checking exact match.
+# Unlike substring grep -v, this won't suppress "sk-proj-test-real-prod-key-abc"
+# just because it contains "sk-proj-test".
+filter_false_positives() {
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        # Extract actual matched tokens from this line
+        local tokens
+        tokens=$(echo "$line" | grep -oE "$COMBINED" 2>/dev/null || true)
+        if [ -z "$tokens" ]; then
+            echo "$line"
+            continue
+        fi
+        local has_real=false
+        while IFS= read -r token; do
+            local is_fp=false
+            for fp in "${KNOWN_FPS[@]}"; do
+                if [ "$token" = "$fp" ]; then
+                    is_fp=true
+                    break
+                fi
+            done
+            if [ "$is_fp" = false ]; then
+                has_real=true
+                break
+            fi
+        done <<< "$tokens"
+        if [ "$has_real" = true ]; then
+            echo "$line"
+        fi
+    done
+}
+
 FOUND=0
 
 echo "🔒 Secret Scanner"
@@ -56,14 +103,25 @@ echo ""
 echo "📁 Scanning working tree..."
 if command -v rg >/dev/null 2>&1; then
     # Use ripgrep if available (much faster)
+    # Exclude specific scanner/doc files to avoid self-referential false positives
+    # Use anchored paths (not broad substrings) so real secrets in similarly-named files are caught
     matches=$(rg -n --no-heading -g '!.git' -g '!node_modules' -g '!*.lock' -g '!*.min.js' \
+        -g '!skill-sources/security-review.md' -g '!scripts/scan-secrets.sh' -g '!scripts/test-hook-behavior.sh' \
         "$COMBINED" . 2>/dev/null || true)
 else
     matches=$(grep -rn --include='*.py' --include='*.js' --include='*.ts' --include='*.tsx' \
         --include='*.jsx' --include='*.go' --include='*.rs' --include='*.java' \
         --include='*.yml' --include='*.yaml' --include='*.json' --include='*.toml' \
         --include='*.env*' --include='*.md' --include='*.sh' \
-        -E "$COMBINED" . 2>/dev/null | grep -v '.git/' || true)
+        -E "$COMBINED" . 2>/dev/null | grep -v '.git/' \
+        | grep -Fv './skill-sources/security-review.md' \
+        | grep -Fv './scripts/scan-secrets.sh' \
+        | grep -Fv './scripts/test-hook-behavior.sh' || true)
+fi
+
+# Filter known false positives from working tree results
+if [ -n "$matches" ]; then
+    matches=$(echo "$matches" | filter_false_positives)
 fi
 
 if [ -n "$matches" ]; then
@@ -98,7 +156,8 @@ if [ "$SCAN_HISTORY" = true ]; then
     echo "📜 Scanning git history (this may take a moment)..."
     history_matches=""
     for pattern in "sk-proj-" "sk-ant-" "AKIA" "ghp_" "sk_live_" "AIza"; do
-        found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline 2>/dev/null | head -5 || true)
+        # Exclude security-review.md from history results (contains example patterns)
+        found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline -- ':!skill-sources/security-review.md' ':!commands/security-review.md' ':!scripts/scan-secrets.sh' 2>/dev/null | head -5 || true)
         if [ -n "$found" ]; then
             history_matches="$history_matches\n  Pattern '$pattern' found in deleted history:\n$found"
         fi
@@ -131,12 +190,25 @@ if [ "$SCAN_LOGS" = true ]; then
     # Claude Code conversation logs
     CLAUDE_PROJECTS="$HOME/.claude/projects"
     if [ -d "$CLAUDE_PROJECTS" ]; then
-        claude_hits=$(grep -rl -E "$COMBINED" "$CLAUDE_PROJECTS" 2>/dev/null | head -10 || true)
+        claude_hits=$(grep -rl -E "$COMBINED" "$CLAUDE_PROJECTS" 2>/dev/null | head -20 || true)
         if [ -n "$claude_hits" ]; then
-            log_matches="$log_matches\n  Claude conversation logs with secrets:"
+            verified_hits=""
             while IFS= read -r f; do
-                log_matches="$log_matches\n     $f"
+                # Re-check each file: filter out known false positives
+                # (documentation examples, placeholder keys loaded into conversation context)
+                real=$(grep -E "$COMBINED" "$f" 2>/dev/null | filter_false_positives || true)
+                if [ -n "$real" ]; then
+                    verified_hits="${verified_hits}${f}
+"
+                fi
             done <<< "$claude_hits"
+            if [ -n "$verified_hits" ]; then
+                log_matches="$log_matches\n  Claude conversation logs with secrets:"
+                while IFS= read -r f; do
+                    [ -z "$f" ] && continue
+                    log_matches="$log_matches\n     $f"
+                done <<< "$verified_hits"
+            fi
         fi
     fi
 

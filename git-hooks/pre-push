@@ -121,7 +121,9 @@ else
     # Fallback: use base64 encoding of path (full hash to avoid collisions)
     REPO_HASH=$(git rev-parse --show-toplevel | base64 | tr -d '=\n/')
 fi
-PRE_CHECK_MARKER="/tmp/CrossCheck-prechecks-${REPO_HASH}-${current_branch}"
+CACHE_DIR="$HOME/.cache/CrossCheck"
+mkdir -p "$CACHE_DIR" 2>/dev/null
+PRE_CHECK_MARKER="${CACHE_DIR}/prechecks-${REPO_HASH}-${current_branch}"
 
 echo "  🔍 Checking for pre-PR quality checks..."
 

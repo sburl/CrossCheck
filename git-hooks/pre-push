@@ -29,6 +29,8 @@ if [ -z "$diff_base" ]; then
         diff_base="origin/master"
     elif git rev-parse --verify main >/dev/null 2>&1; then
         diff_base="main"
+    else
+        echo "  ℹ️  No diff base found; skipping diff-based checks"
     fi
 fi
 
@@ -94,33 +96,37 @@ if [ "${#missing_timestamps[@]}" -gt 0 ]; then
 fi
 
 # 2. Check for TODO/FIXME/WIP in committed code (only added content lines, not diff headers)
-echo "  🔍 Checking for development markers..."
-# Use ^\+[^+] to exclude diff metadata lines (+++ b/file)
-# Exception: TODO.md is Claude's session scratchpad filename - allow references to it
-# Exception: exclude lines that define the pattern we're searching for (meta)
-marked_lines=$(git diff "${diff_base:?}..HEAD" 2>/dev/null | grep -E '^\+[^+]' | grep -E '\b(TODO|FIXME|WIP|XXX|HACK)\b' | grep -v 'TODO\.md' | grep -v '(TODO|FIXME' || true)
-if [ -n "$marked_lines" ]; then
-    echo "  ⚠️  Development markers found (TODO/FIXME/WIP/XXX/HACK)"
-    echo "     Consider removing or documenting these before push"
-    if [ -t 0 ]; then
-        read -p "     Push anyway? (y/N) " -n 1 -r < /dev/tty
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
+if [ -n "$diff_base" ]; then
+    echo "  🔍 Checking for development markers..."
+    # Use ^\+[^+] to exclude diff metadata lines (+++ b/file)
+    # Exception: TODO.md is Claude's session scratchpad filename - allow references to it
+    # Exception: exclude lines that define the pattern we're searching for (meta)
+    marked_lines=$(git diff "${diff_base}..HEAD" 2>/dev/null | grep -E '^\+[^+]' | grep -E '\b(TODO|FIXME|WIP|XXX|HACK)\b' | grep -v 'TODO\.md' | grep -v '(TODO|FIXME' || true)
+    if [ -n "$marked_lines" ]; then
+        echo "  ⚠️  Development markers found (TODO/FIXME/WIP/XXX/HACK)"
+        echo "     Consider removing or documenting these before push"
+        if [ -t 0 ]; then
+            read -p "     Push anyway? (y/N) " -n 1 -r < /dev/tty
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                exit 1
+            fi
+        else
+            echo "     Non-interactive: allowing push (run in terminal to confirm)"
         fi
-    else
-        echo "     Non-interactive: allowing push (run in terminal to confirm)"
     fi
 fi
 
 # 3. Verify no merge conflicts markers
-echo "  🔀 Checking for merge conflict markers..."
-# Match conflict markers at the start of added lines only (right after diff's + prefix)
-# This avoids false positives on decorative separators like # ============================
-if git diff "${diff_base:?}..HEAD" 2>/dev/null | grep -qE '^\+(<{7} |={7}$|>{7} )'; then
-    echo "  ❌ Merge conflict markers found in committed code"
-    echo "     Resolve conflicts before pushing"
-    exit 1
+if [ -n "$diff_base" ]; then
+    echo "  🔀 Checking for merge conflict markers..."
+    # Match conflict markers at the start of added lines only (right after diff's + prefix)
+    # This avoids false positives on decorative separators like # ============================
+    if git diff "${diff_base}..HEAD" 2>/dev/null | grep -qE '^\+(<{7} |={7}$|>{7} )'; then
+        echo "  ❌ Merge conflict markers found in committed code"
+        echo "     Resolve conflicts before pushing"
+        exit 1
+    fi
 fi
 
 # 4. Pre-PR quality checks (integrates with Claude Code workflow)

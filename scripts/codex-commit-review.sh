@@ -63,9 +63,9 @@ Or run: tail -F ~/.claude/codex-commit-reviews.log
 ENTRY
 )"
 
-# Acquire lock (noclobber = atomic create-or-fail), retry up to 2s
+# Acquire lock (noclobber = atomic create-or-fail), retry briefly
 acquired=false
-for _try in $(seq 1 20); do
+for _try in 1 2 3 4 5; do
     if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
         acquired=true
         break
@@ -84,13 +84,10 @@ if [ "$acquired" = true ]; then
     rm -f "$LOCK_FILE"
     trap - EXIT
 else
-    # Could not acquire lock after 2s — skip this entry to avoid racing
-    # with an active rotator (unlocked append can write to stale inode)
-    echo "⚠️  Codex review log busy, entry skipped (will appear in next commit)" >&2
+    # Lock contention after retries — append without rotation (safe, just skips trim)
+    printf '%s\n' "$LOG_ENTRY" >> "$LOG_FILE"
 fi
 
-if [ "$acquired" = true ]; then
-    echo "📝 Commit logged for Codex review: $LOG_FILE" >&2
-fi
+echo "📝 Commit logged for Codex review: $LOG_FILE" >&2
 
 exit 0

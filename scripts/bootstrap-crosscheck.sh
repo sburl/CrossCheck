@@ -30,6 +30,26 @@ else
     echo ""
 fi
 
+# Migrate from old ~/.claude/CrossCheck location (prevents duplicate skills)
+OLD_LOCATION="$HOME/.claude/CrossCheck"
+if [ "$INSTALL_MODE" = "traditional" ] && [ -e "$OLD_LOCATION" ]; then
+    echo "⚠️  Found old installation at ~/.claude/CrossCheck"
+    echo "   This location causes duplicate skills (Claude Code scans ~/.claude/)"
+    if [ -L "$OLD_LOCATION" ]; then
+        echo "   Removing symlink..."
+        unlink "$OLD_LOCATION"
+        echo "   ✅ Symlink removed"
+    elif [ -d "$OLD_LOCATION" ] && [ ! -d "$CROSSCHECK_DIR" ]; then
+        echo "   Moving to ~/.crosscheck/..."
+        mv "$OLD_LOCATION" "$CROSSCHECK_DIR"
+        echo "   ✅ Moved to ~/.crosscheck/"
+    elif [ -d "$OLD_LOCATION" ] && [ -d "$CROSSCHECK_DIR" ]; then
+        echo "   ℹ️  Both locations exist. Please remove ~/.claude/CrossCheck manually:"
+        echo "      rm -rf ~/.claude/CrossCheck"
+    fi
+    echo ""
+fi
+
 # 1. Clone/update CrossCheck repo (traditional mode only)
 if [ "$INSTALL_MODE" = "traditional" ]; then
     echo "📦 Step 1: Install CrossCheck workflow..."

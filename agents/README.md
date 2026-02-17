@@ -210,7 +210,7 @@ cp -r agents/* ~/.claude/agents/
 ## 📝 Related Documentation
 
 - **CLAUDE.md** - Main workflow and agent usage patterns
-- **commands/INSTALL.md** - Installing skills
+- **skill-sources/INSTALL.md** - Installing skills
 
 ---
 

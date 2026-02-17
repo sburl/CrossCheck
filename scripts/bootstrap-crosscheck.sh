@@ -59,7 +59,7 @@ if [ "$INSTALL_MODE" = "multi-project" ]; then
         cp "$CROSSCHECK_DIR/CLAUDE.md" "$PROJECTS_DIR/CLAUDE.md"
         echo "   ✅ Copied CLAUDE.md to $PROJECTS_DIR/CLAUDE.md"
         echo "   📖 Full workflow available globally"
-        echo "   📚 Supporting docs in CrossCheck/ (QUICK-REFERENCE.md, rules/, commands/)"
+        echo "   📚 Supporting docs in CrossCheck/ (QUICK-REFERENCE.md, rules/, skill-sources/)"
     else
         echo "   ℹ️  Global CLAUDE.md already exists"
         echo "   💡 To update: cp $CROSSCHECK_DIR/CLAUDE.md $PROJECTS_DIR/CLAUDE.md"
@@ -102,7 +102,7 @@ fi
 # 5. Install skills (commands)
 echo "📝 Step 5: Install skills..."
 mkdir -p "$HOME/.claude/commands"
-cp "$CROSSCHECK_DIR/commands/"*.md "$HOME/.claude/commands/"
+cp "$CROSSCHECK_DIR/skill-sources/"*.md "$HOME/.claude/commands/"
 skill_count=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
 echo "   ✅ Installed $skill_count skills to ~/.claude/commands/"
 echo ""

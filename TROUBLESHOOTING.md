@@ -466,7 +466,7 @@ Skills aren't installed. Install them:
 
 ```bash
 # Copy skills from CrossCheck repo
-cp ~/Documents/Developer/CrossCheck/commands/*.md ~/.claude/commands/
+cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.claude/commands/
 
 # Verify installation
 ls ~/.claude/commands/ | wc -l
@@ -476,7 +476,7 @@ ls ~/.claude/commands/ | wc -l
 # Skills should now be available
 ```
 
-See [commands/INSTALL.md](commands/INSTALL.md) for detailed skill installation.
+See [skill-sources/INSTALL.md](skill-sources/INSTALL.md) for detailed skill installation.
 
 ## Tests Failing After Setup
 

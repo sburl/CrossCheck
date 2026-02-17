@@ -122,7 +122,11 @@ fi
 # 5. Install skills (commands)
 echo "📝 Step 5: Install skills..."
 mkdir -p "$HOME/.claude/commands"
-cp "$CROSSCHECK_DIR/skill-sources/"*.md "$HOME/.claude/commands/"
+# Copy skills but exclude INSTALL.md (meta-doc, not a skill)
+for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
+    [ "$(basename "$skill_file")" = "INSTALL.md" ] && continue
+    cp "$skill_file" "$HOME/.claude/commands/"
+done
 skill_count=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
 echo "   ✅ Installed $skill_count skills to ~/.claude/commands/"
 echo ""

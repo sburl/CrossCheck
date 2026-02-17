@@ -1,7 +1,7 @@
 # CrossCheck System Architecture
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-09-16-55
+**Last Updated:** 2026-02-16-00-00
 
 Deep dive into how the multi-agent development system works.
 
@@ -331,9 +331,11 @@ Before loops:
 
 ```
 ~/.claude/
-  ├─ git-hooks/ (global, shared)
+  ├─ commands/ (skills, loaded at startup)
   ├─ settings.json (global, shared)
-  └─ CrossCheck/ (source of truth)
+  └─ git-hooks/ (global, shared)
+
+~/.crosscheck/ (source of truth, traditional install)
 
 Each repo gets:
   ├─ CLAUDE.md (repo-specific workflow)

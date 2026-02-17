@@ -132,6 +132,15 @@ jobs:
 
           echo "✅ Hook regex and docs are consistent"
 
+  hook-behavior:
+    name: Hook Behavior Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run hook behavior test suite
+        run: bash scripts/test-hook-behavior.sh
+
   doc-metadata:
     name: Documentation Metadata
     runs-on: ubuntu-latest

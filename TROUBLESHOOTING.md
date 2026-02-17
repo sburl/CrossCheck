@@ -345,14 +345,21 @@ cat ~/.claude/codex-commit-reviews.log
 # Hook expects these skills to exist: /techdebt, /pre-pr-check
 # If you don't have them, create marker manually:
 
-# Generate marker path for your repo (cross-platform)
-# Linux:
-PRE_CHECK_MARKER="/tmp/CrossCheck-prechecks-$(git rev-parse --show-toplevel | md5sum | cut -d' ' -f1)"
-# macOS:
-PRE_CHECK_MARKER="/tmp/CrossCheck-prechecks-$(git rev-parse --show-toplevel | md5 -q)"
+BRANCH=$(git branch --show-current)
+# Cross-platform hash:
+if command -v md5sum >/dev/null 2>&1; then
+    REPO_HASH=$(git rev-parse --show-toplevel | md5sum | cut -d' ' -f1)
+elif command -v md5 >/dev/null 2>&1; then
+    REPO_HASH=$(git rev-parse --show-toplevel | md5 -q)
+else
+    REPO_HASH=$(git rev-parse --show-toplevel | base64 | tr -d '=\n/')
+fi
+CACHE_DIR="$HOME/.cache/CrossCheck"
+mkdir -p "$CACHE_DIR"
+PRE_CHECK_MARKER="${CACHE_DIR}/prechecks-${REPO_HASH}-${BRANCH}"
 
 # Create marker (valid for 1 hour)
-touch $PRE_CHECK_MARKER
+touch "$PRE_CHECK_MARKER"
 
 # Now push will work
 git push

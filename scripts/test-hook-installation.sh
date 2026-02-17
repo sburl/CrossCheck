@@ -47,6 +47,20 @@ cleanup() {
     echo "  🧹 Cleaning up test directories..."
     rm -rf /tmp/hook-test-* 2>/dev/null || true
 }
+trap cleanup EXIT
+
+# Poll for log match instead of fixed sleep (more robust on slow systems)
+wait_for_log_match() {
+    local pattern="$1" since="$2" max_attempts="${3:-10}"
+    local _attempt
+    for _attempt in $(seq 1 "$max_attempts"); do
+        if codex_log_has_new_match "$pattern" "$since"; then
+            return 0
+        fi
+        sleep 0.2
+    done
+    return 1
+}
 
 # Test 1: Codex hooks installer alone
 test_codex_alone() {
@@ -90,11 +104,8 @@ test_codex_alone() {
     git add test.txt
     git commit -m "test: codex alone verification" -q
 
-    # Wait for background process to write to log (codex-commit-review.sh runs async)
-    sleep 0.5
-
-    # Check new lines only (avoids false positives from stale log data)
-    if ! codex_log_has_new_match "Commit Review Needed" "$log_before"; then
+    # Poll for log entry (more robust than fixed sleep on slow systems)
+    if ! wait_for_log_match "Commit Review Needed" "$log_before"; then
         echo "  ❌ FAIL: No new review entry in log (checked lines after $log_before)"
         return 1
     fi
@@ -162,18 +173,15 @@ test_git_then_codex() {
     git add test.txt PROGRESS.md
     git commit -m "test: verify both hooks work" -q
 
-    # Wait for background process to write to log
-    sleep 0.5
-
-    # Should have updated PROGRESS.md (from git hooks)
+    # Should have updated PROGRESS.md (from git hooks, runs synchronously)
     if ! grep -q "Checkpoint" PROGRESS.md; then
         echo "  ❌ FAIL: Git hooks didn't run (no checkpoint in PROGRESS.md)"
         return 1
     fi
     echo "  ✅ Git hooks ran (PROGRESS.md updated)"
 
-    # Should have new log entry (from Codex hooks)
-    if ! codex_log_has_new_match "Commit Review Needed" "$log_before"; then
+    # Poll for new log entry (from Codex hooks)
+    if ! wait_for_log_match "Commit Review Needed" "$log_before"; then
         echo "  ❌ FAIL: Codex hooks didn't run (no new log entry after line $log_before)"
         return 1
     fi
@@ -252,16 +260,13 @@ test_codex_then_git() {
     git add test.txt PROGRESS.md
     git commit -m "test: verify reverse order" -q
 
-    # Wait for background process to write to log
-    sleep 0.5
-
     if ! grep -q "Checkpoint" PROGRESS.md; then
         echo "  ❌ FAIL: Git hooks not working"
         return 1
     fi
     echo "  ✅ Git hooks working"
 
-    if ! codex_log_has_new_match "Commit Review Needed" "$log_before"; then
+    if ! wait_for_log_match "Commit Review Needed" "$log_before"; then
         echo "  ❌ FAIL: Codex hooks not working (no new log entry after line $log_before)"
         return 1
     fi

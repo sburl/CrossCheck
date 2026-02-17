@@ -48,28 +48,45 @@ Severity: CRITICAL/HIGH only (skip medium/low for commit hooks)."
 LOG_FILE="$HOME/.claude/codex-commit-reviews.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
-# Rotate log if it exceeds 2000 lines (prevent unbounded growth)
-# Use a lockfile to prevent concurrent rotation from losing entries
+# Rotate and append under a single lock to prevent concurrent writers from
+# losing entries during mv-based rotation (writer opens old inode, rotation
+# replaces file, writer appends to unlinked inode — entry lost).
 LOCK_FILE="$LOG_FILE.lock"
-if [ -f "$LOG_FILE" ] && [ "$(wc -l < "$LOG_FILE")" -gt 2000 ]; then
-    if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
-        trap 'rm -f "$LOCK_FILE"' EXIT
-        tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
-        rm -f "$LOCK_FILE"
-        trap - EXIT
-    fi
-fi
+LOG_ENTRY="$(cat <<ENTRY
 
-# Write synchronously (avoids interleaved output from rapid commits)
-{
-    echo ""
-    echo "=== Commit Review Needed: $(date +"%Y-%m-%d %H:%M:%S") ==="
-    echo "$PROMPT"
-    echo ""
-    echo "To review: Copy above prompt and send to Codex via Claude Code terminal"
-    echo "Or run: tail -F ~/.claude/codex-commit-reviews.log"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-} >> "$LOG_FILE"
+=== Commit Review Needed: $(date +"%Y-%m-%d %H:%M:%S") ===
+$PROMPT
+
+To review: Copy above prompt and send to Codex via Claude Code terminal
+Or run: tail -F ~/.claude/codex-commit-reviews.log
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ENTRY
+)"
+
+# Acquire lock (noclobber = atomic create-or-fail), retry briefly
+acquired=false
+for _try in 1 2 3 4 5; do
+    if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
+        acquired=true
+        break
+    fi
+    sleep 0.1
+done
+
+if [ "$acquired" = true ]; then
+    trap 'rm -f "$LOCK_FILE"' EXIT
+    # Rotate if needed
+    if [ -f "$LOG_FILE" ] && [ "$(wc -l < "$LOG_FILE")" -gt 2000 ]; then
+        tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+    fi
+    # Append while still holding the lock (same inode guaranteed)
+    printf '%s\n' "$LOG_ENTRY" >> "$LOG_FILE"
+    rm -f "$LOCK_FILE"
+    trap - EXIT
+else
+    # Lock contention after retries — append without rotation (safe, just skips trim)
+    printf '%s\n' "$LOG_ENTRY" >> "$LOG_FILE"
+fi
 
 echo "📝 Commit logged for Codex review: $LOG_FILE" >&2
 

@@ -89,6 +89,8 @@ else
     echo "⚠️  Codex review log busy, entry skipped (will appear in next commit)" >&2
 fi
 
-echo "📝 Commit logged for Codex review: $LOG_FILE" >&2
+if [ "$acquired" = true ]; then
+    echo "📝 Commit logged for Codex review: $LOG_FILE" >&2
+fi
 
 exit 0

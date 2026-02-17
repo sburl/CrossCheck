@@ -33,8 +33,8 @@ Please review for:
 If approved, respond with 'APPROVED' and I'll commit with 'Codex Approved' in the message.
 If changes needed, specify what to fix."
 
-# Save to temp file
-temp_file="/tmp/codex-review-$(date +%s).txt"
+# Save to temp file (mktemp for unpredictable path)
+temp_file=$(mktemp "${TMPDIR:-/tmp}/codex-review-XXXXXXXX.txt")
 echo "$prompt" > "$temp_file"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

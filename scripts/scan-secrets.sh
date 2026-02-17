@@ -46,9 +46,52 @@ PATTERNS=(
 # Build combined regex
 COMBINED=$(IFS='|'; echo "${PATTERNS[*]}")
 
-# False-positive patterns: documentation examples, placeholder keys, markdown pattern tables
-# These appear in security-review.md, test files, and conversation logs that loaded those files
-FP_FILTER='AKIAIOSFODNN7EXAMPLE|sk-proj-abcdef|sk-proj-abc123|sk-proj-test|sk-proj-xxxx|sk-ant-xxxx|sk_live_xxxx|ghp_xxxx'
+# Known false-positive tokens: documentation examples, placeholder keys
+# These appear in security-review.md, test files, and conversation logs
+# Uses exact token matching (not substring) to avoid suppressing real secrets
+KNOWN_FPS=(
+    AKIAIOSFODNN7EXAMPLE    # AWS official example key ID
+    sk-proj-abcdef          # doc placeholder
+    sk-proj-abc123          # doc placeholder
+    sk-proj-test            # doc placeholder
+    sk-proj-xxxx            # doc placeholder
+    sk-ant-xxxx             # doc placeholder
+    sk_live_xxxx            # doc placeholder
+    ghp_xxxx                # doc placeholder
+)
+
+# Filter false positives by extracting matched tokens and checking exact match.
+# Unlike substring grep -v, this won't suppress "sk-proj-test-real-prod-key-abc"
+# just because it contains "sk-proj-test".
+filter_false_positives() {
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        # Extract actual matched tokens from this line
+        local tokens
+        tokens=$(echo "$line" | grep -oE "$COMBINED" 2>/dev/null || true)
+        if [ -z "$tokens" ]; then
+            echo "$line"
+            continue
+        fi
+        local has_real=false
+        while IFS= read -r token; do
+            local is_fp=false
+            for fp in "${KNOWN_FPS[@]}"; do
+                if [ "$token" = "$fp" ]; then
+                    is_fp=true
+                    break
+                fi
+            done
+            if [ "$is_fp" = false ]; then
+                has_real=true
+                break
+            fi
+        done <<< "$tokens"
+        if [ "$has_real" = true ]; then
+            echo "$line"
+        fi
+    done
+}
 
 FOUND=0
 
@@ -60,9 +103,10 @@ echo ""
 echo "📁 Scanning working tree..."
 if command -v rg >/dev/null 2>&1; then
     # Use ripgrep if available (much faster)
-    # Exclude scanner docs and test files to avoid self-referential false positives
+    # Exclude specific scanner/doc files to avoid self-referential false positives
+    # Use anchored paths (not broad substrings) so real secrets in similarly-named files are caught
     matches=$(rg -n --no-heading -g '!.git' -g '!node_modules' -g '!*.lock' -g '!*.min.js' \
-        -g '!*security-review*' -g '!*scan-secrets*' -g '!*test-hook*' \
+        -g '!skill-sources/security-review.md' -g '!scripts/scan-secrets.sh' -g '!scripts/test-hook-behavior.sh' \
         "$COMBINED" . 2>/dev/null || true)
 else
     matches=$(grep -rn --include='*.py' --include='*.js' --include='*.ts' --include='*.tsx' \
@@ -70,12 +114,14 @@ else
         --include='*.yml' --include='*.yaml' --include='*.json' --include='*.toml' \
         --include='*.env*' --include='*.md' --include='*.sh' \
         -E "$COMBINED" . 2>/dev/null | grep -v '.git/' \
-        | grep -v 'security-review' | grep -v 'scan-secrets' | grep -v 'test-hook' || true)
+        | grep -v './skill-sources/security-review.md' \
+        | grep -v './scripts/scan-secrets.sh' \
+        | grep -v './scripts/test-hook-behavior.sh' || true)
 fi
 
 # Filter known false positives from working tree results
 if [ -n "$matches" ]; then
-    matches=$(echo "$matches" | grep -vE "$FP_FILTER" || true)
+    matches=$(echo "$matches" | filter_false_positives)
 fi
 
 if [ -n "$matches" ]; then
@@ -111,7 +157,7 @@ if [ "$SCAN_HISTORY" = true ]; then
     history_matches=""
     for pattern in "sk-proj-" "sk-ant-" "AKIA" "ghp_" "sk_live_" "AIza"; do
         # Exclude security-review.md from history results (contains example patterns)
-        found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline -- ':!*security-review*' ':!*scan-secrets*' 2>/dev/null | head -5 || true)
+        found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline -- ':!skill-sources/security-review.md' ':!scripts/scan-secrets.sh' 2>/dev/null | head -5 || true)
         if [ -n "$found" ]; then
             history_matches="$history_matches\n  Pattern '$pattern' found in deleted history:\n$found"
         fi
@@ -150,7 +196,7 @@ if [ "$SCAN_LOGS" = true ]; then
             while IFS= read -r f; do
                 # Re-check each file: filter out known false positives
                 # (documentation examples, placeholder keys loaded into conversation context)
-                real=$(grep -E "$COMBINED" "$f" 2>/dev/null | grep -vE "$FP_FILTER" || true)
+                real=$(grep -E "$COMBINED" "$f" 2>/dev/null | filter_false_positives || true)
                 if [ -n "$real" ]; then
                     verified_hits="${verified_hits}${f}
 "

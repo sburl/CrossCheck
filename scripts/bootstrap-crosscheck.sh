@@ -25,8 +25,8 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/CLAUDE.md" ]; then
 else
     # Running via curl or outside repo - traditional mode
     INSTALL_MODE="traditional"
-    CROSSCHECK_DIR="$HOME/.claude/CrossCheck"
-    echo "📍 Traditional mode (installing to ~/.claude/CrossCheck)"
+    CROSSCHECK_DIR="$HOME/.crosscheck"
+    echo "📍 Traditional mode (installing to ~/.crosscheck)"
     echo ""
 fi
 
@@ -39,10 +39,10 @@ if [ "$INSTALL_MODE" = "traditional" ]; then
         git checkout main && git pull origin main
     else
         echo "   Cloning CrossCheck repository..."
-        mkdir -p "$HOME/.claude"
+        mkdir -p "$(dirname "$CROSSCHECK_DIR")"
         git clone https://github.com/sburl/CrossCheck.git "$CROSSCHECK_DIR"
     fi
-    echo "   ✅ CrossCheck installed at ~/.claude/CrossCheck"
+    echo "   ✅ CrossCheck installed at ~/.crosscheck"
     echo ""
 else
     echo "📦 Step 1: Using local CrossCheck repository"
@@ -131,7 +131,7 @@ if [ "$INSTALL_MODE" = "multi-project" ]; then
     echo "   • CrossCheck workflow at $CROSSCHECK_DIR"
     echo "   • Global CLAUDE.md at $PROJECTS_DIR/CLAUDE.md"
 else
-    echo "   • CrossCheck workflow at ~/.claude/CrossCheck/"
+    echo "   • CrossCheck workflow at ~/.crosscheck/"
 fi
 echo "   • Global settings at ~/.claude/settings.json"
 echo "   • Skills at ~/.claude/commands/"
@@ -150,7 +150,7 @@ if [ "$INSTALL_MODE" = "multi-project" ]; then
     echo "      Supporting docs: $CROSSCHECK_DIR/QUICK-REFERENCE.md, docs/rules/"
 else
     echo "   2. Claude will automatically load CLAUDE.md workflow"
-    echo "      from ~/.claude/CrossCheck/"
+    echo "      from ~/.crosscheck/"
 fi
 echo ""
 echo "   3. Set up a repo for autonomous work:"
@@ -163,7 +163,7 @@ echo "      • Copy: CLAUDE.local.md.template → CLAUDE.local.md (personal pre
 if [ "$INSTALL_MODE" = "multi-project" ]; then
     echo "      • Docs: $CROSSCHECK_DIR/README.md"
 else
-    echo "      • Docs: ~/.claude/CrossCheck/README.md"
+    echo "      • Docs: ~/.crosscheck/README.md"
 fi
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

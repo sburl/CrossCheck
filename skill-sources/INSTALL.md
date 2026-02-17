@@ -1,7 +1,7 @@
 # Installing Claude Code Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-10-00-00
+**Last Updated:** 2026-02-16-00-00
 
 This directory contains all custom skill sources for Claude Code.
 
@@ -12,13 +12,12 @@ This directory contains all custom skill sources for Claude Code.
 ### On a new computer:
 
 ```bash
-# 1. Clone the CrossCheck repo to ~/.claude/CrossCheck
-cd ~/.claude
-git clone https://github.com/sburl/CrossCheck.git CrossCheck
+# 1. Clone the CrossCheck repo to ~/.crosscheck
+git clone https://github.com/sburl/CrossCheck.git ~/.crosscheck
 
 # 2. Copy skills to ~/.claude/commands/
 mkdir -p ~/.claude/commands
-cp ~/.claude/CrossCheck/skill-sources/*.md ~/.claude/commands/
+cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
 
 # 3. Verify installation
 ls ~/.claude/commands/
@@ -28,7 +27,7 @@ ls ~/.claude/commands/
 
 ```bash
 # Run this one-liner:
-mkdir -p ~/.claude/commands && cp ~/.claude/CrossCheck/skill-sources/*.md ~/.claude/commands/
+mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
 ```
 
 ## Available Skills (21 total)
@@ -85,15 +84,20 @@ git push
 ~/.claude/
 ├── commands/              ← Active skills (copied from CrossCheck/skill-sources/)
 │   └── *.md              ← 21 skill files
-├── CrossCheck/               ← Git repo (source of truth)
-│   ├── skill-sources/    ← Source for skills (not scanned by Claude Code)
-│   ├── CLAUDE.md        ← Workflow rules
-│   └── CODEX-PROMPTS.md ← Codex templates
 └── settings.json         ← Global permissions
+
+~/.crosscheck/                 ← Git repo (source of truth, traditional install)
+├── skill-sources/         ← Source for skills (not scanned by Claude Code)
+├── CLAUDE.md             ← Workflow rules
+└── CODEX-PROMPTS.md      ← Codex templates
 ```
 
 **Why two locations?**
-- `~/.claude/CrossCheck/skill-sources/` - Version controlled source (git repo)
+- `~/.crosscheck/skill-sources/` - Version controlled source (traditional install)
+- `~/Documents/Developer/CrossCheck/skill-sources/` - Version controlled source (multi-project install)
 - `~/.claude/commands/` - Active skills Claude Code loads
 
 The repo is the source of truth. Copy to `~/.claude/commands/` to activate.
+
+**Important:** The CrossCheck repo must NOT be inside `~/.claude/`. Claude Code scans
+`~/.claude/` for commands, which would cause duplicate skill registrations.

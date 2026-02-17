@@ -1,7 +1,7 @@
 # CrossCheck Troubleshooting Guide
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-12-12-00
+**Last Updated:** 2026-02-16-00-00
 
 When automation fails, debug it here.
 
@@ -102,7 +102,7 @@ Note: --no-verify is blocked by permissions (policy enforcement)
 🤖 Claude Code: Follow this workflow (DO NOT skip steps):
 
    Step 1: Get review prompt
-   ~/.claude/CrossCheck/scripts/codex-approve-commit.sh
+   ~/.crosscheck/scripts/codex-approve-commit.sh
 
    Step 2: Send prompt to Codex via terminal
    Copy the output and paste to Codex in your terminal session
@@ -127,7 +127,7 @@ Note: --no-verify is blocked by permissions (policy enforcement)
 ```
 
 **Resolution:**
-1. Run `~/.claude/CrossCheck/scripts/codex-approve-commit.sh`
+1. Run `~/.crosscheck/scripts/codex-approve-commit.sh`
 2. Send output to Codex in terminal
 3. Wait for Codex response
 4. If Codex says changes needed: fix the issues, go back to step 1
@@ -244,7 +244,7 @@ When hooks block, run these exact commands:
 
 | Hook | Scenario | Command |
 |------|----------|---------|
-| commit-msg | Codex approval needed | `~/.claude/CrossCheck/scripts/codex-approve-commit.sh` then send to Codex, wait for APPROVED, add to commit |
+| commit-msg | Codex approval needed | `~/.crosscheck/scripts/codex-approve-commit.sh` then send to Codex, wait for APPROVED, add to commit |
 | pre-push | Pre-checks needed | `/techdebt && /pre-pr-check && touch $MARKER && git push` |
 | pre-commit | Secrets detected | Remove secrets, use env vars, re-commit |
 | pre-commit | Debug code | Remove debug statements, re-commit |

@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-14-16-21
+**Last Updated:** 2026-02-16-00-00
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -243,7 +243,7 @@ CrossCheck uses a **single source of truth** pattern:
 Verify it works:
 
 ```bash
-~/.claude/CrossCheck/scripts/validate-github-protection.sh
+~/.crosscheck/scripts/validate-github-protection.sh
 ```
 
 #### Option B: Manual Setup (10 minutes)

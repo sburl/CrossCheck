@@ -1,7 +1,7 @@
 # Advanced CrossCheck Configuration
 
 **Created:** 2026-02-09-16-52
-**Last Updated:** 2026-02-12-12-00
+**Last Updated:** 2026-02-16-00-00
 
 Deep customization, multi-agent workflows, and power-user features.
 
@@ -146,7 +146,7 @@ echo "~/.claude/git-hooks/custom/my-check.sh || exit 1" >> ~/.claude/git-hooks/p
 cd ~/special-project
 
 # Install hooks locally (not global) -- no flag needed, auto-detects repo
-~/.claude/CrossCheck/scripts/install-git-hooks.sh
+~/.crosscheck/scripts/install-git-hooks.sh
 
 # Hooks are installed to $(git rev-parse --git-common-dir)/hooks/
 # This works correctly in both regular repos and worktrees
@@ -169,7 +169,7 @@ To customize hooks for a specific repo, edit the hooks directly after installing
 
 ```bash
 # Install locally first
-~/.claude/CrossCheck/scripts/install-git-hooks.sh
+~/.crosscheck/scripts/install-git-hooks.sh
 
 # Then edit the local copy
 vim "$(git rev-parse --git-common-dir)/hooks/pre-commit"
@@ -489,7 +489,7 @@ cat ~/.claude/settings.json | python -m json.tool
 # - Unescaped characters in patterns
 
 # Fix by comparing to template
-diff ~/.claude/settings.json ~/.claude/CrossCheck/settings.template.json
+diff ~/.claude/settings.json ~/.crosscheck/settings.template.json
 ```
 
 ---

@@ -55,6 +55,7 @@ if [ "${#missing_timestamps[@]}" -gt 0 ]; then
     for candidate in \
         "$repo_root/scripts/fix-timestamps.sh" \
         "${CROSSCHECK_DIR:-}/scripts/fix-timestamps.sh" \
+        "$HOME/.crosscheck/scripts/fix-timestamps.sh" \
         "$HOME/.claude/CrossCheck/scripts/fix-timestamps.sh" \
         "$HOME/Documents/Developer/CrossCheck/scripts/fix-timestamps.sh"; do
         if [ -f "$candidate" ]; then
@@ -69,7 +70,7 @@ if [ "${#missing_timestamps[@]}" -gt 0 ]; then
         echo "     bash \"$fix_script\""
     else
         echo "     bash \"\$(git rev-parse --show-toplevel)/scripts/fix-timestamps.sh\""
-        echo "     (If not found, check CROSSCHECK_DIR or ~/.claude/CrossCheck/)"
+        echo "     (If not found, check CROSSCHECK_DIR or ~/.crosscheck/)"
     fi
     echo ""
     echo "     Then commit the changes and push again."

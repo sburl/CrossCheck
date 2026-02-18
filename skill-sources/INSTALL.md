@@ -30,7 +30,7 @@ ls ~/.claude/commands/
 mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
 ```
 
-## Available Skills (21 total)
+## Available Skills (22 total)
 
 ### PR Workflow (5)
 - `/submit-pr` - Automated PR submission with checks
@@ -58,10 +58,27 @@ mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/com
 - `/commit-smart` - Atomic Git Commit
 - `/doc-timestamp` - Add/update timestamps in docs
 
+### Analytics (1)
+- `/ai-usage` - Track token usage, costs, and environmental impact across Claude/Codex/Gemini
+
 ### Setup (3)
 - `/setup-automation` - Install all automation for new repo
 - `/setup-statusline` - Customize Claude Code statusline
 - `/garbage-collect` - Manage /garbage folder
+
+## Opting Out of Skills
+
+Don't want a specific skill? Add its name to `~/.crosscheck/skip-skills` (one per line):
+
+```bash
+# Create skip list
+echo "ai-usage" >> ~/.crosscheck/skip-skills
+
+# Remove it locally if already installed
+rm ~/.claude/commands/ai-usage.md
+```
+
+The bootstrap script will skip any skills listed in this file. Lines starting with `#` are ignored.
 
 ## Maintenance
 

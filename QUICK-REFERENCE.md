@@ -32,6 +32,7 @@ When user requests these tasks, invoke the corresponding skill:
 | "customize statusline" | `/setup-statusline` | Configure status bar |
 | "do the work", "process tasks" | `/do-work` | Process task queue from do-work/ folder |
 | "cleanup garbage" | `/garbage-collect` | Review /garbage folder |
+| "usage", "tokens", "how much AI", "spending" | `/ai-usage` | Token usage, cost, and impact dashboard |
 
 ---
 
@@ -259,6 +260,12 @@ mv old-file.js garbage/
 | `/do-work` | Process task queue | Reads do-work/ folder, executes tasks autonomously |
 
 | `/doc-timestamp` | Modified .md file | Updates "Last Updated:" timestamp |
+
+### Analytics
+
+| Skill | When to Use | What It Does |
+|-------|-------------|--------------|
+| `/ai-usage` | Track AI token usage and costs | Dashboard: daily/cumulative tokens, costs, energy, CO2 across Claude/Codex/Gemini |
 
 ### Setup
 

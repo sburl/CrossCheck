@@ -662,7 +662,7 @@ def generate_html(data, output_path):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Usage & Impact Dashboard</title>
+<title>AI Usage & Impact</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   :root {{
@@ -683,9 +683,8 @@ def generate_html(data, output_path):
   .chart-box {{ background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; }}
   .chart-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }}
   .chart-header h3 {{ font-size: 0.875rem; color: var(--muted); margin: 0; }}
-  .toggle-btn {{ background: var(--border); color: var(--muted); border: none; border-radius: 0.375rem; padding: 0.25rem 0.625rem; font-size: 0.7rem; cursor: pointer; transition: all 0.15s; }}
-  .toggle-btn:hover {{ background: var(--accent); color: var(--text); }}
-  .toggle-btn.active {{ background: var(--accent); color: var(--text); }}
+  .toggle-btn {{ background: var(--accent); color: var(--text); border: none; border-radius: 0.375rem; padding: 0.25rem 0.625rem; font-size: 0.7rem; cursor: pointer; transition: all 0.15s; opacity: 0.8; }}
+  .toggle-btn:hover {{ opacity: 1; }}
   .equiv {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; }}
   .equiv-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1rem 1.25rem; display: flex; align-items: center; gap: 0.75rem; }}
   .equiv-card .emoji {{ font-size: 2rem; line-height: 1; flex-shrink: 0; }}
@@ -742,8 +741,8 @@ def generate_html(data, output_path):
 </style>
 </head>
 <body>
-<h1><span style="font-size: 1.1em; filter: grayscale(1) brightness(10);">⚡</span> AI Usage & Impact Dashboard</h1>
-<p class="subtitle"><span id="dateRange">{date_range} ({len(data)} active days)</span> &middot; <span id="genTime">Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</span></p>
+<h1><span style="font-size: 1.1em; filter: grayscale(1) brightness(10);">⚡</span> AI Usage & Impact</h1>
+<p class="subtitle"><span id="dateRange">{date_range} ({len(data)} active days)</span> &middot; <span id="genTime">Last updated {datetime.now().strftime("%Y-%m-%d %H:%M")}</span> &middot; <button id="updateBtn" style="background:var(--accent);color:var(--text);border:none;border-radius:0.375rem;padding:0.15rem 0.5rem;font-size:0.75rem;cursor:pointer;opacity:0.8;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.8'">Update</button></p>
 <p class="token-summary" id="tokenSummary">{total_tokens:,} total tokens &middot; {totals['input_tokens']:,} input &middot; {totals['output_tokens']:,} output &middot; {totals['cache_read_tokens']:,} cached</p>
 
 <div class="date-range">
@@ -765,7 +764,7 @@ def generate_html(data, output_path):
   <div class="card">
     <div class="label">Total API Cost</div>
     <div class="value" id="cardCostVal">{fmt_cost(totals["cost"])}</div>
-    <div class="detail" id="cardCostDetail">{fmt_cost(cost_per_m)}/M tokens &middot; {" &middot; ".join(f"{p.title()} {(provider_cost[p] / totals['cost'] * 100):.0f}%" for p in ["claude", "codex", "gemini"] if provider_cost[p] > 0)}</div>
+    <div class="detail" id="cardCostDetail">{fmt_cost(cost_per_m)}/M tokens &middot; {" &middot; ".join(f"{p.title()} {(provider_cost[p] / totals['cost'] * 100 if totals['cost'] else 0):.0f}%" for p in ["claude", "codex", "gemini"] if provider_has_data.get(p))}</div>
   </div>
   <div class="card">
     <div class="label">Total Tokens</div>
@@ -1192,7 +1191,7 @@ function toggleChart(key) {{
   document.getElementById(cfg.titleEl).textContent = isCum ? cfg.cumTitle : cfg.dailyTitle;
   const btn = document.getElementById(cfg.titleEl).parentElement.querySelector('.toggle-btn');
   btn.textContent = isCum ? 'Daily' : 'Cumulative';
-  btn.classList.toggle('active', isCum);
+  // Button always same style; just swap label
 }}
 
 // --- Date range filtering ---
@@ -1270,8 +1269,11 @@ function updateDashboard() {{
   // Cost: per-M-token rate + provider percentages
   const costPerM = tTok > 0 ? tot.cost / (tTok / 1e6) : 0;
   let costParts = [];
-  [['Claude',pv.claude.cost],['Codex',pv.codex.cost],['Gemini',pv.gemini.cost]].forEach(([name,c]) => {{
-    if (c > 0 && tot.cost > 0) costParts.push(name+' '+(c/tot.cost*100).toFixed(0)+'%');
+  [['claude','Claude'],['codex','Codex'],['gemini','Gemini']].forEach(([key,name]) => {{
+    if (epSet.has(key)) {{
+      const pct = tot.cost > 0 ? (pv[key].cost/tot.cost*100).toFixed(0) : 0;
+      costParts.push(name+' '+pct+'%');
+    }}
   }});
   let costDetail = fC(costPerM)+'/M tokens \u00b7 '+costParts.join(' \u00b7 ');
   setText('cardCostVal', fC(tot.cost));
@@ -1580,6 +1582,11 @@ function updateDashboard() {{
 
 document.getElementById('startDate').addEventListener('change', updateDashboard);
 document.getElementById('endDate').addEventListener('change', updateDashboard);
+document.getElementById('updateBtn').addEventListener('click', function() {{
+  this.textContent = 'Updating...';
+  this.style.opacity = '0.5';
+  setTimeout(() => window.location.reload(), 200);
+}});
 function resetDates() {{
   document.getElementById('startDate').value = RAW[0].d;
   document.getElementById('endDate').value = RAW[RAW.length-1].d;

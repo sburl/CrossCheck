@@ -85,7 +85,7 @@ if [ "$acquired" = true ]; then
     trap 'rm -f "$LOCK_FILE"' EXIT
     # Rotate if needed
     if [ -f "$LOG_FILE" ] && [ "$(wc -l < "$LOG_FILE")" -gt 2000 ]; then
-        tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+        tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE" && chmod 600 "$LOG_FILE"
     fi
     # Append while still holding the lock (same inode guaranteed)
     printf '%s\n' "$LOG_ENTRY" >> "$LOG_FILE"

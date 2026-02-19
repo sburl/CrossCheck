@@ -47,6 +47,8 @@ Severity: CRITICAL/HIGH only (skip medium/low for commit hooks)."
 # Log review prompt for later (manual Codex review via Claude Code)
 LOG_FILE="$HOME/.claude/codex-commit-reviews.log"
 mkdir -p "$(dirname "$LOG_FILE")"
+# Restrict log permissions — commit messages may inadvertently reference secrets
+[ -f "$LOG_FILE" ] || { touch "$LOG_FILE" && chmod 600 "$LOG_FILE"; }
 
 # Rotate and append under a single lock to prevent concurrent writers from
 # losing entries during mv-based rotation (writer opens old inode, rotation

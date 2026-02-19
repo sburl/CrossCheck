@@ -41,7 +41,7 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
         # Check if remote branch exists (but don't auto-delete - too risky in shared repos)
         if git ls-remote --heads origin "$merged_branch" 2>/dev/null | grep -q "$merged_branch"; then
             echo "  ℹ️  Remote branch still exists: origin/$merged_branch"
-            echo "     Delete manually: git push origin --delete $merged_branch"
+            echo "     Delete manually: git push origin --delete \"$merged_branch\""
             echo "     Or use GitHub's auto-delete feature in PR settings"
         fi
     fi

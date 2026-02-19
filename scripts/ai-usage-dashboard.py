@@ -120,9 +120,9 @@ def collect_codex_data(since=None, until=None):
     # @ccusage/codex wraps data in {"daily": [...]}
     data = raw.get("daily", raw) if isinstance(raw, dict) else raw
 
-    # First pass: collect all entries and compute blended rate from priced days
+    # First pass: collect all entries and derive per-token-type rates from priced days
     entries = []
-    priced_cost, priced_tokens = 0, 0
+    priced_input, priced_output, priced_cached, priced_cost = 0, 0, 0, 0
     for entry in data:
         raw_date = entry.get("date", "")
         if not raw_date:
@@ -136,16 +136,32 @@ def collect_codex_data(since=None, until=None):
         cost = entry.get("costUSD", 0) or 0
         entries.append((date, input_tok, output_tok, cached_tok, cost))
         if cost > 0:
+            non_cached = max(0, input_tok - cached_tok)
+            priced_input += non_cached
+            priced_output += output_tok
+            priced_cached += cached_tok
             priced_cost += cost
-            priced_tokens += input_tok + output_tok
 
-    # Blended $/token from priced days (gpt-5-codex), fallback for unpriced (gpt-5.3)
-    blended_rate = (priced_cost / priced_tokens) if priced_tokens > 0 else 0.20e-6
+    # Derive per-token-type rates from priced gpt-5-codex days.
+    # Standard API pricing ratio: output ~4x input, cached ~0.25x input.
+    # Solve: cost = non_cached_input * r + output * 4r + cached * 0.25r
+    if priced_input + priced_output > 0:
+        weighted = priced_input + priced_output * 4 + priced_cached * 0.25
+        r = priced_cost / weighted if weighted > 0 else 0.05e-6
+        rate_input = r
+        rate_output = r * 4
+        rate_cached = r * 0.25
+    else:
+        # Fallback if no priced days at all
+        rate_input = 0.15e-6
+        rate_output = 0.60e-6
+        rate_cached = 0.0375e-6
 
     daily = {}
     for date, input_tok, output_tok, cached_tok, cost in entries:
         if not cost and (input_tok or output_tok):
-            cost = (input_tok + output_tok) * blended_rate
+            non_cached = max(0, input_tok - cached_tok)
+            cost = non_cached * rate_input + output_tok * rate_output + cached_tok * rate_cached
         daily[date] = {
             "provider": "codex",
             "input_tokens": input_tok,
@@ -358,6 +374,13 @@ def generate_html(data, output_path):
     carbon_display = fmt_carbon(totals["carbon_g"])
     water_display = fmt_water(totals["water_ml"])
 
+    # Per-provider totals for environmental cards
+    provider_carbon = {}
+    provider_energy = {}
+    for prov in ["claude", "codex", "gemini"]:
+        provider_carbon[prov] = sum(r[prov]["carbon_g"] for r in data)
+        provider_energy[prov] = sum(r[prov]["energy_wh"] for r in data)
+
     # Equivalents
     carbon_kg = totals["carbon_g"] / 1000
     household_months = carbon_kg / 900
@@ -478,8 +501,10 @@ def generate_html(data, output_path):
         carbon_divisor, carbon_unit = 1, "g"
 
     daily_carbon = [round(c / carbon_divisor, 4) for c in daily_carbon_raw]
-    carbon_colors = json.dumps(["#22c55e" if c < (5 / carbon_divisor) else "#f59e0b" if c < (20 / carbon_divisor) else "#ef4444" for c in daily_carbon])
     daily_carbon_json = json.dumps(daily_carbon)
+    claude_carbon = json.dumps([round(r["claude"]["carbon_g"] / carbon_divisor, 4) for r in data])
+    codex_carbon = json.dumps([round(r["codex"]["carbon_g"] / carbon_divisor, 4) for r in data])
+    gemini_carbon = json.dumps([round(r["gemini"]["carbon_g"] / carbon_divisor, 4) for r in data])
 
     # Daily token use by provider (pick best unit)
     daily_tokens_raw = [(r["claude"]["input_tokens"] + r["claude"]["output_tokens"] + r["claude"]["cache_read_tokens"]
@@ -595,7 +620,7 @@ def generate_html(data, output_path):
   .legend-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
   .section-title {{ font-size: 1.1rem; margin: 2rem 0 1rem; color: var(--muted); }}
   .no-data {{ text-align: center; padding: 4rem 2rem; color: var(--muted); }}
-  .token-summary {{ color: var(--muted); font-size: 0.8rem; margin-bottom: 1.5rem; }}
+  .token-summary {{ color: var(--muted); font-size: 0.8rem; margin-bottom: 0.5rem; }}
   .matrix-box {{ background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 2rem; overflow-x: auto; }}
   .matrix-box h3 {{ font-size: 0.875rem; color: var(--muted); margin-bottom: 1rem; }}
   .cost-matrix {{ width: 100%; border-collapse: collapse; font-size: 0.9rem; }}
@@ -615,19 +640,30 @@ def generate_html(data, output_path):
   .tip .tip-row {{ display: flex; justify-content: space-between; gap: 1rem; }}
   .tip .tip-label {{ color: var(--muted); }}
   .tip .tip-val {{ font-variant-numeric: tabular-nums; text-align: right; }}
+  .assumptions {{ margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }}
+  .assumptions summary {{ cursor: pointer; color: var(--text); font-size: 0.9rem; padding: 0.75rem 0; }}
+  .assumptions summary:hover {{ color: var(--accent); }}
+  .assumptions-body {{ padding: 1rem 0; }}
+  .assumptions-body h4 {{ color: var(--text); margin: 1rem 0 0.5rem; font-size: 0.85rem; }}
+  .assumptions-body ul {{ padding-left: 1.25rem; }}
+  .assumptions-body li {{ margin-bottom: 0.25rem; }}
+  .assumptions-body table {{ width: 100%; border-collapse: collapse; margin: 0.5rem 0; }}
+  .assumptions-body td {{ padding: 0.25rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.8rem; }}
+  .assumptions-body td:first-child {{ color: var(--text); }}
+  .assumptions-body code {{ background: var(--surface); padding: 0.1rem 0.3rem; border-radius: 0.25rem; }}
 </style>
 </head>
 <body>
 <h1>AI Usage & Impact Dashboard</h1>
 <p class="subtitle">{date_range} ({len(data)} active days) &middot; Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
 
+<p class="token-summary">{total_tokens:,} total tokens &middot; {totals['input_tokens']:,} input &middot; {totals['output_tokens']:,} output &middot; {totals['cache_read_tokens']:,} cached</p>
+
 <div class="legend">
   <div class="legend-item"><div class="legend-dot" style="background: var(--claude)"></div> Claude Code</div>
   <div class="legend-item"><div class="legend-dot" style="background: var(--codex)"></div> Codex CLI</div>
   <div class="legend-item"><div class="legend-dot" style="background: var(--gemini)"></div> Gemini CLI</div>
 </div>
-
-<p class="token-summary">{total_tokens:,} total tokens &middot; {totals['input_tokens']:,} input &middot; {totals['output_tokens']:,} output &middot; {totals['cache_read_tokens']:,} cached</p>
 
 {"<div class='no-data'>No usage data found. Make sure ccusage is installed (npm i -g ccusage).</div>" if not data else f'''
 <div class="cards">
@@ -654,7 +690,7 @@ def generate_html(data, output_path):
 </div>
 
 <div class="matrix-box">
-  <h3>Monthly Cost by Provider</h3>
+  <h3>Monthly Estimated API Cost by Provider</h3>
   <table class="cost-matrix">
     <thead><tr><th></th><th class="claude">Claude</th><th class="codex">Codex</th><th class="gemini">Gemini</th><th>Total</th></tr></thead>
     <tbody>{matrix_rows_html}{matrix_footer_html}</tbody>
@@ -684,12 +720,12 @@ def generate_html(data, output_path):
   <div class="card">
     <div class="label">Energy Used</div>
     <div class="value">{energy_display}</div>
-    <div class="detail">{energy_context}</div>
+    <div class="detail">{energy_context} · Claude {fmt_energy(provider_energy["claude"])} · Codex {fmt_energy(provider_energy["codex"])}</div>
   </div>
   <div class="card">
     <div class="label">CO2 Emitted</div>
     <div class="value">{carbon_display}</div>
-    <div class="detail">{carbon_context}</div>
+    <div class="detail">Claude {fmt_carbon(provider_carbon["claude"])} · Codex {fmt_carbon(provider_carbon["codex"])} · Gemini {fmt_carbon(provider_carbon["gemini"])}</div>
   </div>
   <div class="card">
     <div class="label">Water Used</div>
@@ -729,6 +765,68 @@ def generate_html(data, output_path):
   <div class="equiv-card"><div class="num">{showers:,.2f}</div><div class="desc">Showers (water)</div></div>
   <div class="equiv-card"><div class="num">{iphone_charges:,.2f}</div><div class="desc">iPhone charges</div></div>
 </div>
+
+<details class="assumptions">
+<summary>Methodology & Assumptions</summary>
+<div class="assumptions-body">
+<h4>Data Sources</h4>
+<ul>
+<li><strong>Claude Code:</strong> <code>ccusage daily --json</code> — reads local JSONL logs from Claude Code sessions</li>
+<li><strong>Codex CLI:</strong> <code>npx @ccusage/codex@latest daily --json</code> — reads local Codex CLI session logs</li>
+<li><strong>Gemini CLI:</strong> OpenTelemetry file export at <code>~/.gemini/telemetry.log</code> (requires one-time setup). Only tracks sessions after telemetry is enabled.</li>
+</ul>
+
+<h4>Cost Estimates</h4>
+<ul>
+<li><strong>Claude:</strong> Cost from ccusage (uses Anthropic's published API pricing per model)</li>
+<li><strong>Codex (gpt-5-codex):</strong> Cost from ccusage (uses OpenAI's published pricing)</li>
+<li><strong>Codex (gpt-5.3-codex):</strong> No official API pricing yet. Estimated using per-token-type rates (input, output, cached) derived from gpt-5-codex priced days with standard 4:1 output:input ratio</li>
+<li><strong>Gemini:</strong> Estimated at $1.25/M input, $10.00/M output, $0.315/M cached (Gemini 2.5 Pro pricing)</li>
+</ul>
+
+<h4>Energy Model</h4>
+<table>
+<tr><td>Output tokens</td><td>0.001 Wh/token</td><td>Industry estimate for large language models</td></tr>
+<tr><td>Input tokens</td><td>0.0002 Wh/token</td><td>~5x less compute than output</td></tr>
+<tr><td>Cached tokens</td><td>0.00005 Wh/token</td><td>~4x less than input (cache lookup)</td></tr>
+<tr><td>PUE (Power Usage Effectiveness)</td><td>1.2</td><td>Typical hyperscale data center overhead (cooling, networking)</td></tr>
+<tr><td>Grid transmission loss</td><td>6%</td><td>US average grid losses from plant to data center</td></tr>
+<tr><td>Electricity price</td><td>$0.12/kWh</td><td>US average commercial rate</td></tr>
+</table>
+
+<h4>Carbon Model</h4>
+<table>
+<tr><td>Grid carbon intensity</td><td>390 gCO2e/kWh</td><td>US average grid mix (EIA)</td></tr>
+<tr><td>Embodied carbon</td><td>+20%</td><td>Hardware manufacturing, shipping, end-of-life</td></tr>
+</table>
+
+<h4>Water Model</h4>
+<table>
+<tr><td>Water Usage Effectiveness (WUE)</td><td>0.5 L/kWh</td><td>Typical evaporative cooling in data centers</td></tr>
+</table>
+
+<h4>Real-World Equivalents</h4>
+<table>
+<tr><td>US household electricity</td><td>~900 kg CO2/month</td><td>EPA average</td></tr>
+<tr><td>Gas car emissions</td><td>404 g CO2/mile</td><td>EPA average (25 mpg)</td></tr>
+<tr><td>NYC-LA flight</td><td>~90 kg CO2/passenger</td><td>Economy class, one way</td></tr>
+<tr><td>Tree offset</td><td>~22 kg CO2/year</td><td>Mature tree annual absorption</td></tr>
+<tr><td>Shower</td><td>~65 L water</td><td>8-minute average shower</td></tr>
+<tr><td>iPhone charge</td><td>~12.7 Wh</td><td>iPhone 15 battery capacity</td></tr>
+<tr><td>Tesla</td><td>~0.25 kWh/mile</td><td>Model 3 average efficiency</td></tr>
+<tr><td>US household electricity</td><td>~30 kWh/day</td><td>EIA average</td></tr>
+</table>
+
+<h4>Limitations</h4>
+<ul>
+<li>Energy per token is a rough industry estimate — actual consumption varies by model, hardware, and data center</li>
+<li>Carbon intensity varies significantly by region and time of day (renewables vs fossil)</li>
+<li>Codex gpt-5.3 pricing is estimated and will update when official pricing is available</li>
+<li>Gemini data only available from the point telemetry is enabled (no historical backfill)</li>
+<li>"Active days" counts only days with recorded usage, not calendar days</li>
+</ul>
+</div>
+</details>
 '''}
 
 <script>
@@ -754,18 +852,39 @@ const stackOpts = JSON.parse(JSON.stringify(baseOpts));
 stackOpts.scales.x.stacked = true;
 stackOpts.scales.y.stacked = true;
 
-// Energy chart gets a custom tooltip showing carbon equivalent
+// Energy chart tooltip: show electricity cost and household equivalent
 const energyOpts = JSON.parse(JSON.stringify(stackOpts));
 energyOpts.plugins.tooltip = {{
   callbacks: {{
     afterBody: function(items) {{
       const idx = items[0].dataIndex;
-      const cg = dailyCarbonG[idx];
-      const miles = (cg / 1000 / 0.404).toFixed(3);
-      return 'CO2: ' + (cg >= 1000 ? (cg/1000).toFixed(2) + ' kg' : cg.toFixed(1) + ' g') + ' (~' + miles + ' mi driven)';
+      let totalWh = 0;
+      items.forEach(i => totalWh += (i.raw || 0) * {energy_divisor});
+      const kwh = totalWh / 1000;
+      const cost = (kwh * {ELECTRICITY_COST_KWH}).toFixed(4);
+      const homeHrs = (kwh / 1.25).toFixed(1);  // ~1.25 kWh/hr avg US home
+      return 'Electricity: $' + cost + ' (~' + homeHrs + ' hrs of household use)';
     }}
   }}
 }};
+
+// CO2 chart tooltip: show miles driven equivalent (stacked)
+const carbonOpts = JSON.parse(JSON.stringify(stackOpts));
+carbonOpts.plugins.tooltip = {{
+  callbacks: {{
+    afterBody: function(items) {{
+      const idx = items[0].dataIndex;
+      const cg = dailyCarbonG[idx];
+      const miles = (cg / 1000 / 0.404).toFixed(3);
+      return '~' + miles + ' mi in a gas car (25 mpg)';
+    }}
+  }}
+}};
+
+// Cumulative chart options: show points on hover for precise values
+const cumOpts = JSON.parse(JSON.stringify(baseOpts));
+cumOpts.interaction = {{ mode: 'index', intersect: false }};
+cumOpts.plugins.tooltip = {{ mode: 'index', intersect: false }};
 
 // Chart configs: daily (bar, stacked) and cumulative (line, by provider)
 const chartConfigs = {{
@@ -783,7 +902,7 @@ const chartConfigs = {{
       {{ label: 'Claude', data: {cum_claude_cost_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
       {{ label: 'Codex', data: {cum_codex_cost_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
       {{ label: 'Gemini', data: {cum_gemini_cost_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
-    ], options: baseOpts }},
+    ], options: cumOpts }},
   }},
   token: {{
     canvas: 'tokenChart',
@@ -799,7 +918,7 @@ const chartConfigs = {{
       {{ label: 'Claude', data: {cum_claude_tok_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
       {{ label: 'Codex', data: {cum_codex_tok_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
       {{ label: 'Gemini', data: {cum_gemini_tok_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
-    ], options: baseOpts }},
+    ], options: cumOpts }},
   }},
   energy: {{
     canvas: 'energyChart',
@@ -815,7 +934,7 @@ const chartConfigs = {{
       {{ label: 'Claude', data: {cum_claude_energy_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
       {{ label: 'Codex', data: {cum_codex_energy_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
       {{ label: 'Gemini', data: {cum_gemini_energy_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
-    ], options: baseOpts }},
+    ], options: cumOpts }},
   }},
   carbon: {{
     canvas: 'carbonChart',
@@ -823,13 +942,15 @@ const chartConfigs = {{
     dailyTitle: 'Daily CO2 Emissions ({carbon_unit})',
     cumTitle: 'Cumulative CO2 ({carbon_unit})',
     daily: {{ type: 'bar', datasets: [
-      {{ label: 'CO2', data: {daily_carbon_json}, backgroundColor: {carbon_colors} }},
-    ], options: baseOpts }},
+      {{ label: 'Claude', data: {claude_carbon}, backgroundColor: '#6366f1' }},
+      {{ label: 'Codex', data: {codex_carbon}, backgroundColor: '#22c55e' }},
+      {{ label: 'Gemini', data: {gemini_carbon}, backgroundColor: '#f59e0b' }},
+    ], options: carbonOpts }},
     cum: {{ type: 'line', datasets: [
       {{ label: 'Claude', data: {cum_claude_carbon_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
       {{ label: 'Codex', data: {cum_codex_carbon_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
       {{ label: 'Gemini', data: {cum_gemini_carbon_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
-    ], options: baseOpts }},
+    ], options: cumOpts }},
   }},
 }};
 

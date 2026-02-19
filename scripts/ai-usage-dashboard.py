@@ -60,10 +60,13 @@ def collect_claude_data(since=None, until=None):
         return {}
 
     try:
-        data = json.loads(output)
+        raw = json.loads(output)
     except json.JSONDecodeError:
         print("  [skip] ccusage returned invalid JSON", file=sys.stderr)
         return {}
+
+    # ccusage wraps data in {"daily": [...]}
+    data = raw.get("daily", raw) if isinstance(raw, dict) else raw
 
     daily = {}
     for entry in data:
@@ -72,13 +75,27 @@ def collect_claude_data(since=None, until=None):
             continue
         daily[date] = {
             "provider": "claude",
-            "input_tokens": entry.get("input_tokens", 0) or 0,
-            "output_tokens": entry.get("output_tokens", 0) or 0,
-            "cache_read_tokens": entry.get("cache_read_tokens", 0) or 0,
-            "cache_write_tokens": entry.get("cache_write_tokens", 0) or 0,
-            "cost": entry.get("total_cost", 0) or 0,
+            "input_tokens": entry.get("inputTokens", 0) or 0,
+            "output_tokens": entry.get("outputTokens", 0) or 0,
+            "cache_read_tokens": entry.get("cacheReadTokens", 0) or 0,
+            "cache_write_tokens": entry.get("cacheCreationTokens", 0) or 0,
+            "cost": entry.get("totalCost", 0) or 0,
         }
     return daily
+
+
+def _parse_date_flexible(date_str):
+    """Parse dates in ISO (2026-01-07) or human (Jan 7, 2026) format to YYYY-MM-DD."""
+    # Already ISO format
+    if len(date_str) >= 10 and date_str[4] == '-':
+        return date_str[:10]
+    # Try human-readable formats
+    for fmt in ("%b %d, %Y", "%B %d, %Y", "%b %d %Y"):
+        try:
+            return datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
 
 
 def collect_codex_data(since=None, until=None):
@@ -95,29 +112,47 @@ def collect_codex_data(since=None, until=None):
         return {}
 
     try:
-        data = json.loads(output)
+        raw = json.loads(output)
     except json.JSONDecodeError:
         print("  [skip] @ccusage/codex returned invalid JSON", file=sys.stderr)
         return {}
 
-    daily = {}
+    # @ccusage/codex wraps data in {"daily": [...]}
+    data = raw.get("daily", raw) if isinstance(raw, dict) else raw
+
+    # First pass: collect all entries and compute blended rate from priced days
+    entries = []
+    priced_cost, priced_tokens = 0, 0
     for entry in data:
-        date = entry.get("date", "")
+        raw_date = entry.get("date", "")
+        if not raw_date:
+            continue
+        date = _parse_date_flexible(raw_date)
         if not date:
             continue
-        input_tok = entry.get("input_tokens", 0) or 0
-        output_tok = entry.get("output_tokens", 0) or 0
-        cost = entry.get("total_cost", 0)
-        # If cost is missing/zero, estimate from tokens (codex model pricing)
+        input_tok = entry.get("inputTokens", 0) or 0
+        output_tok = entry.get("outputTokens", 0) or 0
+        cached_tok = entry.get("cachedInputTokens", 0) or 0
+        cost = entry.get("costUSD", 0) or 0
+        entries.append((date, input_tok, output_tok, cached_tok, cost))
+        if cost > 0:
+            priced_cost += cost
+            priced_tokens += input_tok + output_tok
+
+    # Blended $/token from priced days (gpt-5-codex), fallback for unpriced (gpt-5.3)
+    blended_rate = (priced_cost / priced_tokens) if priced_tokens > 0 else 0.20e-6
+
+    daily = {}
+    for date, input_tok, output_tok, cached_tok, cost in entries:
         if not cost and (input_tok or output_tok):
-            cost = (input_tok * 2.50 / 1_000_000) + (output_tok * 10.00 / 1_000_000)
+            cost = (input_tok + output_tok) * blended_rate
         daily[date] = {
             "provider": "codex",
             "input_tokens": input_tok,
             "output_tokens": output_tok,
-            "cache_read_tokens": entry.get("cache_read_tokens", 0) or 0,
-            "cache_write_tokens": entry.get("cache_write_tokens", 0) or 0,
-            "cost": cost or 0,
+            "cache_read_tokens": cached_tok,
+            "cache_write_tokens": 0,
+            "cost": cost,
         }
     return daily
 
@@ -281,6 +316,48 @@ def generate_html(data, output_path):
     electricity_cost = (totals["energy_wh"] / 1000) * ELECTRICITY_COST_KWH
     energy_pct_of_api = (electricity_cost / totals["cost"] * 100) if totals["cost"] > 0 else 0
 
+    # Smart unit formatting
+    def fmt_energy(wh):
+        if wh >= 1_000_000:
+            return f"{wh/1_000_000:,.2f} MWh"
+        if wh >= 1000:
+            return f"{wh/1000:,.2f} kWh"
+        return f"{wh:,.1f} Wh"
+
+    def fmt_carbon(g):
+        if g >= 1_000_000:
+            return f"{g/1_000_000:,.2f} tonnes"
+        if g >= 1000:
+            return f"{g/1000:,.2f} kg"
+        return f"{g:,.1f} g"
+
+    def fmt_water(ml):
+        if ml >= 1_000_000:
+            return f"{ml/1_000_000:,.2f} m\u00b3"
+        if ml >= 1000:
+            return f"{ml/1000:,.2f} L"
+        return f"{ml:,.0f} mL"
+
+    def fmt_cost(val):
+        if val >= 1000:
+            return f"${val:,.0f}"
+        if val >= 1:
+            return f"${val:,.2f}"
+        return f"${val:,.4f}"
+
+    def fmt_tokens(val):
+        if val >= 1_000_000_000:
+            return f"{val/1_000_000_000:,.2f} B"
+        if val >= 1_000_000:
+            return f"{val/1_000_000:,.2f} M"
+        if val >= 1000:
+            return f"{val/1000:,.2f} K"
+        return f"{val:,.0f}"
+
+    energy_display = fmt_energy(totals["energy_wh"])
+    carbon_display = fmt_carbon(totals["carbon_g"])
+    water_display = fmt_water(totals["water_ml"])
+
     # Equivalents
     carbon_kg = totals["carbon_g"] / 1000
     household_months = carbon_kg / 900
@@ -290,63 +367,164 @@ def generate_html(data, output_path):
     showers = totals["water_ml"] / 65000
     iphone_charges = totals["energy_wh"] / 12.7
 
-    # Build monthly cost matrix (months x providers)
+    # Real-world context for cards
+    energy_context = f"~{iphone_charges:,.0f} iPhone charges" if iphone_charges >= 1 else f"~{iphone_charges:,.2f} iPhone charges"
+    carbon_context = f"~{car_miles:,.2f} miles driven"
+    water_context = f"~{showers:,.2f} showers"
+
+    # Build monthly cost matrix (months x providers), filling gaps
     monthly = defaultdict(lambda: {"claude": 0, "codex": 0, "gemini": 0})
+    monthly_tokens = defaultdict(lambda: {
+        p: {"input": 0, "output": 0, "cached": 0} for p in ["claude", "codex", "gemini"]
+    })
     for row in data:
         month_key = row["date"][:7]  # YYYY-MM
         for provider in ["claude", "codex", "gemini"]:
             monthly[month_key][provider] += row[provider]["cost"]
+            monthly_tokens[month_key][provider]["input"] += row[provider]["input_tokens"]
+            monthly_tokens[month_key][provider]["output"] += row[provider]["output_tokens"]
+            monthly_tokens[month_key][provider]["cached"] += row[provider]["cache_read_tokens"]
+
+    # Fill in missing months between first and last
+    if monthly:
+        all_months = sorted(monthly.keys())
+        start = datetime.strptime(all_months[0], "%Y-%m")
+        end = datetime.strptime(all_months[-1], "%Y-%m")
+        current = start
+        while current <= end:
+            key = current.strftime("%Y-%m")
+            monthly.setdefault(key, {"claude": 0, "codex": 0, "gemini": 0})
+            if current.month == 12:
+                current = current.replace(year=current.year + 1, month=1)
+            else:
+                current = current.replace(month=current.month + 1)
 
     sorted_months = sorted(monthly.keys())
     col_totals = {"claude": 0, "codex": 0, "gemini": 0}
+    col_tokens = {p: {"input": 0, "output": 0, "cached": 0} for p in ["claude", "codex", "gemini"]}
     matrix_rows_html = ""
+
+    def _tip_html(t):
+        """Generate CSS tooltip HTML for token breakdown."""
+        return (
+            f'<div class="tip">'
+            f'<div class="tip-row"><span class="tip-label">Input</span><span class="tip-val">{t["input"]:,}</span></div>'
+            f'<div class="tip-row"><span class="tip-label">Output</span><span class="tip-val">{t["output"]:,}</span></div>'
+            f'<div class="tip-row"><span class="tip-label">Cached</span><span class="tip-val">{t["cached"]:,}</span></div>'
+            f'</div>'
+        )
+
     for month in sorted_months:
         m = monthly[month]
+        mt = monthly_tokens[month]
         row_total = m["claude"] + m["codex"] + m["gemini"]
-        col_totals["claude"] += m["claude"]
-        col_totals["codex"] += m["codex"]
-        col_totals["gemini"] += m["gemini"]
+        for p in ["claude", "codex", "gemini"]:
+            col_totals[p] += m[p]
+            for k in ["input", "output", "cached"]:
+                col_tokens[p][k] += mt[p][k]
         matrix_rows_html += (
             f'<tr><td class="month-label">{month}</td>'
-            f'<td>${m["claude"]:.2f}</td>'
-            f'<td>${m["codex"]:.2f}</td>'
-            f'<td>${m["gemini"]:.2f}</td>'
-            f'<td class="row-total">${row_total:.2f}</td></tr>\n'
+            f'<td class="has-tip">${m["claude"]:,.2f}{_tip_html(mt["claude"])}</td>'
+            f'<td class="has-tip">${m["codex"]:,.2f}{_tip_html(mt["codex"])}</td>'
+            f'<td class="has-tip">${m["gemini"]:,.2f}{_tip_html(mt["gemini"])}</td>'
+            f'<td class="row-total">${row_total:,.2f}</td></tr>\n'
         )
     grand_total = col_totals["claude"] + col_totals["codex"] + col_totals["gemini"]
     matrix_footer_html = (
         f'<tr class="col-totals"><td class="month-label">Total</td>'
-        f'<td>${col_totals["claude"]:.2f}</td>'
-        f'<td>${col_totals["codex"]:.2f}</td>'
-        f'<td>${col_totals["gemini"]:.2f}</td>'
-        f'<td class="row-total">${grand_total:.2f}</td></tr>'
+        f'<td class="has-tip">${col_totals["claude"]:,.2f}{_tip_html(col_tokens["claude"])}</td>'
+        f'<td class="has-tip">${col_totals["codex"]:,.2f}{_tip_html(col_tokens["codex"])}</td>'
+        f'<td class="has-tip">${col_totals["gemini"]:,.2f}{_tip_html(col_tokens["gemini"])}</td>'
+        f'<td class="row-total">${grand_total:,.2f}</td></tr>'
     )
 
-    # Prepare chart data
+    # Prepare chart data - pick best unit scale for energy and carbon
     dates_json = json.dumps([r["date"] for r in data])
     claude_cost = json.dumps([round(r["claude"]["cost"], 2) for r in data])
     codex_cost = json.dumps([round(r["codex"]["cost"], 2) for r in data])
     gemini_cost = json.dumps([round(r["gemini"]["cost"], 2) for r in data])
 
-    claude_energy = json.dumps([round(r["claude"]["energy_wh"], 2) for r in data])
-    codex_energy = json.dumps([round(r["codex"]["energy_wh"], 2) for r in data])
-    gemini_energy = json.dumps([round(r["gemini"]["energy_wh"], 2) for r in data])
+    # Determine best energy unit for charts
+    max_daily_energy = max((r["claude"]["energy_wh"] + r["codex"]["energy_wh"] + r["gemini"]["energy_wh"]) for r in data) if data else 0
+    if max_daily_energy >= 1_000_000:
+        energy_divisor, energy_unit = 1_000_000, "MWh"
+    elif max_daily_energy >= 500:
+        energy_divisor, energy_unit = 1000, "kWh"
+    else:
+        energy_divisor, energy_unit = 1, "Wh"
 
-    daily_carbon = [round(r["claude"]["carbon_g"] + r["codex"]["carbon_g"] + r["gemini"]["carbon_g"], 2) for r in data]
-    carbon_colors = json.dumps(["#22c55e" if c < 5 else "#f59e0b" if c < 20 else "#ef4444" for c in daily_carbon])
+    claude_energy = json.dumps([round(r["claude"]["energy_wh"] / energy_divisor, 4) for r in data])
+    codex_energy = json.dumps([round(r["codex"]["energy_wh"] / energy_divisor, 4) for r in data])
+    gemini_energy = json.dumps([round(r["gemini"]["energy_wh"] / energy_divisor, 4) for r in data])
+
+    # Determine best carbon unit for charts
+    daily_carbon_raw = [(r["claude"]["carbon_g"] + r["codex"]["carbon_g"] + r["gemini"]["carbon_g"]) for r in data]
+    max_daily_carbon = max(daily_carbon_raw) if daily_carbon_raw else 0
+    if max_daily_carbon >= 1_000_000:
+        carbon_divisor, carbon_unit = 1_000_000, "tonnes"
+    elif max_daily_carbon >= 500:
+        carbon_divisor, carbon_unit = 1000, "kg"
+    else:
+        carbon_divisor, carbon_unit = 1, "g"
+
+    daily_carbon = [round(c / carbon_divisor, 4) for c in daily_carbon_raw]
+    carbon_colors = json.dumps(["#22c55e" if c < (5 / carbon_divisor) else "#f59e0b" if c < (20 / carbon_divisor) else "#ef4444" for c in daily_carbon])
     daily_carbon_json = json.dumps(daily_carbon)
 
-    # Cumulative series
-    cum_cost, cum_carbon = [], []
-    rc, rcarb = 0, 0
+    # Daily token use by provider (pick best unit)
+    daily_tokens_raw = [(r["claude"]["input_tokens"] + r["claude"]["output_tokens"] + r["claude"]["cache_read_tokens"]
+                       + r["codex"]["input_tokens"] + r["codex"]["output_tokens"] + r["codex"]["cache_read_tokens"]
+                       + r["gemini"]["input_tokens"] + r["gemini"]["output_tokens"] + r["gemini"]["cache_read_tokens"]) for r in data]
+    max_daily_tokens = max(daily_tokens_raw) if daily_tokens_raw else 0
+    if max_daily_tokens >= 1_000_000_000:
+        token_divisor, token_unit = 1_000_000_000, "B tokens"
+    elif max_daily_tokens >= 1_000_000:
+        token_divisor, token_unit = 1_000_000, "M tokens"
+    elif max_daily_tokens >= 1000:
+        token_divisor, token_unit = 1000, "K tokens"
+    else:
+        token_divisor, token_unit = 1, "tokens"
+
+    def _provider_daily_tokens(r, p):
+        return (r[p]["input_tokens"] + r[p]["output_tokens"] + r[p]["cache_read_tokens"]) / token_divisor
+
+    claude_tokens = json.dumps([round(_provider_daily_tokens(r, "claude"), 2) for r in data])
+    codex_tokens = json.dumps([round(_provider_daily_tokens(r, "codex"), 2) for r in data])
+    gemini_tokens = json.dumps([round(_provider_daily_tokens(r, "gemini"), 2) for r in data])
+
+    # Cumulative series (by provider)
+    cum_carbon, cum_energy = [], []
+    cum_claude_cost, cum_codex_cost, cum_gemini_cost = [], [], []
+    cum_claude_tok, cum_codex_tok, cum_gemini_tok = [], [], []
+    rcarb, renergy = 0, 0
+    rcc, rcxc, rgmc = 0, 0, 0
+    rct, rcx, rgm = 0, 0, 0
     for row in data:
         for p in ["claude", "codex", "gemini"]:
-            rc += row[p]["cost"]
             rcarb += row[p]["carbon_g"]
-        cum_cost.append(round(rc, 2))
-        cum_carbon.append(round(rcarb, 2))
-    cum_cost_json = json.dumps(cum_cost)
+            renergy += row[p]["energy_wh"]
+        rcc += row["claude"]["cost"]
+        rcxc += row["codex"]["cost"]
+        rgmc += row["gemini"]["cost"]
+        rct += _provider_daily_tokens(row, "claude") * token_divisor
+        rcx += _provider_daily_tokens(row, "codex") * token_divisor
+        rgm += _provider_daily_tokens(row, "gemini") * token_divisor
+        cum_carbon.append(round(rcarb / carbon_divisor, 2))
+        cum_energy.append(round(renergy / energy_divisor, 2))
+        cum_claude_cost.append(round(rcc, 2))
+        cum_codex_cost.append(round(rcxc, 2))
+        cum_gemini_cost.append(round(rgmc, 2))
+        cum_claude_tok.append(round(rct / token_divisor, 2))
+        cum_codex_tok.append(round(rcx / token_divisor, 2))
+        cum_gemini_tok.append(round(rgm / token_divisor, 2))
     cum_carbon_json = json.dumps(cum_carbon)
+    cum_energy_json = json.dumps(cum_energy)
+    cum_claude_cost_json = json.dumps(cum_claude_cost)
+    cum_codex_cost_json = json.dumps(cum_codex_cost)
+    cum_gemini_cost_json = json.dumps(cum_gemini_cost)
+    cum_claude_tok_json = json.dumps(cum_claude_tok)
+    cum_codex_tok_json = json.dumps(cum_codex_tok)
+    cum_gemini_tok_json = json.dumps(cum_gemini_tok)
 
     # Date range for title
     date_range = ""
@@ -380,7 +558,11 @@ def generate_html(data, output_path):
   .card .detail {{ color: var(--muted); font-size: 0.75rem; margin-top: 0.25rem; }}
   .charts {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }}
   .chart-box {{ background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; }}
-  .chart-box h3 {{ font-size: 0.875rem; color: var(--muted); margin-bottom: 1rem; }}
+  .chart-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }}
+  .chart-header h3 {{ font-size: 0.875rem; color: var(--muted); margin: 0; }}
+  .toggle-btn {{ background: var(--border); color: var(--muted); border: none; border-radius: 0.375rem; padding: 0.25rem 0.625rem; font-size: 0.7rem; cursor: pointer; transition: all 0.15s; }}
+  .toggle-btn:hover {{ background: var(--accent); color: var(--text); }}
+  .toggle-btn.active {{ background: var(--accent); color: var(--text); }}
   .equiv {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; }}
   .equiv-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1rem; text-align: center; }}
   .equiv-card .num {{ font-size: 1.75rem; font-weight: 700; color: var(--accent); }}
@@ -404,6 +586,12 @@ def generate_html(data, output_path):
   .cost-matrix th.claude {{ color: var(--claude); }}
   .cost-matrix th.codex {{ color: var(--codex); }}
   .cost-matrix th.gemini {{ color: var(--gemini); }}
+  .cost-matrix td.has-tip {{ cursor: help; position: relative; }}
+  .cost-matrix td.has-tip:hover .tip {{ display: block; }}
+  .tip {{ display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #0f172a; border: 1px solid var(--accent); border-radius: 0.5rem; padding: 0.5rem 0.75rem; font-size: 0.7rem; white-space: nowrap; z-index: 10; color: var(--text); pointer-events: none; margin-bottom: 4px; }}
+  .tip .tip-row {{ display: flex; justify-content: space-between; gap: 1rem; }}
+  .tip .tip-label {{ color: var(--muted); }}
+  .tip .tip-val {{ font-variant-numeric: tabular-nums; text-align: right; }}
 </style>
 </head>
 <body>
@@ -416,29 +604,29 @@ def generate_html(data, output_path):
   <div class="legend-item"><div class="legend-dot" style="background: var(--gemini)"></div> Gemini CLI</div>
 </div>
 
-<p class="token-summary">{total_tokens:,.0f} total tokens &middot; {totals['input_tokens']:,.0f} input &middot; {totals['output_tokens']:,.0f} output &middot; {totals['cache_read_tokens']:,.0f} cached</p>
+<p class="token-summary">{total_tokens:,} total tokens &middot; {totals['input_tokens']:,} input &middot; {totals['output_tokens']:,} output &middot; {totals['cache_read_tokens']:,} cached</p>
 
 {"<div class='no-data'>No usage data found. Make sure ccusage is installed (npm i -g ccusage).</div>" if not data else f'''
 <div class="cards">
   <div class="card">
     <div class="label">Total API Cost</div>
-    <div class="value">${totals["cost"]:.2f}</div>
-    <div class="detail">{len(data)} days tracked</div>
+    <div class="value">{fmt_cost(totals["cost"])}</div>
+    <div class="detail">{fmt_cost(totals["cost"] / len(data))}/day avg over {len(data)} days</div>
   </div>
   <div class="card">
     <div class="label">Total Tokens</div>
-    <div class="value">{total_tokens:,.0f}</div>
-    <div class="detail">{totals["output_tokens"]:,.0f} output</div>
+    <div class="value">{fmt_tokens(total_tokens)}</div>
+    <div class="detail">{fmt_tokens(total_tokens / len(data))}/day avg</div>
   </div>
   <div class="card">
     <div class="label">Input Tokens</div>
-    <div class="value">{totals["input_tokens"]:,.0f}</div>
-    <div class="detail">{totals["cache_read_tokens"]:,.0f} cached</div>
+    <div class="value">{fmt_tokens(totals["input_tokens"])}</div>
+    <div class="detail">{(totals["cache_read_tokens"] / totals["input_tokens"] * 100) if totals["input_tokens"] else 0:.0f}% cache hit rate ({fmt_tokens(totals["cache_read_tokens"])} cached)</div>
   </div>
   <div class="card">
     <div class="label">Output Tokens</div>
-    <div class="value">{totals["output_tokens"]:,.0f}</div>
-    <div class="detail">Most expensive token type</div>
+    <div class="value">{fmt_tokens(totals["output_tokens"])}</div>
+    <div class="detail">{fmt_tokens(totals["output_tokens"] / len(data))}/day avg</div>
   </div>
 </div>
 
@@ -452,12 +640,18 @@ def generate_html(data, output_path):
 
 <div class="charts">
   <div class="chart-box">
-    <h3>Daily Cost by Provider ($)</h3>
+    <div class="chart-header">
+      <h3 id="costTitle">Daily Cost by Provider ($)</h3>
+      <button class="toggle-btn" onclick="toggleChart('cost')">Cumulative</button>
+    </div>
     <canvas id="costChart"></canvas>
   </div>
   <div class="chart-box">
-    <h3>Cumulative Cost ($)</h3>
-    <canvas id="cumCostChart"></canvas>
+    <div class="chart-header">
+      <h3 id="tokenTitle">Daily Token Use by Provider ({token_unit})</h3>
+      <button class="toggle-btn" onclick="toggleChart('token')">Cumulative</button>
+    </div>
+    <canvas id="tokenChart"></canvas>
   </div>
 </div>
 
@@ -466,55 +660,57 @@ def generate_html(data, output_path):
 <div class="cards">
   <div class="card">
     <div class="label">Energy Used</div>
-    <div class="value">{totals["energy_wh"]:.1f} Wh</div>
-    <div class="detail">{totals["energy_wh"]/1000:.4f} kWh</div>
+    <div class="value">{energy_display}</div>
+    <div class="detail">{energy_context}</div>
   </div>
   <div class="card">
     <div class="label">CO2 Emitted</div>
-    <div class="value">{totals["carbon_g"]:.1f} g</div>
-    <div class="detail">{carbon_kg:.4f} kg CO2e</div>
+    <div class="value">{carbon_display}</div>
+    <div class="detail">{carbon_context}</div>
   </div>
   <div class="card">
     <div class="label">Water Used</div>
-    <div class="value">{totals["water_ml"]:.0f} mL</div>
-    <div class="detail">{totals["water_ml"]/1000:.3f} L</div>
+    <div class="value">{water_display}</div>
+    <div class="detail">{water_context}</div>
   </div>
   <div class="card">
     <div class="label">Electricity Cost</div>
-    <div class="value">${electricity_cost:.4f}</div>
-    <div class="detail">{energy_pct_of_api:.3f}% of API cost</div>
+    <div class="value">${electricity_cost:.2f}</div>
+    <div class="detail">{energy_pct_of_api:.2f}% of API cost</div>
   </div>
 </div>
 
 <div class="charts">
   <div class="chart-box">
-    <h3>Daily Energy by Provider (Wh)</h3>
+    <div class="chart-header">
+      <h3 id="energyTitle">Daily Energy by Provider ({energy_unit})</h3>
+      <button class="toggle-btn" onclick="toggleChart('energy')">Cumulative</button>
+    </div>
     <canvas id="energyChart"></canvas>
   </div>
   <div class="chart-box">
-    <h3>Daily CO2 Emissions (g)</h3>
+    <div class="chart-header">
+      <h3 id="carbonTitle">Daily CO2 Emissions ({carbon_unit})</h3>
+      <button class="toggle-btn" onclick="toggleChart('carbon')">Cumulative</button>
+    </div>
     <canvas id="carbonChart"></canvas>
-  </div>
-  <div class="chart-box">
-    <h3>Cumulative CO2 (g)</h3>
-    <canvas id="cumCarbonChart"></canvas>
   </div>
 </div>
 
 <h3 class="section-title">Real-World Equivalents</h3>
 <div class="equiv">
-  <div class="equiv-card"><div class="num">{household_months:.4f}</div><div class="desc">Household-months of electricity</div></div>
-  <div class="equiv-card"><div class="num">{car_miles:.2f}</div><div class="desc">Miles driven (avg car)</div></div>
-  <div class="equiv-card"><div class="num">{flights_pct:.4f}</div><div class="desc">NYC-LA flights</div></div>
-  <div class="equiv-card"><div class="num">{trees_needed:.4f}</div><div class="desc">Trees needed (1 year offset)</div></div>
-  <div class="equiv-card"><div class="num">{showers:.4f}</div><div class="desc">Showers (water)</div></div>
-  <div class="equiv-card"><div class="num">{iphone_charges:.1f}</div><div class="desc">iPhone charges</div></div>
+  <div class="equiv-card"><div class="num">{household_months:,.2f}</div><div class="desc">Household-months of electricity</div></div>
+  <div class="equiv-card"><div class="num">{car_miles:,.2f}</div><div class="desc">Miles driven (avg car)</div></div>
+  <div class="equiv-card"><div class="num">{flights_pct:,.2f}</div><div class="desc">NYC-LA flights</div></div>
+  <div class="equiv-card"><div class="num">{trees_needed:,.2f}</div><div class="desc">Trees needed (1 year offset)</div></div>
+  <div class="equiv-card"><div class="num">{showers:,.2f}</div><div class="desc">Showers (water)</div></div>
+  <div class="equiv-card"><div class="num">{iphone_charges:,.2f}</div><div class="desc">iPhone charges</div></div>
 </div>
 '''}
 
 <script>
 const dates = {dates_json};
-const opts = {{
+const baseOpts = {{
   responsive: true,
   plugins: {{ legend: {{ display: false }} }},
   scales: {{
@@ -522,57 +718,107 @@ const opts = {{
     y: {{ ticks: {{ color: '#94a3b8' }}, grid: {{ color: '#334155' }} }}
   }}
 }};
-const stackOpts = JSON.parse(JSON.stringify(opts));
+const stackOpts = JSON.parse(JSON.stringify(baseOpts));
 stackOpts.scales.x.stacked = true;
 stackOpts.scales.y.stacked = true;
 
-// Daily Cost
-new Chart(document.getElementById('costChart'), {{
-  type: 'bar', data: {{
-    labels: dates,
-    datasets: [
+// Chart configs: daily (bar, stacked) and cumulative (line, by provider)
+const chartConfigs = {{
+  cost: {{
+    canvas: 'costChart',
+    titleEl: 'costTitle',
+    dailyTitle: 'Daily Cost by Provider ($)',
+    cumTitle: 'Cumulative Cost by Provider ($)',
+    daily: {{ type: 'bar', datasets: [
       {{ label: 'Claude', data: {claude_cost}, backgroundColor: '#6366f1' }},
       {{ label: 'Codex', data: {codex_cost}, backgroundColor: '#22c55e' }},
       {{ label: 'Gemini', data: {gemini_cost}, backgroundColor: '#f59e0b' }},
-    ]
-  }}, options: stackOpts
-}});
-
-// Daily Energy
-new Chart(document.getElementById('energyChart'), {{
-  type: 'bar', data: {{
-    labels: dates,
-    datasets: [
+    ], options: stackOpts }},
+    cum: {{ type: 'line', datasets: [
+      {{ label: 'Claude', data: {cum_claude_cost_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
+      {{ label: 'Codex', data: {cum_codex_cost_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
+      {{ label: 'Gemini', data: {cum_gemini_cost_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
+    ], options: baseOpts }},
+  }},
+  token: {{
+    canvas: 'tokenChart',
+    titleEl: 'tokenTitle',
+    dailyTitle: 'Daily Token Use by Provider ({token_unit})',
+    cumTitle: 'Cumulative Tokens by Provider ({token_unit})',
+    daily: {{ type: 'bar', datasets: [
+      {{ label: 'Claude', data: {claude_tokens}, backgroundColor: '#6366f1' }},
+      {{ label: 'Codex', data: {codex_tokens}, backgroundColor: '#22c55e' }},
+      {{ label: 'Gemini', data: {gemini_tokens}, backgroundColor: '#f59e0b' }},
+    ], options: stackOpts }},
+    cum: {{ type: 'line', datasets: [
+      {{ label: 'Claude', data: {cum_claude_tok_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
+      {{ label: 'Codex', data: {cum_codex_tok_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
+      {{ label: 'Gemini', data: {cum_gemini_tok_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
+    ], options: baseOpts }},
+  }},
+  energy: {{
+    canvas: 'energyChart',
+    titleEl: 'energyTitle',
+    dailyTitle: 'Daily Energy by Provider ({energy_unit})',
+    cumTitle: 'Cumulative Energy ({energy_unit})',
+    daily: {{ type: 'bar', datasets: [
       {{ label: 'Claude', data: {claude_energy}, backgroundColor: '#6366f1' }},
       {{ label: 'Codex', data: {codex_energy}, backgroundColor: '#22c55e' }},
       {{ label: 'Gemini', data: {gemini_energy}, backgroundColor: '#f59e0b' }},
-    ]
-  }}, options: stackOpts
+    ], options: stackOpts }},
+    cum: {{ type: 'line', datasets: [
+      {{ label: 'Energy', data: {cum_energy_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
+    ], options: baseOpts }},
+  }},
+  carbon: {{
+    canvas: 'carbonChart',
+    titleEl: 'carbonTitle',
+    dailyTitle: 'Daily CO2 Emissions ({carbon_unit})',
+    cumTitle: 'Cumulative CO2 ({carbon_unit})',
+    daily: {{ type: 'bar', datasets: [
+      {{ label: 'CO2', data: {daily_carbon_json}, backgroundColor: {carbon_colors} }},
+    ], options: baseOpts }},
+    cum: {{ type: 'line', datasets: [
+      {{ label: 'CO2', data: {cum_carbon_json}, borderColor: '#ef4444', fill: false, tension: 0.3, pointRadius: 0 }},
+    ], options: baseOpts }},
+  }},
+}};
+
+// Track chart instances and state
+const charts = {{}};
+const chartState = {{}};
+
+// Initialize all charts in daily mode
+Object.keys(chartConfigs).forEach(key => {{
+  const cfg = chartConfigs[key];
+  chartState[key] = 'daily';
+  charts[key] = new Chart(document.getElementById(cfg.canvas), {{
+    type: cfg.daily.type,
+    data: {{ labels: dates, datasets: cfg.daily.datasets }},
+    options: cfg.daily.options,
+  }});
 }});
 
-// Daily Carbon
-new Chart(document.getElementById('carbonChart'), {{
-  type: 'bar', data: {{
-    labels: dates,
-    datasets: [{{ label: 'CO2', data: {daily_carbon_json}, backgroundColor: {carbon_colors} }}]
-  }}, options: opts
-}});
+function toggleChart(key) {{
+  const cfg = chartConfigs[key];
+  const isCum = chartState[key] === 'daily';
+  chartState[key] = isCum ? 'cum' : 'daily';
+  const mode = isCum ? cfg.cum : cfg.daily;
 
-// Cumulative Cost
-new Chart(document.getElementById('cumCostChart'), {{
-  type: 'line', data: {{
-    labels: dates,
-    datasets: [{{ label: 'Cumulative $', data: {cum_cost_json}, borderColor: '#6366f1', fill: false, tension: 0.3 }}]
-  }}, options: opts
-}});
+  // Destroy and recreate (type change requires this)
+  charts[key].destroy();
+  charts[key] = new Chart(document.getElementById(cfg.canvas), {{
+    type: mode.type,
+    data: {{ labels: dates, datasets: mode.datasets }},
+    options: mode.options,
+  }});
 
-// Cumulative Carbon
-new Chart(document.getElementById('cumCarbonChart'), {{
-  type: 'line', data: {{
-    labels: dates,
-    datasets: [{{ label: 'Cumulative CO2 (g)', data: {cum_carbon_json}, borderColor: '#ef4444', fill: false, tension: 0.3 }}]
-  }}, options: opts
-}});
+  // Update title and button
+  document.getElementById(cfg.titleEl).textContent = isCum ? cfg.cumTitle : cfg.dailyTitle;
+  const btn = document.getElementById(cfg.titleEl).parentElement.querySelector('.toggle-btn');
+  btn.textContent = isCum ? 'Daily' : 'Cumulative';
+  btn.classList.toggle('active', isCum);
+}}
 </script>
 </body>
 </html>"""

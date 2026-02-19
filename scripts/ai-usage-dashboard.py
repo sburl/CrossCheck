@@ -370,6 +370,14 @@ def generate_html(data, output_path):
             return f"{val/1000:,.2f} K"
         return f"{val:,.0f}"
 
+    def fmt_num(val):
+        """Smart number format: drop decimals for large numbers."""
+        if val >= 10:
+            return f"{val:,.0f}"
+        if val >= 1:
+            return f"{val:,.1f}"
+        return f"{val:,.2f}"
+
     energy_display = fmt_energy(totals["energy_wh"])
     carbon_display = fmt_carbon(totals["carbon_g"])
     water_display = fmt_water(totals["water_ml"])
@@ -403,15 +411,13 @@ def generate_html(data, output_path):
     tesla_miles = energy_kwh / 0.25  # Tesla ~0.25 kWh/mile
     us_home_days = energy_kwh / 30  # US home ~30 kWh/day
     if us_home_days >= 1:
-        energy_context = f"~{us_home_days:,.1f} days of avg US household electricity"
+        energy_context = f"~{fmt_num(us_home_days)} days of avg US household electricity"
     elif tesla_miles >= 1:
-        energy_context = f"~{tesla_miles:,.0f} miles in a Tesla"
-    elif iphone_charges >= 1:
-        energy_context = f"~{iphone_charges:,.0f} iPhone charges"
+        energy_context = f"~{fmt_num(tesla_miles)} miles in a Tesla"
     else:
-        energy_context = f"~{iphone_charges:,.2f} iPhone charges"
-    carbon_context = f"~{car_miles:,.2f} miles driven"
-    water_context = f"~{showers:,.2f} showers"
+        energy_context = f"~{fmt_num(iphone_charges)} iPhone charges"
+    carbon_context = f"~{fmt_num(car_miles)} miles driven"
+    water_context = f"~{fmt_num(showers)} showers"
 
     # Build monthly cost matrix (months x providers), filling gaps
     monthly = defaultdict(lambda: {"claude": 0, "codex": 0, "gemini": 0})
@@ -688,7 +694,7 @@ def generate_html(data, output_path):
 </style>
 </head>
 <body>
-<h1>⚡ AI Usage & Impact Dashboard</h1>
+<h1><span style="font-size: 1.1em; filter: grayscale(1) brightness(10);">⚡</span> AI Usage & Impact Dashboard</h1>
 <p class="subtitle"><span id="dateRange">{date_range} ({len(data)} active days)</span> &middot; <span id="genTime">Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</span></p>
 <p class="token-summary" id="tokenSummary">{total_tokens:,} total tokens &middot; {totals['input_tokens']:,} input &middot; {totals['output_tokens']:,} output &middot; {totals['cache_read_tokens']:,} cached</p>
 
@@ -799,12 +805,12 @@ def generate_html(data, output_path):
 
 <h3 class="section-title">Real-World Equivalents</h3>
 <div class="equiv">
-  <div class="equiv-card"><div class="emoji">🏠</div><div class="eq-content"><div class="num" id="eqHousehold">{household_months:,.2f}</div><div class="desc">Household-months of electricity</div></div></div>
-  <div class="equiv-card"><div class="emoji">🚗</div><div class="eq-content"><div class="num" id="eqCar">{car_miles:,.2f}</div><div class="desc">Miles in a gas car (25 mpg avg)</div></div></div>
-  <div class="equiv-card"><div class="emoji">✈️</div><div class="eq-content"><div class="num" id="eqFlights">{flights_pct:,.2f}</div><div class="desc">NYC-LA flights</div></div></div>
-  <div class="equiv-card"><div class="emoji">🌳</div><div class="eq-content"><div class="num" id="eqTrees">{trees_needed:,.2f}</div><div class="desc">Trees needed (1 year offset)</div></div></div>
-  <div class="equiv-card"><div class="emoji">🚿</div><div class="eq-content"><div class="num" id="eqShowers">{showers:,.2f}</div><div class="desc">Showers (water)</div></div></div>
-  <div class="equiv-card"><div class="emoji">📱</div><div class="eq-content"><div class="num" id="eqIphone">{iphone_charges:,.2f}</div><div class="desc">iPhone charges</div></div></div>
+  <div class="equiv-card"><div class="emoji">🏠</div><div class="eq-content"><div class="num" id="eqHousehold">{fmt_num(household_months)}</div><div class="desc">Household-months of electricity</div></div></div>
+  <div class="equiv-card"><div class="emoji">🚗</div><div class="eq-content"><div class="num" id="eqCar">{fmt_num(car_miles)}</div><div class="desc">Miles in a gas car (25 mpg avg)</div></div></div>
+  <div class="equiv-card"><div class="emoji">✈️</div><div class="eq-content"><div class="num" id="eqFlights">{fmt_num(flights_pct)}</div><div class="desc">NYC-LA flights</div></div></div>
+  <div class="equiv-card"><div class="emoji">🌳</div><div class="eq-content"><div class="num" id="eqTrees">{fmt_num(trees_needed)}</div><div class="desc">Trees needed (1 year offset)</div></div></div>
+  <div class="equiv-card"><div class="emoji">🚿</div><div class="eq-content"><div class="num" id="eqShowers">{fmt_num(showers)}</div><div class="desc">Showers (water)</div></div></div>
+  <div class="equiv-card"><div class="emoji">📱</div><div class="eq-content"><div class="num" id="eqIphone">{fmt_num(iphone_charges)}</div><div class="desc">iPhone charges</div></div></div>
 </div>
 
 <details class="assumptions">
@@ -891,7 +897,7 @@ const baseOpts = {{
   plugins: {{
     legend: {{
       display: true,
-      labels: {{ color: '#94a3b8', boxWidth: 12, padding: 12, font: {{ size: 11 }}, usePointStyle: true, pointStyle: 'rectRounded' }}
+      labels: {{ color: '#94a3b8', boxWidth: 12, padding: 12, font: {{ size: 11 }}, usePointStyle: true, pointStyle: 'circle' }}
     }}
   }},
   scales: {{
@@ -930,7 +936,7 @@ const energyOpts = dailyTooltipOpts('', function(items) {{
   let totalWh = 0;
   items.forEach(i => totalWh += (i.raw || 0) * {energy_divisor});
   const kwh = totalWh / 1000;
-  return 'Electricity: $' + (kwh * {ELECTRICITY_COST_KWH}).toFixed(4) + ' (~' + (kwh / 1.25).toFixed(1) + ' hrs household use)';
+  return 'Electricity: $' + (kwh * {ELECTRICITY_COST_KWH}).toFixed(2) + ' (~' + (kwh / 1.25).toFixed(1) + ' hrs household use)';
 }});
 // Patch energy label to show unit suffix instead of prefix
 energyOpts.plugins.tooltip.callbacks.label = function(ctx) {{
@@ -940,7 +946,7 @@ energyOpts.plugins.tooltip.callbacks.footer = function(items) {{
   const total = items.reduce((s,i) => s + (i.raw||0), 0);
   let totalWh = total * {energy_divisor};
   const kwh = totalWh / 1000;
-  return ['Total: ' + total.toFixed(4) + ' {energy_unit}', 'Electricity: $' + (kwh * {ELECTRICITY_COST_KWH}).toFixed(4) + ' (~' + (kwh / 1.25).toFixed(1) + ' hrs household use)'];
+  return ['Total: ' + total.toFixed(2) + ' {energy_unit}', 'Electricity: $' + (kwh * {ELECTRICITY_COST_KWH}).toFixed(2) + ' (~' + (kwh / 1.25).toFixed(1) + ' hrs household use)'];
 }};
 
 // Daily carbon: unit suffix + miles context
@@ -1043,9 +1049,9 @@ const chartConfigs = {{
       {{ label: 'Gemini', data: {gemini_cost}, backgroundColor: '#f59e0b' }},
     ], options: costDailyOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_cost_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
-      {{ label: 'Codex', data: {cum_codex_cost_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
-      {{ label: 'Gemini', data: {cum_gemini_cost_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Claude', data: {cum_claude_cost_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_cost_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_cost_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
     ], options: cumCostOpts }},
   }},
   token: {{
@@ -1059,9 +1065,9 @@ const chartConfigs = {{
       {{ label: 'Gemini', data: {gemini_tokens}, backgroundColor: '#f59e0b' }},
     ], options: tokenDailyOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_tok_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
-      {{ label: 'Codex', data: {cum_codex_tok_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
-      {{ label: 'Gemini', data: {cum_gemini_tok_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Claude', data: {cum_claude_tok_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_tok_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_tok_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
     ], options: cumTokenOpts }},
   }},
   energy: {{
@@ -1075,9 +1081,9 @@ const chartConfigs = {{
       {{ label: 'Gemini', data: {gemini_energy}, backgroundColor: '#f59e0b' }},
     ], options: energyOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_energy_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
-      {{ label: 'Codex', data: {cum_codex_energy_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
-      {{ label: 'Gemini', data: {cum_gemini_energy_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Claude', data: {cum_claude_energy_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_energy_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_energy_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
     ], options: cumEnergyOpts }},
   }},
   carbon: {{
@@ -1091,9 +1097,9 @@ const chartConfigs = {{
       {{ label: 'Gemini', data: {gemini_carbon}, backgroundColor: '#f59e0b' }},
     ], options: carbonOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_carbon_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
-      {{ label: 'Codex', data: {cum_codex_carbon_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
-      {{ label: 'Gemini', data: {cum_gemini_carbon_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Claude', data: {cum_claude_carbon_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_carbon_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_carbon_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
     ], options: cumCarbonOpts }},
   }},
 }};
@@ -1151,6 +1157,7 @@ function fT(v) {{ return v >= 1e9 ? (v/1e9).toFixed(2)+' B' : v >= 1e6 ? (v/1e6)
 function fEn(wh) {{ return wh >= 1e6 ? (wh/1e6).toFixed(2)+' MWh' : wh >= 1e3 ? (wh/1e3).toFixed(2)+' kWh' : wh.toFixed(1)+' Wh'; }}
 function fCO(g) {{ return g >= 1e6 ? (g/1e6).toFixed(2)+' tonnes' : g >= 1e3 ? (g/1e3).toFixed(2)+' kg' : g.toFixed(1)+' g'; }}
 function fWa(ml) {{ return ml >= 1e6 ? (ml/1e6).toFixed(2)+' m³' : ml >= 1e3 ? (ml/1e3).toFixed(2)+' L' : ml.toFixed(0)+' mL'; }}
+function fN(v) {{ return v >= 10 ? v.toLocaleString('en',{{maximumFractionDigits:0}}) : v >= 1 ? v.toFixed(1) : v.toFixed(2); }}
 function setText(id, t) {{ const el = document.getElementById(id); if (el) el.textContent = t; }}
 
 function tipH(t) {{
@@ -1208,18 +1215,18 @@ function updateDashboard() {{
   setText('cardCarbonVal', fCO(tot.carbon));
   setText('cardCarbonDetail', 'Claude '+fCO(pv.claude.co)+' · Codex '+fCO(pv.codex.co)+' · Gemini '+fCO(pv.gemini.co));
   setText('cardWaterVal', fWa(tot.water));
-  setText('cardWaterDetail', '~'+(tot.water/65000).toFixed(2)+' showers');
+  setText('cardWaterDetail', '~'+fN(tot.water/65000)+' showers');
   setText('cardElecVal', '$'+ec.toFixed(2));
   setText('cardElecDetail', ep.toFixed(2)+'% of API cost');
 
   // Equivalents
   const cKg = tot.carbon/1000;
-  setText('eqHousehold', (cKg/900).toFixed(2));
-  setText('eqCar', (cKg/0.404).toFixed(2));
-  setText('eqFlights', (cKg/90).toFixed(2));
-  setText('eqTrees', (cKg/22).toFixed(2));
-  setText('eqShowers', (tot.water/65000).toFixed(2));
-  setText('eqIphone', (tot.energy/12.7).toFixed(2));
+  setText('eqHousehold', fN(cKg/900));
+  setText('eqCar', fN(cKg/0.404));
+  setText('eqFlights', fN(cKg/90));
+  setText('eqTrees', fN(cKg/22));
+  setText('eqShowers', fN(tot.water/65000));
+  setText('eqIphone', fN(tot.energy/12.7));
 
   // Matrix
   const mo = {{}}, mt = {{}};
@@ -1360,7 +1367,7 @@ function updateDashboard() {{
   }})();
   const dEnO = dynDailyOpts(eU, false, function(items, total) {{
     const kw = total*eD/1000;
-    return 'Electricity: $'+(kw*CN.ELEC).toFixed(4)+' (~'+(kw/1.25).toFixed(1)+' hrs household use)';
+    return 'Electricity: $'+(kw*CN.ELEC).toFixed(2)+' (~'+(kw/1.25).toFixed(1)+' hrs household use)';
   }});
   const dCoO = dynDailyOpts(cU, false, function(items, total) {{
     const idx = items[0].dataIndex;
@@ -1394,7 +1401,7 @@ function updateDashboard() {{
   function mkDS(key, bar) {{
     return PROVS.map((p,i) => bar
       ? {{ label: PNAMES[i], data: sc[p][key], backgroundColor: PCOLORS[i] }}
-      : {{ label: PNAMES[i], data: cu[p][key], borderColor: PCOLORS[i], fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }}
+      : {{ label: PNAMES[i], data: cu[p][key], borderColor: PCOLORS[i], fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }}
     );
   }}
 

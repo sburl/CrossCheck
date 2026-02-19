@@ -627,9 +627,11 @@ def generate_html(data, output_path):
   .toggle-btn:hover {{ background: var(--accent); color: var(--text); }}
   .toggle-btn.active {{ background: var(--accent); color: var(--text); }}
   .equiv {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; }}
-  .equiv-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1rem; text-align: center; }}
-  .equiv-card .num {{ font-size: 1.75rem; font-weight: 700; color: var(--accent); }}
-  .equiv-card .desc {{ color: var(--muted); font-size: 0.75rem; margin-top: 0.25rem; }}
+  .equiv-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1rem 1.25rem; display: flex; align-items: center; gap: 0.75rem; }}
+  .equiv-card .emoji {{ font-size: 2rem; line-height: 1; flex-shrink: 0; }}
+  .equiv-card .eq-content {{ flex: 1; }}
+  .equiv-card .num {{ font-size: 1.5rem; font-weight: 700; color: var(--accent); }}
+  .equiv-card .desc {{ color: var(--muted); font-size: 0.75rem; margin-top: 0.125rem; }}
   .legend {{ display: flex; gap: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }}
   .legend-item {{ display: flex; align-items: center; gap: 0.375rem; font-size: 0.8rem; color: var(--muted); }}
   .legend-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
@@ -677,12 +679,12 @@ def generate_html(data, output_path):
 </style>
 </head>
 <body>
-<h1>🤖 AI Usage & Impact Dashboard</h1>
+<h1>AI Usage & Impact Dashboard</h1>
 <p class="subtitle"><span id="dateRange">{date_range} ({len(data)} active days)</span> &middot; <span id="genTime">Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</span></p>
 <p class="token-summary" id="tokenSummary">{total_tokens:,} total tokens &middot; {totals['input_tokens']:,} input &middot; {totals['output_tokens']:,} output &middot; {totals['cache_read_tokens']:,} cached</p>
 
 <div class="date-range">
-  <label>📅 Range:</label>
+  <label>Range:</label>
   <input type="date" id="startDate" value="{min_date}" min="{min_date}" max="{max_date}">
   <span style="color: var(--muted); font-size: 0.8rem;">to</span>
   <input type="date" id="endDate" value="{max_date}" min="{min_date}" max="{max_date}">
@@ -698,22 +700,22 @@ def generate_html(data, output_path):
 {"<div class='no-data'>No usage data found. Make sure ccusage is installed (npm i -g ccusage).</div>" if not data else f'''
 <div class="cards">
   <div class="card">
-    <div class="label">💰 Total API Cost</div>
+    <div class="label">Total API Cost</div>
     <div class="value" id="cardCostVal">{fmt_cost(totals["cost"])}</div>
     <div class="detail" id="cardCostDetail">{fmt_cost(totals["cost"] / len(data))}/active day avg</div>
   </div>
   <div class="card">
-    <div class="label">📊 Total Tokens</div>
+    <div class="label">Total Tokens</div>
     <div class="value" id="cardTokensVal">{fmt_tokens(total_tokens)}</div>
     <div class="detail" id="cardTokensDetail">{fmt_tokens(total_tokens / len(data))}/day avg</div>
   </div>
   <div class="card">
-    <div class="label">📥 Input Tokens</div>
+    <div class="label">Input Tokens</div>
     <div class="value" id="cardInputVal">{fmt_tokens(totals["input_tokens"])}</div>
     <div class="detail" id="cardInputDetail">{(totals["cache_read_tokens"] / totals["input_tokens"] * 100) if totals["input_tokens"] else 0:.0f}% cache hit rate ({fmt_tokens(totals["cache_read_tokens"])} cached)</div>
   </div>
   <div class="card">
-    <div class="label">📤 Output Tokens</div>
+    <div class="label">Output Tokens</div>
     <div class="value" id="cardOutputVal">{fmt_tokens(totals["output_tokens"])}</div>
     <div class="detail" id="cardOutputDetail">{fmt_tokens(totals["output_tokens"] / len(data))}/day avg</div>
   </div>
@@ -744,26 +746,26 @@ def generate_html(data, output_path):
   </div>
 </div>
 
-<h3 class="section-title">🌍 Environmental Impact</h3>
+<h3 class="section-title">Environmental Impact</h3>
 
 <div class="cards">
   <div class="card">
-    <div class="label">⚡ Energy Used</div>
+    <div class="label">Energy Used</div>
     <div class="value" id="cardEnergyVal">{energy_display}</div>
     <div class="detail" id="cardEnergyDetail">{energy_context} · Claude {fmt_energy(provider_energy["claude"])} · Codex {fmt_energy(provider_energy["codex"])}</div>
   </div>
   <div class="card">
-    <div class="label">🏭 CO2 Emitted</div>
+    <div class="label">CO2 Emitted</div>
     <div class="value" id="cardCarbonVal">{carbon_display}</div>
     <div class="detail" id="cardCarbonDetail">Claude {fmt_carbon(provider_carbon["claude"])} · Codex {fmt_carbon(provider_carbon["codex"])} · Gemini {fmt_carbon(provider_carbon["gemini"])}</div>
   </div>
   <div class="card">
-    <div class="label">💧 Water Used</div>
+    <div class="label">Water Used</div>
     <div class="value" id="cardWaterVal">{water_display}</div>
     <div class="detail" id="cardWaterDetail">{water_context}</div>
   </div>
   <div class="card">
-    <div class="label">🔌 Electricity Cost</div>
+    <div class="label">Electricity Cost</div>
     <div class="value" id="cardElecVal">${electricity_cost:.2f}</div>
     <div class="detail" id="cardElecDetail">{energy_pct_of_api:.2f}% of API cost</div>
   </div>
@@ -786,27 +788,27 @@ def generate_html(data, output_path):
   </div>
 </div>
 
-<h3 class="section-title">🌎 Real-World Equivalents</h3>
+<h3 class="section-title">Real-World Equivalents</h3>
 <div class="equiv">
-  <div class="equiv-card"><div class="num" id="eqHousehold">{household_months:,.2f}</div><div class="desc">🏠 Household-months of electricity</div></div>
-  <div class="equiv-card"><div class="num" id="eqCar">{car_miles:,.2f}</div><div class="desc">🚗 Miles in a gas car (25 mpg avg)</div></div>
-  <div class="equiv-card"><div class="num" id="eqFlights">{flights_pct:,.2f}</div><div class="desc">✈️ NYC-LA flights</div></div>
-  <div class="equiv-card"><div class="num" id="eqTrees">{trees_needed:,.2f}</div><div class="desc">🌳 Trees needed (1 year offset)</div></div>
-  <div class="equiv-card"><div class="num" id="eqShowers">{showers:,.2f}</div><div class="desc">🚿 Showers (water)</div></div>
-  <div class="equiv-card"><div class="num" id="eqIphone">{iphone_charges:,.2f}</div><div class="desc">📱 iPhone charges</div></div>
+  <div class="equiv-card"><div class="emoji">🏠</div><div class="eq-content"><div class="num" id="eqHousehold">{household_months:,.2f}</div><div class="desc">Household-months of electricity</div></div></div>
+  <div class="equiv-card"><div class="emoji">🚗</div><div class="eq-content"><div class="num" id="eqCar">{car_miles:,.2f}</div><div class="desc">Miles in a gas car (25 mpg avg)</div></div></div>
+  <div class="equiv-card"><div class="emoji">✈️</div><div class="eq-content"><div class="num" id="eqFlights">{flights_pct:,.2f}</div><div class="desc">NYC-LA flights</div></div></div>
+  <div class="equiv-card"><div class="emoji">🌳</div><div class="eq-content"><div class="num" id="eqTrees">{trees_needed:,.2f}</div><div class="desc">Trees needed (1 year offset)</div></div></div>
+  <div class="equiv-card"><div class="emoji">🚿</div><div class="eq-content"><div class="num" id="eqShowers">{showers:,.2f}</div><div class="desc">Showers (water)</div></div></div>
+  <div class="equiv-card"><div class="emoji">📱</div><div class="eq-content"><div class="num" id="eqIphone">{iphone_charges:,.2f}</div><div class="desc">iPhone charges</div></div></div>
 </div>
 
 <details class="assumptions">
-<summary>📐 Methodology & Assumptions</summary>
+<summary>Methodology & Assumptions</summary>
 <div class="assumptions-body">
-<h4>📡 Data Sources</h4>
+<h4>Data Sources</h4>
 <ul>
 <li><strong>Claude Code:</strong> <code>ccusage daily --json</code> — reads local JSONL logs from Claude Code sessions</li>
 <li><strong>Codex CLI:</strong> <code>npx @ccusage/codex@latest daily --json</code> — reads local Codex CLI session logs</li>
 <li><strong>Gemini CLI:</strong> OpenTelemetry file export at <code>~/.gemini/telemetry.log</code> (requires one-time setup). Only tracks sessions after telemetry is enabled.</li>
 </ul>
 
-<h4>💵 Cost Estimates</h4>
+<h4>Cost Estimates</h4>
 <ul>
 <li><strong>Claude:</strong> Cost from ccusage (uses Anthropic's published API pricing per model)</li>
 <li><strong>Codex (gpt-5-codex):</strong> Cost from ccusage (uses OpenAI's published pricing)</li>
@@ -814,7 +816,7 @@ def generate_html(data, output_path):
 <li><strong>Gemini:</strong> Estimated at $1.25/M input, $10.00/M output, $0.315/M cached (Gemini 2.5 Pro pricing)</li>
 </ul>
 
-<h4>⚡ Energy Model</h4>
+<h4>Energy Model</h4>
 <table>
 <tr><td>Output tokens</td><td>0.001 Wh/token</td><td>Industry estimate for large language models</td></tr>
 <tr><td>Input tokens</td><td>0.0002 Wh/token</td><td>~5x less compute than output</td></tr>
@@ -824,18 +826,18 @@ def generate_html(data, output_path):
 <tr><td>Electricity price</td><td>$0.12/kWh</td><td>US average commercial rate</td></tr>
 </table>
 
-<h4>🏭 Carbon Model</h4>
+<h4>Carbon Model</h4>
 <table>
 <tr><td>Grid carbon intensity</td><td>390 gCO2e/kWh</td><td>US average grid mix (EIA)</td></tr>
 <tr><td>Embodied carbon</td><td>+20%</td><td>Hardware manufacturing, shipping, end-of-life</td></tr>
 </table>
 
-<h4>💧 Water Model</h4>
+<h4>Water Model</h4>
 <table>
 <tr><td>Water Usage Effectiveness (WUE)</td><td>0.5 L/kWh</td><td>Typical evaporative cooling in data centers</td></tr>
 </table>
 
-<h4>🌎 Real-World Equivalents</h4>
+<h4>Real-World Equivalents</h4>
 <table>
 <tr><td>US household electricity</td><td>~900 kg CO2/month</td><td>EPA average</td></tr>
 <tr><td>Gas car emissions</td><td>404 g CO2/mile</td><td>EPA average (25 mpg)</td></tr>
@@ -847,7 +849,7 @@ def generate_html(data, output_path):
 <tr><td>US household electricity</td><td>~30 kWh/day</td><td>EIA average</td></tr>
 </table>
 
-<h4>⚠️ Limitations</h4>
+<h4>Limitations</h4>
 <ul>
 <li>Energy per token is a rough industry estimate — actual consumption varies by model, hardware, and data center</li>
 <li>Carbon intensity varies significantly by region and time of day (renewables vs fossil)</li>

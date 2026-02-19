@@ -876,6 +876,16 @@ const dates = {dates_json};
 const dailyCarbonG = {daily_carbon_json};
 const carbonDivisor = {carbon_divisor};
 
+// Smart token formatter: auto-scale to best unit
+const TOKEN_DIV = {token_divisor};
+function fmtTok(val) {{
+  const abs = Math.abs(val) * TOKEN_DIV;
+  if (abs >= 1e9) return (abs/1e9).toFixed(2) + ' B tokens';
+  if (abs >= 1e6) return (abs/1e6).toFixed(2) + ' M tokens';
+  if (abs >= 1e3) return (abs/1e3).toFixed(2) + ' K tokens';
+  return abs.toFixed(0) + ' tokens';
+}}
+
 const baseOpts = {{
   responsive: true,
   plugins: {{
@@ -949,16 +959,16 @@ carbonOpts.plugins.tooltip = {{
   }}
 }};
 
-// Daily token: unit suffix
+// Daily token: smart auto-scaling units
 const tokenDailyOpts = JSON.parse(JSON.stringify(stackOpts));
 tokenDailyOpts.plugins.tooltip = {{
   callbacks: {{
     label: function(ctx) {{
-      return ' ' + ctx.dataset.label + ': ' + ctx.formattedValue + ' {token_unit}';
+      return ' ' + ctx.dataset.label + ': ' + fmtTok(ctx.raw||0);
     }},
     footer: function(items) {{
       const total = items.reduce((s,i) => s + (i.raw||0), 0);
-      return 'Total: ' + total.toFixed(2) + ' {token_unit}';
+      return 'Total: ' + fmtTok(total);
     }}
   }}
 }};
@@ -993,7 +1003,23 @@ function cumTooltipOpts(unit, unitSuffix, extraFn) {{
 }}
 
 const cumCostOpts = cumTooltipOpts('$', false, null);
-const cumTokenOpts = cumTooltipOpts('{token_unit}', true, null);
+// Cumulative tokens: custom smart formatting
+const cumTokenOpts = (function() {{
+  const o = JSON.parse(JSON.stringify(baseOpts));
+  o.plugins.legend.labels.usePointStyle = true;
+  o.plugins.legend.labels.pointStyle = 'circle';
+  o.interaction = {{mode:'index',intersect:false}};
+  o.plugins.tooltip = {{mode:'index',intersect:false, callbacks: {{
+    label: function(ctx) {{ return ' '+ctx.dataset.label+': '+fmtTok(ctx.raw||0); }},
+    afterBody: function(items) {{
+      const idx = items[0].dataIndex;
+      const total = items.reduce((s,i)=>s+(i.raw||0),0);
+      const days = idx+1, avg = total/days;
+      return ['','Total: '+fmtTok(total),'Daily avg: '+fmtTok(avg)+' over '+days+' days'];
+    }}
+  }}}};
+  return o;
+}})();
 const cumEnergyOpts = cumTooltipOpts('{energy_unit}', true, function(items, total, idx) {{
   const totalWh = total * {energy_divisor};
   const kwh = totalWh / 1000;
@@ -1313,7 +1339,25 @@ function updateDashboard() {{
   }}
 
   const dCostO = dynDailyOpts('$', true, null);
-  const dTokO = dynDailyOpts(tU, false, null);
+  // Smart token formatting for filtered data
+  function fmtTokD(val) {{
+    const abs = Math.abs(val) * tD;
+    if (abs >= 1e9) return (abs/1e9).toFixed(2) + ' B tokens';
+    if (abs >= 1e6) return (abs/1e6).toFixed(2) + ' M tokens';
+    if (abs >= 1e3) return (abs/1e3).toFixed(2) + ' K tokens';
+    return abs.toFixed(0) + ' tokens';
+  }}
+  const dTokO = (function() {{
+    const o = JSON.parse(JSON.stringify(stackOpts));
+    o.plugins.tooltip = {{ callbacks: {{
+      label: function(ctx) {{ return ' '+ctx.dataset.label+': '+fmtTokD(ctx.raw||0); }},
+      footer: function(items) {{
+        const total = items.reduce((s,i)=>s+(i.raw||0),0);
+        return 'Total: '+fmtTokD(total);
+      }}
+    }} }};
+    return o;
+  }})();
   const dEnO = dynDailyOpts(eU, false, function(items, total) {{
     const kw = total*eD/1000;
     return 'Electricity: $'+(kw*CN.ELEC).toFixed(4)+' (~'+(kw/1.25).toFixed(1)+' hrs household use)';
@@ -1323,7 +1367,22 @@ function updateDashboard() {{
     return '~'+(dcg[idx]/1000/0.404).toFixed(3)+' mi in a gas car (25 mpg)';
   }});
   const cCostO = dynCumOpts('$', true, null);
-  const cTokO = dynCumOpts(tU, false, null);
+  const cTokO = (function() {{
+    const o = JSON.parse(JSON.stringify(baseOpts));
+    o.plugins.legend.labels.usePointStyle = true;
+    o.plugins.legend.labels.pointStyle = 'circle';
+    o.interaction = {{mode:'index',intersect:false}};
+    o.plugins.tooltip = {{mode:'index',intersect:false, callbacks: {{
+      label: function(ctx) {{ return ' '+ctx.dataset.label+': '+fmtTokD(ctx.raw||0); }},
+      afterBody: function(items) {{
+        const idx = items[0].dataIndex;
+        const total = items.reduce((s,i)=>s+(i.raw||0),0);
+        const days = idx+1, avg = total/days;
+        return ['','Total: '+fmtTokD(total),'Daily avg: '+fmtTokD(avg)+' over '+days+' days'];
+      }}
+    }}}};
+    return o;
+  }})();
   const cEnO = dynCumOpts(eU, false, function(items, total) {{
     const kw = total*eD/1000;
     return 'Electricity: $'+(kw*CN.ELEC).toFixed(2)+' (~'+(kw/30).toFixed(1)+' days household use)';

@@ -854,13 +854,10 @@ def generate_html(data, output_path):
 <h3 class="section-title">Real-World Equivalents</h3>
 <div class="equiv">
   <div class="equiv-card"><div class="emoji">🚘</div><div class="eq-content"><div class="num" id="eqTesla">{fmt_num(tesla_miles)}</div><div class="desc" id="eqTeslaDesc">Tesla miles of energy (~0.25 kWh/mi)</div></div></div>
-  <div class="equiv-card"><div class="emoji">🚗</div><div class="eq-content"><div class="num" id="eqCar">{fmt_num(car_miles)}</div><div class="desc" id="eqCarDesc">Miles of CO2 in a gas car (25 mpg)</div></div></div>
   <div class="equiv-card"><div class="emoji">✈️</div><div class="eq-content"><div class="num" id="eqFlights">{fmt_num(flights_pct)}</div><div class="desc" id="eqFlightsDesc">NYC-LA flights of CO2 (~90 kg each)</div></div></div>
-  <div class="equiv-card"><div class="emoji">🌳</div><div class="eq-content"><div class="num" id="eqTrees">{fmt_num(trees_needed)}</div><div class="desc" id="eqTreesDesc">Trees to offset CO2 (~22 kg/yr each)</div></div></div>
   <div class="equiv-card"><div class="emoji">🚿</div><div class="eq-content"><div class="num" id="eqShowers">{fmt_num(showers)}</div><div class="desc" id="eqShowersDesc">Showers of water used (~65 L each)</div></div></div>
-  <div class="equiv-card"><div class="emoji">📱</div><div class="eq-content"><div class="num" id="eqIphone">{fmt_num(iphone_charges)}</div><div class="desc" id="eqIphoneDesc">iPhone charges of energy (~12.7 Wh each)</div></div></div>
   <div class="equiv-card"><div class="emoji">🌯</div><div class="eq-content"><div class="num" id="eqBurrito">{fmt_num(totals["cost"] / 11.75)}</div><div class="desc" id="eqBurritoDesc">Chipotle burritos of API cost (~$11.75 each)</div></div></div>
-  <div class="equiv-card"><div class="emoji">📖</div><div class="eq-content"><div class="num" id="eqBibles">{fmt_num(total_tokens / 1_044_000 * 1.5 / 12)}</div><div class="desc" id="eqBiblesDesc">ft of stacked Bibles of text (~1M tokens each)</div></div></div>
+  <div class="equiv-card"><div class="emoji">📖</div><div class="eq-content"><div class="num" id="eqBibles">{fmt_num(total_tokens / 1_044_000 * 1.5 / 12)}</div><div class="desc" id="eqBiblesDesc">ft tall in stacked Bibles (1 Bible ~ 1M tokens)</div></div></div>
 </div>
 
 <details class="assumptions">
@@ -1343,11 +1340,8 @@ function updateDashboard() {{
   // Equivalents
   const cKg = tot.carbon/1000;
   setText('eqTesla', fN((tot.energy/1000)*4));
-  setText('eqCar', fN(cKg/0.404));
   setText('eqFlights', fN(cKg/90));
-  setText('eqTrees', fN(cKg/22));
   setText('eqShowers', fN(tot.water/65000));
-  setText('eqIphone', fN(tot.energy/12.7));
   setText('eqBurrito', fN(tot.cost/11.75));
   setText('eqBibles', fN(tTok/1044000*1.5/12));
 

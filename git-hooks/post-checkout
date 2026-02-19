@@ -27,7 +27,9 @@ if [ "$branch_checkout" = "1" ]; then
         lsof_out=$(mktemp)
         lsof +D "$repo_path" > "$lsof_out" 2>/dev/null &
         lsof_pid=$!
-        ( trap 'exit 0' TERM; sleep 5 && kill "$lsof_pid" 2>/dev/null ) &
+        # Timer: kill lsof if it takes >5 seconds. If lsof finishes first,
+        # we kill this timer; sleep may briefly orphan but exits on its own.
+        ( sleep 5 && kill "$lsof_pid" 2>/dev/null ) &
         timer_pid=$!
         wait "$lsof_pid" 2>/dev/null || true
         kill "$timer_pid" 2>/dev/null || true

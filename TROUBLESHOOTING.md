@@ -150,8 +150,8 @@ Note: --no-verify is blocked by permissions (policy enforcement)
 
 🤖 Claude Code: Run these commands:
 
-   # Note: Hook will show actual hash value for $REPO_HASH
-   /techdebt && /pre-pr-check && touch /tmp/CrossCheck-prechecks-$REPO_HASH && git push
+   # Note: Hook will show actual path with hash and branch values
+   /techdebt && /pre-pr-check && touch ~/.cache/CrossCheck/prechecks-$REPO_HASH-$BRANCH && git push
 
 📋 What this does:
    1. /techdebt      - Find and eliminate technical debt
@@ -160,8 +160,8 @@ Note: --no-verify is blocked by permissions (policy enforcement)
    4. git push       - Retry push (will succeed with marker present)
 
 👤 If you're human:
-   # Note: Hook will show actual hash value for $REPO_HASH
-   Run checks manually, then: touch /tmp/CrossCheck-prechecks-$REPO_HASH && git push
+   # Note: Hook will show actual path with hash and branch values
+   Run checks manually, then: touch ~/.cache/CrossCheck/prechecks-$REPO_HASH-$BRANCH && git push
 
 Note: --no-verify is blocked by permissions (policy enforcement)
 ```
@@ -477,7 +477,7 @@ cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.claude/commands/
 
 # Verify installation
 ls ~/.claude/commands/ | wc -l
-# Should show 23 files (22 skills + INSTALL.md documentation)
+# Should show 22 skill files (bootstrap excludes INSTALL.md)
 
 # Restart Claude Code
 # Skills should now be available

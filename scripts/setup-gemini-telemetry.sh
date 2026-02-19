@@ -34,9 +34,10 @@ EOF
     echo "Created $SETTINGS_FILE with telemetry config."
 else
     # Check if telemetry config already exists
-    if python3 -c "
-import json, sys
-with open('$SETTINGS_FILE') as f:
+    if SETTINGS_FILE="$SETTINGS_FILE" python3 -c "
+import json, sys, os
+settings_file = os.environ['SETTINGS_FILE']
+with open(settings_file) as f:
     data = json.load(f)
 tel = data.get('telemetry', {})
 exporters = tel.get('exporters', {})
@@ -48,9 +49,10 @@ sys.exit(1)
         echo "Telemetry already configured in $SETTINGS_FILE. No changes needed."
     else
         # Add telemetry config to existing settings
-        python3 -c "
-import json
-with open('$SETTINGS_FILE') as f:
+        SETTINGS_FILE="$SETTINGS_FILE" python3 -c "
+import json, os
+settings_file = os.environ['SETTINGS_FILE']
+with open(settings_file) as f:
     data = json.load(f)
 data.setdefault('telemetry', {})
 data['telemetry']['enabled'] = True
@@ -59,9 +61,9 @@ data['telemetry']['exporters']['file'] = {
     'enabled': True,
     'path': '~/.gemini/telemetry.log'
 }
-with open('$SETTINGS_FILE', 'w') as f:
+with open(settings_file, 'w') as f:
     json.dump(data, f, indent=2)
-print('Updated $SETTINGS_FILE with telemetry config.')
+print(f'Updated {settings_file} with telemetry config.')
 "
     fi
 fi

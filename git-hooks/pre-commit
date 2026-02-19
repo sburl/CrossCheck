@@ -59,7 +59,7 @@ echo "  🐛 Checking for debug code..."
 # Exclude common non-debug uses: logging.print, println, printf, fprintf, sprint, print!, eprint
 # Only flag bare print( which is the typical debug pattern in Python
 if git diff --cached | grep -E '^\+[^+]' | grep -qE '\b(console\.log|debugger|import pdb|breakpoint\(\))' || \
-   git diff --cached | grep -E '^\+[^+]' | grep -qE '(^|[^a-zA-Z_.])print\(' | grep -vqE '(println|printf|fprintf|sprint|eprint|fprint|print!|logging\.|logger\.|self\.print|\.print\()'; then
+   git diff --cached | grep -E '^\+[^+]' | grep -E '(^|[^a-zA-Z_.])print\(' | grep -vqE '(println|printf|fprintf|sprint|eprint|fprint|print!|logging\.|logger\.|self\.print|\.print\()'; then
     echo "  ⚠️  Debug statements found (console.log, debugger, pdb, breakpoint, print)"
     echo "     Consider removing before commit"
     # Don't block, just warn

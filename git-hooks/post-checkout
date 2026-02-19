@@ -27,7 +27,7 @@ if [ "$branch_checkout" = "1" ]; then
         lsof_out=$(mktemp)
         lsof +D "$repo_path" > "$lsof_out" 2>/dev/null &
         lsof_pid=$!
-        ( sleep 5 && kill "$lsof_pid" 2>/dev/null ) &
+        ( trap 'exit 0' TERM; sleep 5 && kill "$lsof_pid" 2>/dev/null ) &
         timer_pid=$!
         wait "$lsof_pid" 2>/dev/null || true
         kill "$timer_pid" 2>/dev/null || true
@@ -76,7 +76,7 @@ if [ "$branch_checkout" = "1" ]; then
         done
         if [ "$lock_acquired" = true ]; then
             # Ensure lock is cleaned up on interrupt/crash
-            trap 'rm -f "$lockfile"' EXIT INT TERM
+            trap 'rm -f "$lockfile" TODO.md.bak' EXIT INT TERM
             # Strip any existing branch header lines, then prepend fresh one
             sed -i.bak '/^## Current Branch:/d; /^[*]*Last switched:[*]*/d' TODO.md
             # Remove leading blank lines left by stripping

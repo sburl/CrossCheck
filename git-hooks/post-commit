@@ -33,6 +33,7 @@ if [ -f "$COUNTER_FILE" ]; then
 fi
 
 session_commits=$(< "$COUNTER_FILE")
+case "$session_commits" in ''|*[!0-9]*) session_commits=0 ;; esac
 session_commits=$((session_commits + 1))
 echo "$session_commits" > "$COUNTER_FILE"
 

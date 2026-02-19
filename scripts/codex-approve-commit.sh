@@ -2,6 +2,9 @@
 # Helper script: Prepare commit for Codex approval
 # Usage: ./codex-approve-commit.sh
 
+cleanup() { rm -f "$temp_file"; }
+trap cleanup EXIT
+
 echo "🔍 Preparing commit summary for Codex review..."
 echo ""
 

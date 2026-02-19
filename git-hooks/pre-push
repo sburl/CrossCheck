@@ -2,6 +2,8 @@
 # Pre-push hook: Final verification before pushing to remote
 # Addresses: Documentation standards, development markers
 
+set -e
+
 echo "🚀 Running pre-push checks..."
 
 # Get the current branch

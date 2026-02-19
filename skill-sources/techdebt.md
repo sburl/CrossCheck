@@ -204,10 +204,10 @@ When `--fix` flag is used, Claude runs:
 
 ```bash
 # Remove console.log statements
-find src/ -type f \( -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i '' '/console\.log/d' {} +
+find src/ -type f \( -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i.bak '/console\.log/d' {} + && find src/ -name '*.bak' -delete
 
 # Remove debugger statements
-find src/ -type f \( -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i '' '/debugger;/d' {} +
+find src/ -type f \( -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" \) -exec sed -i.bak '/debugger;/d' {} + && find src/ -name '*.bak' -delete
 
 echo "✅ Auto-fixed debug statements"
 ```

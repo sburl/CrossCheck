@@ -382,10 +382,13 @@ tail -5 ~/.claude/codex-commit-reviews.log
 **Log format:**
 
 ```
-[2026-02-09-16-30] feat: test codex review logging (abc123d)
-Prompt: You are an expert code reviewer...
-[full Codex prompt here]
----
+=== Commit Review Needed: 2026-02-09 16:30:00 ===
+Quick commit review - this is a git post-commit hook so keep feedback brief.
+
+Commit: abc123d...
+Message: feat: test codex review logging
+[review prompt here]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 **If not logging:**

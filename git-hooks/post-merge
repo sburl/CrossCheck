@@ -99,10 +99,12 @@ fi
 
 if [ "${new_commits:-0}" -gt 0 ]; then
     pr_count=$(< "$PR_COUNTER_FILE")
+    case "$pr_count" in ''|*[!0-9]*) pr_count=0 ;; esac
     pr_count=$((pr_count + 1))
     echo "$pr_count" > "$PR_COUNTER_FILE"
 else
     pr_count=$(< "$PR_COUNTER_FILE")
+    case "$pr_count" in ''|*[!0-9]*) pr_count=0 ;; esac
 fi
 
 if [ "$pr_count" -ge 3 ]; then

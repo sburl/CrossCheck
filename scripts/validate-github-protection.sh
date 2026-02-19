@@ -19,6 +19,16 @@ OWNER_REPO=$(echo "$REPO_URL" | sed -E 's#.*[:/]([^/]+/[^/]+)(\.git)?$#\1#' | se
 OWNER=$(echo "$OWNER_REPO" | cut -d/ -f1)
 REPO=$(echo "$OWNER_REPO" | cut -d/ -f2)
 
+# Validate required tools
+for tool in gh jq; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "❌ Required tool not found: $tool"
+        [ "$tool" = "gh" ] && echo "   Install from: https://cli.github.com"
+        [ "$tool" = "jq" ] && echo "   Install from: https://jqlang.github.io/jq/"
+        exit 1
+    fi
+done
+
 # Get all rulesets
 RULESETS=$(gh api "repos/$OWNER/$REPO/rulesets" 2>&1) || true
 

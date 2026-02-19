@@ -349,7 +349,7 @@ def generate_html(data, output_path):
 
     def fmt_water(ml):
         if ml >= 1_000_000:
-            return f"{ml/1_000_000:,.2f} m\u00b3"
+            return f"{ml/1_000_000:,.2f} m³"
         if ml >= 1000:
             return f"{ml/1000:,.2f} L"
         return f"{ml:,.0f} mL"
@@ -576,11 +576,26 @@ def generate_html(data, output_path):
 
     # Date range for title
     date_range = ""
+    min_date = ""
+    max_date = ""
     if data:
         date_range = f"{data[0]['date']} to {data[-1]['date']}"
+        min_date = data[0]['date']
+        max_date = data[-1]['date']
 
     # Token totals for display
     total_tokens = totals["input_tokens"] + totals["output_tokens"] + totals["cache_read_tokens"]
+
+    # Raw data for client-side date filtering
+    raw_data_json = json.dumps([{
+        "d": r["date"],
+        "c": [r["claude"]["input_tokens"], r["claude"]["output_tokens"],
+              r["claude"]["cache_read_tokens"], round(r["claude"]["cost"], 4)],
+        "x": [r["codex"]["input_tokens"], r["codex"]["output_tokens"],
+              r["codex"]["cache_read_tokens"], round(r["codex"]["cost"], 4)],
+        "g": [r["gemini"]["input_tokens"], r["gemini"]["output_tokens"],
+              r["gemini"]["cache_read_tokens"], round(r["gemini"]["cost"], 4)],
+    } for r in data])
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -598,7 +613,7 @@ def generate_html(data, output_path):
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 2rem; }}
   h1 {{ font-size: 1.5rem; margin-bottom: 0.25rem; }}
-  .subtitle {{ color: var(--muted); font-size: 0.875rem; margin-bottom: 1.5rem; }}
+  .subtitle {{ color: var(--muted); font-size: 0.875rem; margin-bottom: 0.25rem; }}
   .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem; }}
   .card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; }}
   .card .label {{ color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }}
@@ -620,7 +635,13 @@ def generate_html(data, output_path):
   .legend-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
   .section-title {{ font-size: 1.1rem; margin: 2rem 0 1rem; color: var(--muted); }}
   .no-data {{ text-align: center; padding: 4rem 2rem; color: var(--muted); }}
-  .token-summary {{ color: var(--muted); font-size: 0.8rem; margin-bottom: 0.5rem; }}
+  .token-summary {{ color: var(--muted); font-size: 0.8rem; margin-bottom: 0.75rem; }}
+  .date-range {{ display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap; }}
+  .date-range label {{ color: var(--muted); font-size: 0.8rem; }}
+  .date-range input[type="date"] {{ background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 0.375rem; padding: 0.375rem 0.5rem; font-size: 0.8rem; font-family: inherit; }}
+  .date-range input[type="date"]::-webkit-calendar-picker-indicator {{ filter: invert(0.7); }}
+  .date-range button {{ background: var(--border); color: var(--muted); border: none; border-radius: 0.375rem; padding: 0.375rem 0.75rem; font-size: 0.75rem; cursor: pointer; transition: all 0.15s; }}
+  .date-range button:hover {{ background: var(--accent); color: var(--text); }}
   .matrix-box {{ background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 2rem; overflow-x: auto; }}
   .matrix-box h3 {{ font-size: 0.875rem; color: var(--muted); margin-bottom: 1rem; }}
   .cost-matrix {{ width: 100%; border-collapse: collapse; font-size: 0.9rem; }}
@@ -647,17 +668,26 @@ def generate_html(data, output_path):
   .assumptions-body h4 {{ color: var(--text); margin: 1rem 0 0.5rem; font-size: 0.85rem; }}
   .assumptions-body ul {{ padding-left: 1.25rem; }}
   .assumptions-body li {{ margin-bottom: 0.25rem; }}
-  .assumptions-body table {{ width: 100%; border-collapse: collapse; margin: 0.5rem 0; }}
-  .assumptions-body td {{ padding: 0.25rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.8rem; }}
-  .assumptions-body td:first-child {{ color: var(--text); }}
+  .assumptions-body table {{ width: 100%; border-collapse: collapse; margin: 0.5rem 0; table-layout: fixed; }}
+  .assumptions-body td {{ padding: 0.375rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.8rem; vertical-align: top; }}
+  .assumptions-body td:first-child {{ color: var(--text); width: 35%; }}
+  .assumptions-body td:nth-child(2) {{ width: 22%; font-variant-numeric: tabular-nums; }}
+  .assumptions-body td:nth-child(3) {{ color: var(--muted); font-style: italic; width: 43%; }}
   .assumptions-body code {{ background: var(--surface); padding: 0.1rem 0.3rem; border-radius: 0.25rem; }}
 </style>
 </head>
 <body>
-<h1>AI Usage & Impact Dashboard</h1>
-<p class="subtitle">{date_range} ({len(data)} active days) &middot; Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
+<h1>🤖 AI Usage & Impact Dashboard</h1>
+<p class="subtitle"><span id="dateRange">{date_range} ({len(data)} active days)</span> &middot; <span id="genTime">Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</span></p>
+<p class="token-summary" id="tokenSummary">{total_tokens:,} total tokens &middot; {totals['input_tokens']:,} input &middot; {totals['output_tokens']:,} output &middot; {totals['cache_read_tokens']:,} cached</p>
 
-<p class="token-summary">{total_tokens:,} total tokens &middot; {totals['input_tokens']:,} input &middot; {totals['output_tokens']:,} output &middot; {totals['cache_read_tokens']:,} cached</p>
+<div class="date-range">
+  <label>📅 Range:</label>
+  <input type="date" id="startDate" value="{min_date}" min="{min_date}" max="{max_date}">
+  <span style="color: var(--muted); font-size: 0.8rem;">to</span>
+  <input type="date" id="endDate" value="{max_date}" min="{min_date}" max="{max_date}">
+  <button onclick="resetDates()">Reset</button>
+</div>
 
 <div class="legend">
   <div class="legend-item"><div class="legend-dot" style="background: var(--claude)"></div> Claude Code</div>
@@ -668,24 +698,24 @@ def generate_html(data, output_path):
 {"<div class='no-data'>No usage data found. Make sure ccusage is installed (npm i -g ccusage).</div>" if not data else f'''
 <div class="cards">
   <div class="card">
-    <div class="label">Total API Cost</div>
-    <div class="value">{fmt_cost(totals["cost"])}</div>
-    <div class="detail">{fmt_cost(totals["cost"] / len(data))}/active day avg</div>
+    <div class="label">💰 Total API Cost</div>
+    <div class="value" id="cardCostVal">{fmt_cost(totals["cost"])}</div>
+    <div class="detail" id="cardCostDetail">{fmt_cost(totals["cost"] / len(data))}/active day avg</div>
   </div>
   <div class="card">
-    <div class="label">Total Tokens</div>
-    <div class="value">{fmt_tokens(total_tokens)}</div>
-    <div class="detail">{fmt_tokens(total_tokens / len(data))}/day avg</div>
+    <div class="label">📊 Total Tokens</div>
+    <div class="value" id="cardTokensVal">{fmt_tokens(total_tokens)}</div>
+    <div class="detail" id="cardTokensDetail">{fmt_tokens(total_tokens / len(data))}/day avg</div>
   </div>
   <div class="card">
-    <div class="label">Input Tokens</div>
-    <div class="value">{fmt_tokens(totals["input_tokens"])}</div>
-    <div class="detail">{(totals["cache_read_tokens"] / totals["input_tokens"] * 100) if totals["input_tokens"] else 0:.0f}% cache hit rate ({fmt_tokens(totals["cache_read_tokens"])} cached)</div>
+    <div class="label">📥 Input Tokens</div>
+    <div class="value" id="cardInputVal">{fmt_tokens(totals["input_tokens"])}</div>
+    <div class="detail" id="cardInputDetail">{(totals["cache_read_tokens"] / totals["input_tokens"] * 100) if totals["input_tokens"] else 0:.0f}% cache hit rate ({fmt_tokens(totals["cache_read_tokens"])} cached)</div>
   </div>
   <div class="card">
-    <div class="label">Output Tokens</div>
-    <div class="value">{fmt_tokens(totals["output_tokens"])}</div>
-    <div class="detail">{fmt_tokens(totals["output_tokens"] / len(data))}/day avg</div>
+    <div class="label">📤 Output Tokens</div>
+    <div class="value" id="cardOutputVal">{fmt_tokens(totals["output_tokens"])}</div>
+    <div class="detail" id="cardOutputDetail">{fmt_tokens(totals["output_tokens"] / len(data))}/day avg</div>
   </div>
 </div>
 
@@ -693,7 +723,7 @@ def generate_html(data, output_path):
   <h3>Monthly Estimated API Cost by Provider</h3>
   <table class="cost-matrix">
     <thead><tr><th></th><th class="claude">Claude</th><th class="codex">Codex</th><th class="gemini">Gemini</th><th>Total</th></tr></thead>
-    <tbody>{matrix_rows_html}{matrix_footer_html}</tbody>
+    <tbody id="matrixBody">{matrix_rows_html}{matrix_footer_html}</tbody>
   </table>
 </div>
 
@@ -714,28 +744,28 @@ def generate_html(data, output_path):
   </div>
 </div>
 
-<h3 class="section-title">Environmental Impact</h3>
+<h3 class="section-title">🌍 Environmental Impact</h3>
 
 <div class="cards">
   <div class="card">
-    <div class="label">Energy Used</div>
-    <div class="value">{energy_display}</div>
-    <div class="detail">{energy_context} · Claude {fmt_energy(provider_energy["claude"])} · Codex {fmt_energy(provider_energy["codex"])}</div>
+    <div class="label">⚡ Energy Used</div>
+    <div class="value" id="cardEnergyVal">{energy_display}</div>
+    <div class="detail" id="cardEnergyDetail">{energy_context} · Claude {fmt_energy(provider_energy["claude"])} · Codex {fmt_energy(provider_energy["codex"])}</div>
   </div>
   <div class="card">
-    <div class="label">CO2 Emitted</div>
-    <div class="value">{carbon_display}</div>
-    <div class="detail">Claude {fmt_carbon(provider_carbon["claude"])} · Codex {fmt_carbon(provider_carbon["codex"])} · Gemini {fmt_carbon(provider_carbon["gemini"])}</div>
+    <div class="label">🏭 CO2 Emitted</div>
+    <div class="value" id="cardCarbonVal">{carbon_display}</div>
+    <div class="detail" id="cardCarbonDetail">Claude {fmt_carbon(provider_carbon["claude"])} · Codex {fmt_carbon(provider_carbon["codex"])} · Gemini {fmt_carbon(provider_carbon["gemini"])}</div>
   </div>
   <div class="card">
-    <div class="label">Water Used</div>
-    <div class="value">{water_display}</div>
-    <div class="detail">{water_context}</div>
+    <div class="label">💧 Water Used</div>
+    <div class="value" id="cardWaterVal">{water_display}</div>
+    <div class="detail" id="cardWaterDetail">{water_context}</div>
   </div>
   <div class="card">
-    <div class="label">Electricity Cost</div>
-    <div class="value">${electricity_cost:.2f}</div>
-    <div class="detail">{energy_pct_of_api:.2f}% of API cost</div>
+    <div class="label">🔌 Electricity Cost</div>
+    <div class="value" id="cardElecVal">${electricity_cost:.2f}</div>
+    <div class="detail" id="cardElecDetail">{energy_pct_of_api:.2f}% of API cost</div>
   </div>
 </div>
 
@@ -756,27 +786,27 @@ def generate_html(data, output_path):
   </div>
 </div>
 
-<h3 class="section-title">Real-World Equivalents</h3>
+<h3 class="section-title">🌎 Real-World Equivalents</h3>
 <div class="equiv">
-  <div class="equiv-card"><div class="num">{household_months:,.2f}</div><div class="desc">Household-months of electricity</div></div>
-  <div class="equiv-card"><div class="num">{car_miles:,.2f}</div><div class="desc">Miles in a gas car (25 mpg avg)</div></div>
-  <div class="equiv-card"><div class="num">{flights_pct:,.2f}</div><div class="desc">NYC-LA flights</div></div>
-  <div class="equiv-card"><div class="num">{trees_needed:,.2f}</div><div class="desc">Trees needed (1 year offset)</div></div>
-  <div class="equiv-card"><div class="num">{showers:,.2f}</div><div class="desc">Showers (water)</div></div>
-  <div class="equiv-card"><div class="num">{iphone_charges:,.2f}</div><div class="desc">iPhone charges</div></div>
+  <div class="equiv-card"><div class="num" id="eqHousehold">{household_months:,.2f}</div><div class="desc">🏠 Household-months of electricity</div></div>
+  <div class="equiv-card"><div class="num" id="eqCar">{car_miles:,.2f}</div><div class="desc">🚗 Miles in a gas car (25 mpg avg)</div></div>
+  <div class="equiv-card"><div class="num" id="eqFlights">{flights_pct:,.2f}</div><div class="desc">✈️ NYC-LA flights</div></div>
+  <div class="equiv-card"><div class="num" id="eqTrees">{trees_needed:,.2f}</div><div class="desc">🌳 Trees needed (1 year offset)</div></div>
+  <div class="equiv-card"><div class="num" id="eqShowers">{showers:,.2f}</div><div class="desc">🚿 Showers (water)</div></div>
+  <div class="equiv-card"><div class="num" id="eqIphone">{iphone_charges:,.2f}</div><div class="desc">📱 iPhone charges</div></div>
 </div>
 
 <details class="assumptions">
-<summary>Methodology & Assumptions</summary>
+<summary>📐 Methodology & Assumptions</summary>
 <div class="assumptions-body">
-<h4>Data Sources</h4>
+<h4>📡 Data Sources</h4>
 <ul>
 <li><strong>Claude Code:</strong> <code>ccusage daily --json</code> — reads local JSONL logs from Claude Code sessions</li>
 <li><strong>Codex CLI:</strong> <code>npx @ccusage/codex@latest daily --json</code> — reads local Codex CLI session logs</li>
 <li><strong>Gemini CLI:</strong> OpenTelemetry file export at <code>~/.gemini/telemetry.log</code> (requires one-time setup). Only tracks sessions after telemetry is enabled.</li>
 </ul>
 
-<h4>Cost Estimates</h4>
+<h4>💵 Cost Estimates</h4>
 <ul>
 <li><strong>Claude:</strong> Cost from ccusage (uses Anthropic's published API pricing per model)</li>
 <li><strong>Codex (gpt-5-codex):</strong> Cost from ccusage (uses OpenAI's published pricing)</li>
@@ -784,7 +814,7 @@ def generate_html(data, output_path):
 <li><strong>Gemini:</strong> Estimated at $1.25/M input, $10.00/M output, $0.315/M cached (Gemini 2.5 Pro pricing)</li>
 </ul>
 
-<h4>Energy Model</h4>
+<h4>⚡ Energy Model</h4>
 <table>
 <tr><td>Output tokens</td><td>0.001 Wh/token</td><td>Industry estimate for large language models</td></tr>
 <tr><td>Input tokens</td><td>0.0002 Wh/token</td><td>~5x less compute than output</td></tr>
@@ -794,18 +824,18 @@ def generate_html(data, output_path):
 <tr><td>Electricity price</td><td>$0.12/kWh</td><td>US average commercial rate</td></tr>
 </table>
 
-<h4>Carbon Model</h4>
+<h4>🏭 Carbon Model</h4>
 <table>
 <tr><td>Grid carbon intensity</td><td>390 gCO2e/kWh</td><td>US average grid mix (EIA)</td></tr>
 <tr><td>Embodied carbon</td><td>+20%</td><td>Hardware manufacturing, shipping, end-of-life</td></tr>
 </table>
 
-<h4>Water Model</h4>
+<h4>💧 Water Model</h4>
 <table>
 <tr><td>Water Usage Effectiveness (WUE)</td><td>0.5 L/kWh</td><td>Typical evaporative cooling in data centers</td></tr>
 </table>
 
-<h4>Real-World Equivalents</h4>
+<h4>🌎 Real-World Equivalents</h4>
 <table>
 <tr><td>US household electricity</td><td>~900 kg CO2/month</td><td>EPA average</td></tr>
 <tr><td>Gas car emissions</td><td>404 g CO2/mile</td><td>EPA average (25 mpg)</td></tr>
@@ -817,7 +847,7 @@ def generate_html(data, output_path):
 <tr><td>US household electricity</td><td>~30 kWh/day</td><td>EIA average</td></tr>
 </table>
 
-<h4>Limitations</h4>
+<h4>⚠️ Limitations</h4>
 <ul>
 <li>Energy per token is a rough industry estimate — actual consumption varies by model, hardware, and data center</li>
 <li>Carbon intensity varies significantly by region and time of day (renewables vs fossil)</li>
@@ -988,6 +1018,231 @@ function toggleChart(key) {{
   const btn = document.getElementById(cfg.titleEl).parentElement.querySelector('.toggle-btn');
   btn.textContent = isCum ? 'Daily' : 'Cumulative';
   btn.classList.toggle('active', isCum);
+}}
+
+// --- Date range filtering ---
+const RAW = {raw_data_json};
+const PROVS = ['claude', 'codex', 'gemini'];
+const PKEYS = ['c', 'x', 'g'];
+const PCOLORS = ['#6366f1', '#22c55e', '#f59e0b'];
+const PNAMES = ['Claude', 'Codex', 'Gemini'];
+const EN = {{OUT: 0.001, IN: 0.0002, CACHE: 0.00005, PUE: 1.2, GRID: 1.06}};
+const CN = {{INT: 390, EMB: 1.2, WUE: 0.5, ELEC: {ELECTRICITY_COST_KWH}}};
+
+function cE(i,o,c) {{ return (o*EN.OUT + i*EN.IN + c*EN.CACHE) * EN.PUE * EN.GRID; }}
+function cC(wh) {{ return (wh/1000) * CN.INT * CN.EMB; }}
+function cW(wh) {{ return (wh/1000) * CN.WUE * 1000; }}
+function fC(v) {{ return v >= 1000 ? '$'+v.toLocaleString('en',{{maximumFractionDigits:0}}) : v >= 1 ? '$'+v.toFixed(2) : '$'+v.toFixed(4); }}
+function fT(v) {{ return v >= 1e9 ? (v/1e9).toFixed(2)+' B' : v >= 1e6 ? (v/1e6).toFixed(2)+' M' : v >= 1e3 ? (v/1e3).toFixed(2)+' K' : v.toLocaleString('en'); }}
+function fEn(wh) {{ return wh >= 1e6 ? (wh/1e6).toFixed(2)+' MWh' : wh >= 1e3 ? (wh/1e3).toFixed(2)+' kWh' : wh.toFixed(1)+' Wh'; }}
+function fCO(g) {{ return g >= 1e6 ? (g/1e6).toFixed(2)+' tonnes' : g >= 1e3 ? (g/1e3).toFixed(2)+' kg' : g.toFixed(1)+' g'; }}
+function fWa(ml) {{ return ml >= 1e6 ? (ml/1e6).toFixed(2)+' m³' : ml >= 1e3 ? (ml/1e3).toFixed(2)+' L' : ml.toFixed(0)+' mL'; }}
+function setText(id, t) {{ const el = document.getElementById(id); if (el) el.textContent = t; }}
+
+function tipH(t) {{
+  return '<div class="tip"><div class="tip-row"><span class="tip-label">Input</span><span class="tip-val">'+t.i.toLocaleString()+'</span></div>'
+    +'<div class="tip-row"><span class="tip-label">Output</span><span class="tip-val">'+t.o.toLocaleString()+'</span></div>'
+    +'<div class="tip-row"><span class="tip-label">Cached</span><span class="tip-val">'+t.c.toLocaleString()+'</span></div></div>';
+}}
+
+function updateDashboard() {{
+  const s = document.getElementById('startDate').value;
+  const e = document.getElementById('endDate').value;
+  const fd = RAW.filter(r => r.d >= s && r.d <= e);
+  if (!fd.length) return;
+  const n = fd.length;
+  const dl = fd.map(r => r.d);
+
+  // Totals
+  let tot = {{cost:0,inp:0,out:0,cached:0,energy:0,carbon:0,water:0}};
+  let pv = {{claude:{{cost:0,en:0,co:0}},codex:{{cost:0,en:0,co:0}},gemini:{{cost:0,en:0,co:0}}}};
+  fd.forEach(row => {{
+    PKEYS.forEach((k,i) => {{
+      const [inp,out,cached,cost] = row[k];
+      const en = cE(inp,out,cached);
+      tot.cost += cost; tot.inp += inp; tot.out += out; tot.cached += cached;
+      tot.energy += en; tot.carbon += cC(en); tot.water += cW(en);
+      pv[PROVS[i]].cost += cost; pv[PROVS[i]].en += en; pv[PROVS[i]].co += cC(en);
+    }});
+  }});
+  const tTok = tot.inp + tot.out + tot.cached;
+
+  // Header
+  setText('dateRange', dl[0]+' to '+dl[dl.length-1]+' ('+n+' active days)');
+  setText('tokenSummary', tTok.toLocaleString()+' total tokens · '+tot.inp.toLocaleString()+' input · '+tot.out.toLocaleString()+' output · '+tot.cached.toLocaleString()+' cached');
+
+  // Usage cards
+  setText('cardCostVal', fC(tot.cost));
+  setText('cardCostDetail', fC(tot.cost/n)+'/active day avg');
+  setText('cardTokensVal', fT(tTok));
+  setText('cardTokensDetail', fT(tTok/n)+'/day avg');
+  setText('cardInputVal', fT(tot.inp));
+  setText('cardInputDetail', (tot.inp ? (tot.cached/tot.inp*100).toFixed(0) : 0)+'% cache hit rate ('+fT(tot.cached)+' cached)');
+  setText('cardOutputVal', fT(tot.out));
+  setText('cardOutputDetail', fT(tot.out/n)+'/day avg');
+
+  // Env cards
+  const ec = (tot.energy/1000)*CN.ELEC;
+  const ep = tot.cost > 0 ? (ec/tot.cost*100) : 0;
+  const usDays = (tot.energy/1000)/30;
+  const eCtx = usDays >= 1 ? '~'+usDays.toFixed(1)+' days of avg US household electricity' : '~'+(tot.energy/12.7).toFixed(0)+' iPhone charges';
+  setText('cardEnergyVal', fEn(tot.energy));
+  setText('cardEnergyDetail', eCtx+' · Claude '+fEn(pv.claude.en)+' · Codex '+fEn(pv.codex.en));
+  setText('cardCarbonVal', fCO(tot.carbon));
+  setText('cardCarbonDetail', 'Claude '+fCO(pv.claude.co)+' · Codex '+fCO(pv.codex.co)+' · Gemini '+fCO(pv.gemini.co));
+  setText('cardWaterVal', fWa(tot.water));
+  setText('cardWaterDetail', '~'+(tot.water/65000).toFixed(2)+' showers');
+  setText('cardElecVal', '$'+ec.toFixed(2));
+  setText('cardElecDetail', ep.toFixed(2)+'% of API cost');
+
+  // Equivalents
+  const cKg = tot.carbon/1000;
+  setText('eqHousehold', (cKg/900).toFixed(2));
+  setText('eqCar', (cKg/0.404).toFixed(2));
+  setText('eqFlights', (cKg/90).toFixed(2));
+  setText('eqTrees', (cKg/22).toFixed(2));
+  setText('eqShowers', (tot.water/65000).toFixed(2));
+  setText('eqIphone', (tot.energy/12.7).toFixed(2));
+
+  // Matrix
+  const mo = {{}}, mt = {{}};
+  fd.forEach(row => {{
+    const m = row.d.slice(0,7);
+    if (!mo[m]) {{ mo[m] = [0,0,0]; mt[m] = PKEYS.map(()=>({{i:0,o:0,c:0}})); }}
+    PKEYS.forEach((k,i) => {{
+      mo[m][i] += row[k][3];
+      mt[m][i].i += row[k][0]; mt[m][i].o += row[k][1]; mt[m][i].c += row[k][2];
+    }});
+  }});
+  const mk = Object.keys(mo).sort();
+  if (mk.length >= 2) {{
+    let cur = new Date(mk[0]+'-01');
+    const end = new Date(mk[mk.length-1]+'-01');
+    while (cur <= end) {{
+      const k = cur.toISOString().slice(0,7);
+      if (!mo[k]) {{ mo[k] = [0,0,0]; mt[k] = PKEYS.map(()=>({{i:0,o:0,c:0}})); }}
+      cur.setMonth(cur.getMonth()+1);
+    }}
+  }}
+  const sm = Object.keys(mo).sort();
+  const ct = [0,0,0], ctk = PKEYS.map(()=>({{i:0,o:0,c:0}}));
+  let mh = '';
+  sm.forEach(m => {{
+    const c = mo[m], t = mt[m], rt = c[0]+c[1]+c[2];
+    c.forEach((v,i) => {{ ct[i]+=v; ctk[i].i+=t[i].i; ctk[i].o+=t[i].o; ctk[i].c+=t[i].c; }});
+    mh += '<tr><td class="month-label">'+m+'</td>';
+    c.forEach((v,i) => mh += '<td class="has-tip">$'+v.toFixed(2)+tipH(t[i])+'</td>');
+    mh += '<td class="row-total">$'+rt.toFixed(2)+'</td></tr>';
+  }});
+  const gt = ct[0]+ct[1]+ct[2];
+  mh += '<tr class="col-totals"><td class="month-label">Total</td>';
+  ct.forEach((v,i) => mh += '<td class="has-tip">$'+v.toFixed(2)+tipH(ctk[i])+'</td>');
+  mh += '<td class="row-total">$'+gt.toFixed(2)+'</td></tr>';
+  document.getElementById('matrixBody').innerHTML = mh;
+
+  // Charts
+  const pd = {{}};
+  PROVS.forEach(p => {{ pd[p] = {{cost:[],tok:[],en:[],co:[]}}; }});
+  const dcg = [];
+  fd.forEach(row => {{
+    let dc = 0;
+    PKEYS.forEach((k,i) => {{
+      const [inp,out,cached,cost] = row[k];
+      const en = cE(inp,out,cached), co = cC(en);
+      pd[PROVS[i]].cost.push(Math.round(cost*100)/100);
+      pd[PROVS[i]].tok.push(inp+out+cached);
+      pd[PROVS[i]].en.push(en);
+      pd[PROVS[i]].co.push(co);
+      dc += co;
+    }});
+    dcg.push(dc);
+  }});
+
+  const maxE = Math.max(...fd.map((_,i) => pd.claude.en[i]+pd.codex.en[i]+pd.gemini.en[i]));
+  const [eD,eU] = maxE >= 1e6 ? [1e6,'MWh'] : maxE >= 500 ? [1e3,'kWh'] : [1,'Wh'];
+  const maxCo = Math.max(...dcg);
+  const [cD,cU] = maxCo >= 1e6 ? [1e6,'tonnes'] : maxCo >= 500 ? [1e3,'kg'] : [1,'g'];
+  const maxTk = Math.max(...fd.map((_,i) => pd.claude.tok[i]+pd.codex.tok[i]+pd.gemini.tok[i]));
+  const [tD,tU] = maxTk >= 1e9 ? [1e9,'B tokens'] : maxTk >= 1e6 ? [1e6,'M tokens'] : maxTk >= 1e3 ? [1e3,'K tokens'] : [1,'tokens'];
+
+  const sc = {{}}, cu = {{}};
+  PROVS.forEach(p => {{
+    sc[p] = {{
+      cost: pd[p].cost,
+      tok: pd[p].tok.map(v => Math.round(v/tD*100)/100),
+      en: pd[p].en.map(v => Math.round(v/eD*10000)/10000),
+      co: pd[p].co.map(v => Math.round(v/cD*10000)/10000),
+    }};
+    cu[p] = {{cost:[],tok:[],en:[],co:[]}};
+    let cc=0,ct2=0,ce2=0,co2=0;
+    fd.forEach((_,i) => {{
+      cc+=pd[p].cost[i]; ct2+=pd[p].tok[i]; ce2+=pd[p].en[i]; co2+=pd[p].co[i];
+      cu[p].cost.push(Math.round(cc*100)/100);
+      cu[p].tok.push(Math.round(ct2/tD*100)/100);
+      cu[p].en.push(Math.round(ce2/eD*100)/100);
+      cu[p].co.push(Math.round(co2/cD*100)/100);
+    }});
+  }});
+
+  const nEOpts = JSON.parse(JSON.stringify(stackOpts));
+  nEOpts.plugins.tooltip = {{ callbacks: {{ afterBody: function(items) {{
+    let tw=0; items.forEach(i => tw+=(i.raw||0)*eD);
+    const kw=tw/1000; return 'Electricity: $'+(kw*CN.ELEC).toFixed(4)+' (~'+(kw/1.25).toFixed(1)+' hrs household use)';
+  }} }} }};
+  const nCOpts = JSON.parse(JSON.stringify(stackOpts));
+  nCOpts.plugins.tooltip = {{ callbacks: {{ afterBody: function(items) {{
+    const idx=items[0].dataIndex; return '~'+(dcg[idx]/1000/0.404).toFixed(3)+' mi in a gas car (25 mpg)';
+  }} }} }};
+
+  function mkDS(key, bar) {{
+    return PROVS.map((p,i) => bar
+      ? {{ label: PNAMES[i], data: sc[p][key], backgroundColor: PCOLORS[i] }}
+      : {{ label: PNAMES[i], data: cu[p][key], borderColor: PCOLORS[i], fill: false, tension: 0.3, pointRadius: 0 }}
+    );
+  }}
+
+  chartConfigs.cost = {{
+    canvas:'costChart', titleEl:'costTitle',
+    dailyTitle:'Daily Cost by Provider ($)', cumTitle:'Cumulative Cost by Provider ($)',
+    daily: {{type:'bar', datasets: mkDS('cost',true), options: stackOpts}},
+    cum: {{type:'line', datasets: mkDS('cost',false), options: cumOpts}},
+  }};
+  chartConfigs.token = {{
+    canvas:'tokenChart', titleEl:'tokenTitle',
+    dailyTitle:'Daily Token Use by Provider ('+tU+')', cumTitle:'Cumulative Tokens by Provider ('+tU+')',
+    daily: {{type:'bar', datasets: mkDS('tok',true), options: stackOpts}},
+    cum: {{type:'line', datasets: mkDS('tok',false), options: cumOpts}},
+  }};
+  chartConfigs.energy = {{
+    canvas:'energyChart', titleEl:'energyTitle',
+    dailyTitle:'Daily Energy by Provider ('+eU+')', cumTitle:'Cumulative Energy ('+eU+')',
+    daily: {{type:'bar', datasets: mkDS('en',true), options: nEOpts}},
+    cum: {{type:'line', datasets: mkDS('en',false), options: cumOpts}},
+  }};
+  chartConfigs.carbon = {{
+    canvas:'carbonChart', titleEl:'carbonTitle',
+    dailyTitle:'Daily CO2 Emissions ('+cU+')', cumTitle:'Cumulative CO2 ('+cU+')',
+    daily: {{type:'bar', datasets: mkDS('co',true), options: nCOpts}},
+    cum: {{type:'line', datasets: mkDS('co',false), options: cumOpts}},
+  }};
+
+  Object.keys(chartConfigs).forEach(key => {{
+    const cfg = chartConfigs[key];
+    const mode = chartState[key] === 'cum' ? cfg.cum : cfg.daily;
+    if (charts[key]) charts[key].destroy();
+    charts[key] = new Chart(document.getElementById(cfg.canvas), {{
+      type: mode.type, data: {{ labels: dl, datasets: mode.datasets }}, options: mode.options,
+    }});
+    document.getElementById(cfg.titleEl).textContent = chartState[key]==='cum' ? cfg.cumTitle : cfg.dailyTitle;
+  }});
+}}
+
+document.getElementById('startDate').addEventListener('change', updateDashboard);
+document.getElementById('endDate').addEventListener('change', updateDashboard);
+function resetDates() {{
+  document.getElementById('startDate').value = RAW[0].d;
+  document.getElementById('endDate').value = RAW[RAW.length-1].d;
+  updateDashboard();
 }}
 </script>
 </body>

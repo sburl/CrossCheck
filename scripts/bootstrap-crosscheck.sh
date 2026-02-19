@@ -122,21 +122,20 @@ fi
 # 5. Install skills (commands)
 echo "📝 Step 5: Install skills..."
 mkdir -p "$HOME/.claude/commands"
-# Load skip list (one skill name per line, e.g. "ai-impact")
+# Load skip list (one skill name per line, e.g. "ai-usage")
 SKIP_FILE="$HOME/.crosscheck/skip-skills"
-declare -A SKIP_SKILLS
 if [ -f "$SKIP_FILE" ]; then
-    while IFS= read -r line; do
-        line="$(echo "$line" | sed 's/#.*//' | xargs)"  # strip comments and whitespace
-        [ -n "$line" ] && SKIP_SKILLS["$line"]=1
-    done < "$SKIP_FILE"
-    [ ${#SKIP_SKILLS[@]} -gt 0 ] && echo "   Skipping (per ~/.crosscheck/skip-skills): ${!SKIP_SKILLS[*]}"
+    # Strip comments and blank lines for display
+    SKIP_DISPLAY=$(sed 's/#.*//' "$SKIP_FILE" | xargs)
+    [ -n "$SKIP_DISPLAY" ] && echo "   Skipping (per ~/.crosscheck/skip-skills): $SKIP_DISPLAY"
 fi
 # Copy skills but exclude INSTALL.md (meta-doc, not a skill) and any in skip list
 for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
     skill_name="$(basename "$skill_file" .md)"
     [ "$skill_name" = "INSTALL" ] && continue
-    [ "${SKIP_SKILLS[$skill_name]+exists}" ] && continue
+    if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
+        continue
+    fi
     cp "$skill_file" "$HOME/.claude/commands/"
 done
 skill_count=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')

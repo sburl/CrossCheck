@@ -60,13 +60,9 @@ if [ "$branch_checkout" = "1" ]; then
         current_branch=$(git branch --show-current)
         echo "  📝 Updating TODO.md branch context..."
         lockfile="$(git rev-parse --git-common-dir)/todo-md.lock"
-        # Remove stale locks (owner process no longer alive)
-        if [ -f "$lockfile" ]; then
-            lock_pid=$(cat "$lockfile" 2>/dev/null)
-            if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
-                rm -f "$lockfile"
-            fi
-        fi
+        # No stale lock cleanup — every check-then-delete approach has TOCTOU
+        # races in POSIX shell. The lock is trap-EXIT protected so only SIGKILL
+        # during the <1s critical section could leave a stale lock (manual rm to fix).
         # Acquire lock (timeout after 5s to avoid blocking checkout)
         lock_acquired=false
         for _i in 1 2 3 4 5; do

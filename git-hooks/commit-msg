@@ -33,7 +33,7 @@ if ! echo "$commit_msg" | head -1 | grep -qE '^(feat|fix|refactor|test|docs|chor
     echo "  refactor(core): simplify error handling"
     echo ""
     echo "Your message:"
-    echo "  $commit_msg"
+    printf '  %s\n' "$commit_msg"
     echo ""
     echo "Note: --no-verify is blocked by permissions (policy enforcement)"
     exit 1
@@ -81,7 +81,7 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
             echo "   - Keep iterating with Codex until you get APPROVED"
             echo ""
             echo "   Step 4: ONLY after Codex approves, add to commit message:"
-            echo "   git commit -m \"$commit_msg"
+            printf '   git commit -m "%s\n' "$commit_msg"
             echo ""
             echo "   Codex Approved\""
             echo ""

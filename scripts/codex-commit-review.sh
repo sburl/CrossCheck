@@ -47,6 +47,9 @@ Severity: CRITICAL/HIGH only (skip medium/low for commit hooks)."
 # Log review prompt for later (manual Codex review via Claude Code)
 LOG_FILE="$HOME/.claude/codex-commit-reviews.log"
 mkdir -p "$(dirname "$LOG_FILE")"
+# Restrict log permissions — commit messages may inadvertently reference secrets
+# Apply unconditionally to fix existing installs with prior 0644 permissions
+touch "$LOG_FILE" && chmod 600 "$LOG_FILE"
 
 # Rotate and append under a single lock to prevent concurrent writers from
 # losing entries during mv-based rotation (writer opens old inode, rotation
@@ -82,7 +85,7 @@ if [ "$acquired" = true ]; then
     trap 'rm -f "$LOCK_FILE"' EXIT
     # Rotate if needed
     if [ -f "$LOG_FILE" ] && [ "$(wc -l < "$LOG_FILE")" -gt 2000 ]; then
-        tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE"
+        tail -1000 "$LOG_FILE" > "$LOG_FILE.tmp" && mv "$LOG_FILE.tmp" "$LOG_FILE" && chmod 600 "$LOG_FILE"
     fi
     # Append while still holding the lock (same inode guaranteed)
     printf '%s\n' "$LOG_ENTRY" >> "$LOG_FILE"

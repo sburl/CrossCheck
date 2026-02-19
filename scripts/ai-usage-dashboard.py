@@ -755,7 +755,7 @@ def generate_html(data, output_path):
   <div class="card">
     <div class="label">Total API Cost</div>
     <div class="value" id="cardCostVal">{fmt_cost(totals["cost"])}</div>
-    <div class="detail" id="cardCostDetail">{fmt_cost(cost_per_m)}/M tokens &middot; Claude {claude_pct:.0f}% &middot; Codex {codex_pct:.0f}%{f" &middot; Gemini {gemini_pct:.0f}%" if gemini_pct >= 0.5 else ""}</div>
+    <div class="detail" id="cardCostDetail">{fmt_cost(cost_per_m)}/M tokens &middot; Claude {claude_pct:.0f}% &middot; Codex {codex_pct:.0f}%{f" &middot; Gemini {gemini_pct:.0f}%" if provider_cost["gemini"] > 0 else ""}</div>
   </div>
   <div class="card">
     <div class="label">Total Tokens</div>
@@ -1240,7 +1240,7 @@ function updateDashboard() {{
   const cxPct = tot.cost > 0 ? (pv.codex.cost / tot.cost * 100).toFixed(0) : 0;
   const gmPct = tot.cost > 0 ? (pv.gemini.cost / tot.cost * 100).toFixed(0) : 0;
   let costDetail = fC(costPerM)+'/M tokens \u00b7 Claude '+clPct+'% \u00b7 Codex '+cxPct+'%';
-  if (gmPct >= 1) costDetail += ' \u00b7 Gemini '+gmPct+'%';
+  if (pv.gemini.cost > 0) costDetail += ' \u00b7 Gemini '+gmPct+'%';
   setText('cardCostVal', fC(tot.cost));
   setText('cardCostDetail', costDetail);
 

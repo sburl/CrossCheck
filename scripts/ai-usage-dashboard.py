@@ -363,11 +363,14 @@ def generate_html(data, output_path):
 
     def fmt_tokens(val):
         if val >= 1_000_000_000:
-            return f"{val/1_000_000_000:,.2f} B"
+            v = val / 1_000_000_000
+            return f"{v:,.0f} B" if v >= 10 else f"{v:,.2f} B"
         if val >= 1_000_000:
-            return f"{val/1_000_000:,.2f} M"
+            v = val / 1_000_000
+            return f"{v:,.0f} M" if v >= 10 else f"{v:,.2f} M"
         if val >= 1000:
-            return f"{val/1000:,.2f} K"
+            v = val / 1000
+            return f"{v:,.0f} K" if v >= 10 else f"{v:,.2f} K"
         return f"{val:,.0f}"
 
     def fmt_num(val):
@@ -931,9 +934,9 @@ const carbonDivisor = {carbon_divisor};
 const TOKEN_DIV = {token_divisor};
 function fmtTok(val) {{
   const abs = Math.abs(val) * TOKEN_DIV;
-  if (abs >= 1e9) return (abs/1e9).toFixed(2) + ' B tokens';
-  if (abs >= 1e6) return (abs/1e6).toFixed(2) + ' M tokens';
-  if (abs >= 1e3) return (abs/1e3).toFixed(2) + ' K tokens';
+  if (abs >= 1e9) {{ const v = abs/1e9; return (v >= 10 ? v.toFixed(0) : v.toFixed(2)) + ' B tokens'; }}
+  if (abs >= 1e6) {{ const v = abs/1e6; return (v >= 10 ? v.toFixed(0) : v.toFixed(2)) + ' M tokens'; }}
+  if (abs >= 1e3) {{ const v = abs/1e3; return (v >= 10 ? v.toFixed(0) : v.toFixed(2)) + ' K tokens'; }}
   return abs.toFixed(0) + ' tokens';
 }}
 
@@ -961,7 +964,7 @@ function dailyTooltipOpts(unit, extraFn) {{
     usePointStyle: true,
     callbacks: {{
       label: function(ctx) {{
-        return ' ' + ctx.dataset.label + ': ' + unit + ctx.formattedValue;
+        return ' ' + ctx.dataset.label + ': ' + unit + fFix(ctx.raw||0,2);
       }},
       footer: function(items) {{
         const total = items.reduce((s,i) => s + (i.raw||0), 0);
@@ -986,7 +989,7 @@ const energyOpts = dailyTooltipOpts('', function(items) {{
 }});
 // Patch energy label to show unit suffix instead of prefix
 energyOpts.plugins.tooltip.callbacks.label = function(ctx) {{
-  return ' ' + ctx.dataset.label + ': ' + ctx.formattedValue + ' {energy_unit}';
+  return ' ' + ctx.dataset.label + ': ' + fFix(ctx.raw||0,2) + ' {energy_unit}';
 }};
 energyOpts.plugins.tooltip.callbacks.footer = function(items) {{
   const total = items.reduce((s,i) => s + (i.raw||0), 0);
@@ -1001,7 +1004,7 @@ carbonOpts.plugins.tooltip = {{
   usePointStyle: true,
   callbacks: {{
     label: function(ctx) {{
-      return ' ' + ctx.dataset.label + ': ' + ctx.formattedValue + ' {carbon_unit}';
+      return ' ' + ctx.dataset.label + ': ' + fFix(ctx.raw||0,2) + ' {carbon_unit}';
     }},
     footer: function(items) {{
       const idx = items[0].dataIndex;
@@ -1039,7 +1042,7 @@ function cumTooltipOpts(unit, unitSuffix, extraFn) {{
     mode: 'index', intersect: false, usePointStyle: true,
     callbacks: {{
       label: function(ctx) {{
-        return ' ' + ctx.dataset.label + ': ' + pre + ctx.formattedValue + suf;
+        return ' ' + ctx.dataset.label + ': ' + pre + fFix(ctx.raw||0,2) + suf;
       }},
       afterBody: function(items) {{
         const idx = items[0].dataIndex;
@@ -1217,7 +1220,12 @@ function cE(i,o,c) {{ return (o*EN.OUT + i*EN.IN + c*EN.CACHE) * EN.PUE * EN.GRI
 function cC(wh) {{ return (wh/1000) * CN.INT * CN.EMB; }}
 function cW(wh) {{ return (wh/1000) * CN.WUE * 1000; }}
 function fC(v) {{ return v >= 1000 ? '$'+v.toLocaleString('en',{{maximumFractionDigits:0}}) : v >= 1 ? '$'+v.toFixed(2) : '$'+v.toFixed(4); }}
-function fT(v) {{ return v >= 1e9 ? (v/1e9).toFixed(2)+' B' : v >= 1e6 ? (v/1e6).toFixed(2)+' M' : v >= 1e3 ? (v/1e3).toFixed(2)+' K' : v.toLocaleString('en'); }}
+function fT(v) {{
+  if (v >= 1e9) {{ const u=v/1e9; return (u>=10?u.toFixed(0):u.toFixed(2))+' B'; }}
+  if (v >= 1e6) {{ const u=v/1e6; return (u>=10?u.toFixed(0):u.toFixed(2))+' M'; }}
+  if (v >= 1e3) {{ const u=v/1e3; return (u>=10?u.toFixed(0):u.toFixed(2))+' K'; }}
+  return v.toLocaleString('en');
+}}
 function fEn(wh) {{ return wh >= 1e6 ? (wh/1e6).toFixed(2)+' MWh' : wh >= 1e3 ? (wh/1e3).toFixed(2)+' kWh' : wh.toFixed(1)+' Wh'; }}
 function fCO(g) {{ return g >= 1e6 ? (g/1e6).toFixed(2)+' tonnes' : g >= 1e3 ? (g/1e3).toFixed(2)+' kg' : g.toFixed(1)+' g'; }}
 function fWa(ml) {{ return ml >= 1e6 ? (ml/1e6).toFixed(2)+' m³' : ml >= 1e3 ? (ml/1e3).toFixed(2)+' L' : ml.toFixed(0)+' mL'; }}
@@ -1443,7 +1451,7 @@ function updateDashboard() {{
     const pre = isPrefix ? unit : '';
     const suf = isPrefix ? '' : ' '+unit;
     o.plugins.tooltip = {{ usePointStyle:true, callbacks: {{
-      label: function(ctx) {{ return ' '+ctx.dataset.label+': '+pre+ctx.formattedValue+suf; }},
+      label: function(ctx) {{ return ' '+ctx.dataset.label+': '+pre+fFix(ctx.raw||0,2)+suf; }},
       footer: function(items) {{
         const total = items.reduce((s,i)=>s+(i.raw||0),0);
         let l = ['Total: '+pre+fFix(total,2)+suf];
@@ -1461,7 +1469,7 @@ function updateDashboard() {{
     const pre = isPrefix ? unit : '';
     const suf = isPrefix ? '' : ' '+unit;
     o.plugins.tooltip = {{ mode:'index', intersect:false, usePointStyle:true, callbacks: {{
-      label: function(ctx) {{ return ' '+ctx.dataset.label+': '+pre+ctx.formattedValue+suf; }},
+      label: function(ctx) {{ return ' '+ctx.dataset.label+': '+pre+fFix(ctx.raw||0,2)+suf; }},
       afterBody: function(items) {{
         const idx = items[0].dataIndex;
         const total = items.reduce((s,i)=>s+(i.raw||0),0);
@@ -1478,9 +1486,9 @@ function updateDashboard() {{
   // Smart token formatting for filtered data
   function fmtTokD(val) {{
     const abs = Math.abs(val) * tD;
-    if (abs >= 1e9) return (abs/1e9).toFixed(2) + ' B tokens';
-    if (abs >= 1e6) return (abs/1e6).toFixed(2) + ' M tokens';
-    if (abs >= 1e3) return (abs/1e3).toFixed(2) + ' K tokens';
+    if (abs >= 1e9) {{ const v = abs/1e9; return (v >= 10 ? v.toFixed(0) : v.toFixed(2)) + ' B tokens'; }}
+    if (abs >= 1e6) {{ const v = abs/1e6; return (v >= 10 ? v.toFixed(0) : v.toFixed(2)) + ' M tokens'; }}
+    if (abs >= 1e3) {{ const v = abs/1e3; return (v >= 10 ? v.toFixed(0) : v.toFixed(2)) + ' K tokens'; }}
     return abs.toFixed(0) + ' tokens';
   }}
   const dTokO = (function() {{

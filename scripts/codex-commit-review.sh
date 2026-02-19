@@ -63,14 +63,24 @@ Or run: tail -F ~/.claude/codex-commit-reviews.log
 ENTRY
 )"
 
-# Acquire lock (noclobber = atomic create-or-fail), retry up to 2s
+# Acquire lock (noclobber = atomic create-or-fail), retry up to 5 times
 acquired=false
-for _try in $(seq 1 20); do
+for _try in 1 2 3 4 5; do
     if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
         acquired=true
         break
     fi
-    sleep 0.1
+    # Remove stale lock left by a crashed process (PID no longer running)
+    lock_pid=$(cat "$LOCK_FILE" 2>/dev/null)
+    if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+        rm -f "$LOCK_FILE"
+        # Retry immediately after clearing stale lock
+        if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
+            acquired=true
+            break
+        fi
+    fi
+    sleep 0.2
 done
 
 if [ "$acquired" = true ]; then
@@ -84,7 +94,7 @@ if [ "$acquired" = true ]; then
     rm -f "$LOCK_FILE"
     trap - EXIT
 else
-    # Could not acquire lock after 2s — skip this entry to avoid racing
+    # Could not acquire lock after 5 retries — skip this entry to avoid racing
     # with an active rotator (unlocked append can write to stale inode)
     echo "⚠️  Codex review log busy, entry skipped (will appear in next commit)" >&2
 fi

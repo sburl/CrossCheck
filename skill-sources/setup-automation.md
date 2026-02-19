@@ -46,9 +46,12 @@ When this skill is invoked, do the following:
 ## What Gets Installed
 
 ### Git Hooks (Local)
-- **post-merge**: Auto-increment PR counter on merges
-- **pre-commit**: Check doc timestamps before commits
-- **post-checkout**: Context management reminders
+- **pre-commit**: Quality gates (timestamps, secrets, debug code)
+- **commit-msg**: Conventional commits enforcement
+- **post-commit**: Checkpointing, assessment counter, Codex review
+- **post-checkout**: Background process cleanup, environment reset
+- **pre-push**: Final verification (timestamps, markers, conflicts)
+- **post-merge**: Branch cleanup, CI verification
 
 ### GitHub Actions (CI/CD)
 - **PR checks**: Documentation timestamp verification
@@ -366,9 +369,12 @@ To remove automation:
 ```bash
 # Remove git hooks
 HOOKS_DIR="$(git rev-parse --git-common-dir)/hooks"
-rm "$HOOKS_DIR/post-merge"
 rm "$HOOKS_DIR/pre-commit"
+rm "$HOOKS_DIR/commit-msg"
+rm "$HOOKS_DIR/post-commit"
 rm "$HOOKS_DIR/post-checkout"
+rm "$HOOKS_DIR/pre-push"
+rm "$HOOKS_DIR/post-merge"
 
 # Remove GitHub Actions
 rm .github/workflows/quality-gates.yml

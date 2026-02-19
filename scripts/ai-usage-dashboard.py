@@ -1302,19 +1302,19 @@ function updateDashboard() {{
 
   // Env cards
   const ec = (tot.energy/1000)*CN.ELEC;
-  const ep = tot.cost > 0 ? (ec/tot.cost*100) : 0;
+  const elecPct = tot.cost > 0 ? (ec/tot.cost*100) : 0;
   const usDays = (tot.energy/1000)/30;
   const eCtx = usDays >= 1 ? '~'+usDays.toFixed(1)+' days of avg US household electricity' : '~'+(tot.energy/12.7).toFixed(0)+' iPhone charges';
   setText('cardEnergyVal', fEn(tot.energy));
-  let enParts = []; ep.forEach(p => {{ if (pv[p].en > 0) enParts.push(p.charAt(0).toUpperCase()+p.slice(1)+' '+fEn(pv[p].en)); }});
+  const enParts = []; ep.forEach(p => {{ if (pv[p].en > 0) enParts.push(p.charAt(0).toUpperCase()+p.slice(1)+' '+fEn(pv[p].en)); }});
   setText('cardEnergyDetail', eCtx+(enParts.length ? ' · '+enParts.join(' · ') : ''));
   setText('cardCarbonVal', fCO(tot.carbon));
-  let coParts = []; ep.forEach(p => {{ if (pv[p].co > 0) coParts.push(p.charAt(0).toUpperCase()+p.slice(1)+' '+fCO(pv[p].co)); }});
+  const coParts = []; ep.forEach(p => {{ if (pv[p].co > 0) coParts.push(p.charAt(0).toUpperCase()+p.slice(1)+' '+fCO(pv[p].co)); }});
   setText('cardCarbonDetail', coParts.join(' · ') || 'No data');
   setText('cardWaterVal', fWa(tot.water));
   setText('cardWaterDetail', '~'+fN(tot.water/65000)+' showers');
   setText('cardElecVal', '$'+ec.toFixed(2));
-  setText('cardElecDetail', ep.toFixed(2)+'% of API cost');
+  setText('cardElecDetail', elecPct.toFixed(2)+'% of API cost');
 
   // Equivalents
   const cKg = tot.carbon/1000;

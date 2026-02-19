@@ -374,12 +374,20 @@ def generate_html(data, output_path):
     carbon_display = fmt_carbon(totals["carbon_g"])
     water_display = fmt_water(totals["water_ml"])
 
-    # Per-provider totals for environmental cards
+    # Per-provider totals
     provider_carbon = {}
     provider_energy = {}
+    provider_cost = {}
     for prov in ["claude", "codex", "gemini"]:
         provider_carbon[prov] = sum(r[prov]["carbon_g"] for r in data)
         provider_energy[prov] = sum(r[prov]["energy_wh"] for r in data)
+        provider_cost[prov] = sum(r[prov]["cost"] for r in data)
+
+    # Token composition
+    total_input_all = totals["input_tokens"] + totals["cache_read_tokens"]  # all input (cached + non-cached)
+    cache_hit_rate = (totals["cache_read_tokens"] / total_input_all * 100) if total_input_all else 0
+    _all_tokens = totals["input_tokens"] + totals["output_tokens"] + totals["cache_read_tokens"]
+    output_pct = (totals["output_tokens"] / _all_tokens * 100) if _all_tokens else 0
 
     # Equivalents
     carbon_kg = totals["carbon_g"] / 1000
@@ -703,22 +711,22 @@ def generate_html(data, output_path):
   <div class="card">
     <div class="label">Total API Cost</div>
     <div class="value" id="cardCostVal">{fmt_cost(totals["cost"])}</div>
-    <div class="detail" id="cardCostDetail">{fmt_cost(totals["cost"] / len(data))}/active day avg</div>
+    <div class="detail" id="cardCostDetail">{fmt_cost(totals["cost"] / len(data))}/day avg &middot; Claude {fmt_cost(provider_cost["claude"])} &middot; Codex {fmt_cost(provider_cost["codex"])}</div>
   </div>
   <div class="card">
     <div class="label">Total Tokens</div>
     <div class="value" id="cardTokensVal">{fmt_tokens(total_tokens)}</div>
-    <div class="detail" id="cardTokensDetail">{fmt_tokens(total_tokens / len(data))}/day avg</div>
+    <div class="detail" id="cardTokensDetail">{fmt_tokens(total_tokens / len(data))}/day avg &middot; {cache_hit_rate:.0f}% served from cache</div>
   </div>
   <div class="card">
     <div class="label">Input Tokens</div>
     <div class="value" id="cardInputVal">{fmt_tokens(totals["input_tokens"])}</div>
-    <div class="detail" id="cardInputDetail">{(totals["cache_read_tokens"] / totals["input_tokens"] * 100) if totals["input_tokens"] else 0:.0f}% cache hit rate ({fmt_tokens(totals["cache_read_tokens"])} cached)</div>
+    <div class="detail" id="cardInputDetail">{fmt_tokens(totals["input_tokens"])} non-cached + {fmt_tokens(totals["cache_read_tokens"])} cached ({cache_hit_rate:.0f}% hit rate)</div>
   </div>
   <div class="card">
     <div class="label">Output Tokens</div>
     <div class="value" id="cardOutputVal">{fmt_tokens(totals["output_tokens"])}</div>
-    <div class="detail" id="cardOutputDetail">{fmt_tokens(totals["output_tokens"] / len(data))}/day avg</div>
+    <div class="detail" id="cardOutputDetail">{fmt_tokens(totals["output_tokens"] / len(data))}/day avg &middot; {output_pct:.1f}% of all tokens</div>
   </div>
 </div>
 
@@ -1152,14 +1160,17 @@ function updateDashboard() {{
   setText('tokenSummary', tTok.toLocaleString()+' total tokens · '+tot.inp.toLocaleString()+' input · '+tot.out.toLocaleString()+' output · '+tot.cached.toLocaleString()+' cached');
 
   // Usage cards
+  const allInp = tot.inp + tot.cached;
+  const cacheRate = allInp > 0 ? (tot.cached / allInp * 100).toFixed(0) : 0;
+  const outPct = tTok > 0 ? (tot.out / tTok * 100).toFixed(1) : 0;
   setText('cardCostVal', fC(tot.cost));
-  setText('cardCostDetail', fC(tot.cost/n)+'/active day avg');
+  setText('cardCostDetail', fC(tot.cost/n)+'/day avg \u00b7 Claude '+fC(pv.claude.cost)+' \u00b7 Codex '+fC(pv.codex.cost));
   setText('cardTokensVal', fT(tTok));
-  setText('cardTokensDetail', fT(tTok/n)+'/day avg');
+  setText('cardTokensDetail', fT(tTok/n)+'/day avg \u00b7 '+cacheRate+'% served from cache');
   setText('cardInputVal', fT(tot.inp));
-  setText('cardInputDetail', (tot.inp ? (tot.cached/tot.inp*100).toFixed(0) : 0)+'% cache hit rate ('+fT(tot.cached)+' cached)');
+  setText('cardInputDetail', fT(tot.inp)+' non-cached + '+fT(tot.cached)+' cached ('+cacheRate+'% hit rate)');
   setText('cardOutputVal', fT(tot.out));
-  setText('cardOutputDetail', fT(tot.out/n)+'/day avg');
+  setText('cardOutputDetail', fT(tot.out/n)+'/day avg \u00b7 '+outPct+'% of all tokens');
 
   // Env cards
   const ec = (tot.energy/1000)*CN.ELEC;

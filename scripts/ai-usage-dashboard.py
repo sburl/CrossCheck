@@ -640,8 +640,9 @@ def generate_html(data, output_path):
   .token-summary {{ color: var(--muted); font-size: 0.8rem; margin-bottom: 0.75rem; }}
   .date-range {{ display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; flex-wrap: wrap; }}
   .date-range label {{ color: var(--muted); font-size: 0.8rem; }}
-  .date-range input[type="date"] {{ background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 0.375rem; padding: 0.375rem 0.5rem; font-size: 0.8rem; font-family: inherit; }}
-  .date-range input[type="date"]::-webkit-calendar-picker-indicator {{ filter: invert(0.7); }}
+  .date-range input[type="date"] {{ background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 0.375rem; padding: 0.375rem 0.5rem; font-size: 0.8rem; font-family: inherit; color-scheme: dark; }}
+  .date-range input[type="date"]::-webkit-calendar-picker-indicator {{ filter: invert(0.8); opacity: 0.6; }}
+  .date-range input[type="date"]::-webkit-calendar-picker-indicator:hover {{ opacity: 1; }}
   .date-range button {{ background: var(--border); color: var(--muted); border: none; border-radius: 0.375rem; padding: 0.375rem 0.75rem; font-size: 0.75rem; cursor: pointer; transition: all 0.15s; }}
   .date-range button:hover {{ background: var(--accent); color: var(--text); }}
   .matrix-box {{ background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 2rem; overflow-x: auto; }}
@@ -679,7 +680,7 @@ def generate_html(data, output_path):
 </style>
 </head>
 <body>
-<h1>AI Usage & Impact Dashboard</h1>
+<h1>⚡ AI Usage & Impact Dashboard</h1>
 <p class="subtitle"><span id="dateRange">{date_range} ({len(data)} active days)</span> &middot; <span id="genTime">Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</span></p>
 <p class="token-summary" id="tokenSummary">{total_tokens:,} total tokens &middot; {totals['input_tokens']:,} input &middot; {totals['output_tokens']:,} output &middot; {totals['cache_read_tokens']:,} cached</p>
 
@@ -799,7 +800,7 @@ def generate_html(data, output_path):
 </div>
 
 <details class="assumptions">
-<summary>Methodology & Assumptions</summary>
+<summary>📋 Methodology & Assumptions</summary>
 <div class="assumptions-body">
 <h4>Data Sources</h4>
 <ul>
@@ -872,7 +873,7 @@ const baseOpts = {{
   plugins: {{
     legend: {{
       display: true,
-      labels: {{ color: '#94a3b8', boxWidth: 12, padding: 12, font: {{ size: 11 }} }}
+      labels: {{ color: '#94a3b8', boxWidth: 12, padding: 12, font: {{ size: 11 }}, usePointStyle: true, pointStyle: 'rectRounded' }}
     }}
   }},
   scales: {{
@@ -884,39 +885,116 @@ const stackOpts = JSON.parse(JSON.stringify(baseOpts));
 stackOpts.scales.x.stacked = true;
 stackOpts.scales.y.stacked = true;
 
-// Energy chart tooltip: show electricity cost and household equivalent
-const energyOpts = JSON.parse(JSON.stringify(stackOpts));
-energyOpts.plugins.tooltip = {{
-  callbacks: {{
-    afterBody: function(items) {{
-      const idx = items[0].dataIndex;
-      let totalWh = 0;
-      items.forEach(i => totalWh += (i.raw || 0) * {energy_divisor});
-      const kwh = totalWh / 1000;
-      const cost = (kwh * {ELECTRICITY_COST_KWH}).toFixed(4);
-      const homeHrs = (kwh / 1.25).toFixed(1);  // ~1.25 kWh/hr avg US home
-      return 'Electricity: $' + cost + ' (~' + homeHrs + ' hrs of household use)';
+// Helper: build daily tooltip with unit + optional extra line
+function dailyTooltipOpts(unit, extraFn) {{
+  const opts = JSON.parse(JSON.stringify(stackOpts));
+  opts.plugins.tooltip = {{
+    callbacks: {{
+      label: function(ctx) {{
+        return ' ' + ctx.dataset.label + ': ' + unit + ctx.formattedValue;
+      }},
+      footer: function(items) {{
+        const total = items.reduce((s,i) => s + (i.raw||0), 0);
+        let lines = ['Total: ' + unit + total.toFixed(2)];
+        if (extraFn) lines.push(extraFn(items));
+        return lines;
+      }}
     }}
-  }}
+  }};
+  return opts;
+}}
+
+// Daily cost: $ prefix
+const costDailyOpts = dailyTooltipOpts('$', null);
+
+// Daily energy: unit suffix + electricity cost context
+const energyOpts = dailyTooltipOpts('', function(items) {{
+  let totalWh = 0;
+  items.forEach(i => totalWh += (i.raw || 0) * {energy_divisor});
+  const kwh = totalWh / 1000;
+  return 'Electricity: $' + (kwh * {ELECTRICITY_COST_KWH}).toFixed(4) + ' (~' + (kwh / 1.25).toFixed(1) + ' hrs household use)';
+}});
+// Patch energy label to show unit suffix instead of prefix
+energyOpts.plugins.tooltip.callbacks.label = function(ctx) {{
+  return ' ' + ctx.dataset.label + ': ' + ctx.formattedValue + ' {energy_unit}';
+}};
+energyOpts.plugins.tooltip.callbacks.footer = function(items) {{
+  const total = items.reduce((s,i) => s + (i.raw||0), 0);
+  let totalWh = total * {energy_divisor};
+  const kwh = totalWh / 1000;
+  return ['Total: ' + total.toFixed(4) + ' {energy_unit}', 'Electricity: $' + (kwh * {ELECTRICITY_COST_KWH}).toFixed(4) + ' (~' + (kwh / 1.25).toFixed(1) + ' hrs household use)'];
 }};
 
-// CO2 chart tooltip: show miles driven equivalent (stacked)
+// Daily carbon: unit suffix + miles context
 const carbonOpts = JSON.parse(JSON.stringify(stackOpts));
 carbonOpts.plugins.tooltip = {{
   callbacks: {{
-    afterBody: function(items) {{
+    label: function(ctx) {{
+      return ' ' + ctx.dataset.label + ': ' + ctx.formattedValue + ' {carbon_unit}';
+    }},
+    footer: function(items) {{
       const idx = items[0].dataIndex;
       const cg = dailyCarbonG[idx];
-      const miles = (cg / 1000 / 0.404).toFixed(3);
-      return '~' + miles + ' mi in a gas car (25 mpg)';
+      const total = items.reduce((s,i) => s + (i.raw||0), 0);
+      return ['Total: ' + total.toFixed(4) + ' {carbon_unit}', '~' + (cg / 1000 / 0.404).toFixed(3) + ' mi in a gas car (25 mpg)'];
     }}
   }}
 }};
 
-// Cumulative chart options: show points on hover for precise values
-const cumOpts = JSON.parse(JSON.stringify(baseOpts));
-cumOpts.interaction = {{ mode: 'index', intersect: false }};
-cumOpts.plugins.tooltip = {{ mode: 'index', intersect: false }};
+// Daily token: unit suffix
+const tokenDailyOpts = JSON.parse(JSON.stringify(stackOpts));
+tokenDailyOpts.plugins.tooltip = {{
+  callbacks: {{
+    label: function(ctx) {{
+      return ' ' + ctx.dataset.label + ': ' + ctx.formattedValue + ' {token_unit}';
+    }},
+    footer: function(items) {{
+      const total = items.reduce((s,i) => s + (i.raw||0), 0);
+      return 'Total: ' + total.toFixed(2) + ' {token_unit}';
+    }}
+  }}
+}};
+
+// Cumulative options: circles in legend, index hover, date range + daily avg
+function cumTooltipOpts(unit, unitSuffix, extraFn) {{
+  const opts = JSON.parse(JSON.stringify(baseOpts));
+  opts.plugins.legend.labels.usePointStyle = true;
+  opts.plugins.legend.labels.pointStyle = 'circle';
+  opts.interaction = {{ mode: 'index', intersect: false }};
+  const pre = unitSuffix ? '' : unit;
+  const suf = unitSuffix ? ' ' + unit : '';
+  opts.plugins.tooltip = {{
+    mode: 'index', intersect: false,
+    callbacks: {{
+      label: function(ctx) {{
+        return ' ' + ctx.dataset.label + ': ' + pre + ctx.formattedValue + suf;
+      }},
+      afterBody: function(items) {{
+        const idx = items[0].dataIndex;
+        const total = items.reduce((s,i) => s + (i.raw||0), 0);
+        const days = idx + 1;
+        const avg = total / days;
+        let lines = ['', 'Total: ' + pre + total.toFixed(2) + suf,
+                     'Daily avg: ' + pre + avg.toFixed(2) + suf + ' over ' + days + ' days'];
+        if (extraFn) lines.push(extraFn(items, total, idx));
+        return lines;
+      }}
+    }}
+  }};
+  return opts;
+}}
+
+const cumCostOpts = cumTooltipOpts('$', false, null);
+const cumTokenOpts = cumTooltipOpts('{token_unit}', true, null);
+const cumEnergyOpts = cumTooltipOpts('{energy_unit}', true, function(items, total, idx) {{
+  const totalWh = total * {energy_divisor};
+  const kwh = totalWh / 1000;
+  return 'Electricity: $' + (kwh * {ELECTRICITY_COST_KWH}).toFixed(2) + ' (~' + (kwh / 30).toFixed(1) + ' days household use)';
+}});
+const cumCarbonOpts = cumTooltipOpts('{carbon_unit}', true, function(items, total, idx) {{
+  const totalG = total * {carbon_divisor};
+  return '~' + (totalG / 1000 / 0.404).toFixed(2) + ' mi in a gas car (25 mpg)';
+}});
 
 // Chart configs: daily (bar, stacked) and cumulative (line, by provider)
 const chartConfigs = {{
@@ -929,12 +1007,12 @@ const chartConfigs = {{
       {{ label: 'Claude', data: {claude_cost}, backgroundColor: '#6366f1' }},
       {{ label: 'Codex', data: {codex_cost}, backgroundColor: '#22c55e' }},
       {{ label: 'Gemini', data: {gemini_cost}, backgroundColor: '#f59e0b' }},
-    ], options: stackOpts }},
+    ], options: costDailyOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_cost_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
-      {{ label: 'Codex', data: {cum_codex_cost_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
-      {{ label: 'Gemini', data: {cum_gemini_cost_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
-    ], options: cumOpts }},
+      {{ label: 'Claude', data: {cum_claude_cost_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_cost_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_cost_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+    ], options: cumCostOpts }},
   }},
   token: {{
     canvas: 'tokenChart',
@@ -945,12 +1023,12 @@ const chartConfigs = {{
       {{ label: 'Claude', data: {claude_tokens}, backgroundColor: '#6366f1' }},
       {{ label: 'Codex', data: {codex_tokens}, backgroundColor: '#22c55e' }},
       {{ label: 'Gemini', data: {gemini_tokens}, backgroundColor: '#f59e0b' }},
-    ], options: stackOpts }},
+    ], options: tokenDailyOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_tok_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
-      {{ label: 'Codex', data: {cum_codex_tok_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
-      {{ label: 'Gemini', data: {cum_gemini_tok_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
-    ], options: cumOpts }},
+      {{ label: 'Claude', data: {cum_claude_tok_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_tok_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_tok_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+    ], options: cumTokenOpts }},
   }},
   energy: {{
     canvas: 'energyChart',
@@ -963,10 +1041,10 @@ const chartConfigs = {{
       {{ label: 'Gemini', data: {gemini_energy}, backgroundColor: '#f59e0b' }},
     ], options: energyOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_energy_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
-      {{ label: 'Codex', data: {cum_codex_energy_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
-      {{ label: 'Gemini', data: {cum_gemini_energy_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
-    ], options: cumOpts }},
+      {{ label: 'Claude', data: {cum_claude_energy_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_energy_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_energy_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+    ], options: cumEnergyOpts }},
   }},
   carbon: {{
     canvas: 'carbonChart',
@@ -979,10 +1057,10 @@ const chartConfigs = {{
       {{ label: 'Gemini', data: {gemini_carbon}, backgroundColor: '#f59e0b' }},
     ], options: carbonOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_carbon_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
-      {{ label: 'Codex', data: {cum_codex_carbon_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
-      {{ label: 'Gemini', data: {cum_gemini_carbon_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
-    ], options: cumOpts }},
+      {{ label: 'Claude', data: {cum_claude_carbon_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_carbon_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_carbon_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }},
+    ], options: cumCarbonOpts }},
   }},
 }};
 
@@ -1186,46 +1264,93 @@ function updateDashboard() {{
     }});
   }});
 
-  const nEOpts = JSON.parse(JSON.stringify(stackOpts));
-  nEOpts.plugins.tooltip = {{ callbacks: {{ afterBody: function(items) {{
-    let tw=0; items.forEach(i => tw+=(i.raw||0)*eD);
-    const kw=tw/1000; return 'Electricity: $'+(kw*CN.ELEC).toFixed(4)+' (~'+(kw/1.25).toFixed(1)+' hrs household use)';
-  }} }} }};
-  const nCOpts = JSON.parse(JSON.stringify(stackOpts));
-  nCOpts.plugins.tooltip = {{ callbacks: {{ afterBody: function(items) {{
-    const idx=items[0].dataIndex; return '~'+(dcg[idx]/1000/0.404).toFixed(3)+' mi in a gas car (25 mpg)';
-  }} }} }};
+  // Build dynamic tooltip options matching the static ones
+  function dynDailyOpts(unit, isPrefix, extraFn) {{
+    const o = JSON.parse(JSON.stringify(stackOpts));
+    const pre = isPrefix ? unit : '';
+    const suf = isPrefix ? '' : ' '+unit;
+    o.plugins.tooltip = {{ callbacks: {{
+      label: function(ctx) {{ return ' '+ctx.dataset.label+': '+pre+ctx.formattedValue+suf; }},
+      footer: function(items) {{
+        const total = items.reduce((s,i)=>s+(i.raw||0),0);
+        let l = ['Total: '+pre+total.toFixed(2)+suf];
+        if (extraFn) l.push(extraFn(items, total));
+        return l;
+      }}
+    }} }};
+    return o;
+  }}
+  function dynCumOpts(unit, isPrefix, extraFn) {{
+    const o = JSON.parse(JSON.stringify(baseOpts));
+    o.plugins.legend.labels.usePointStyle = true;
+    o.plugins.legend.labels.pointStyle = 'circle';
+    o.interaction = {{mode:'index',intersect:false}};
+    const pre = isPrefix ? unit : '';
+    const suf = isPrefix ? '' : ' '+unit;
+    o.plugins.tooltip = {{ mode:'index', intersect:false, callbacks: {{
+      label: function(ctx) {{ return ' '+ctx.dataset.label+': '+pre+ctx.formattedValue+suf; }},
+      afterBody: function(items) {{
+        const idx = items[0].dataIndex;
+        const total = items.reduce((s,i)=>s+(i.raw||0),0);
+        const days = idx+1, avg = total/days;
+        let l = ['','Total: '+pre+total.toFixed(2)+suf, 'Daily avg: '+pre+avg.toFixed(2)+suf+' over '+days+' days'];
+        if (extraFn) l.push(extraFn(items,total,idx));
+        return l;
+      }}
+    }} }};
+    return o;
+  }}
+
+  const dCostO = dynDailyOpts('$', true, null);
+  const dTokO = dynDailyOpts(tU, false, null);
+  const dEnO = dynDailyOpts(eU, false, function(items, total) {{
+    const kw = total*eD/1000;
+    return 'Electricity: $'+(kw*CN.ELEC).toFixed(4)+' (~'+(kw/1.25).toFixed(1)+' hrs household use)';
+  }});
+  const dCoO = dynDailyOpts(cU, false, function(items, total) {{
+    const idx = items[0].dataIndex;
+    return '~'+(dcg[idx]/1000/0.404).toFixed(3)+' mi in a gas car (25 mpg)';
+  }});
+  const cCostO = dynCumOpts('$', true, null);
+  const cTokO = dynCumOpts(tU, false, null);
+  const cEnO = dynCumOpts(eU, false, function(items, total) {{
+    const kw = total*eD/1000;
+    return 'Electricity: $'+(kw*CN.ELEC).toFixed(2)+' (~'+(kw/30).toFixed(1)+' days household use)';
+  }});
+  const cCoO = dynCumOpts(cU, false, function(items, total) {{
+    return '~'+(total*cD/1000/0.404).toFixed(2)+' mi in a gas car (25 mpg)';
+  }});
 
   function mkDS(key, bar) {{
     return PROVS.map((p,i) => bar
       ? {{ label: PNAMES[i], data: sc[p][key], backgroundColor: PCOLORS[i] }}
-      : {{ label: PNAMES[i], data: cu[p][key], borderColor: PCOLORS[i], fill: false, tension: 0.3, pointRadius: 0 }}
+      : {{ label: PNAMES[i], data: cu[p][key], borderColor: PCOLORS[i], fill: false, tension: 0.3, pointRadius: 0, pointHitRadius: 8 }}
     );
   }}
 
   chartConfigs.cost = {{
     canvas:'costChart', titleEl:'costTitle',
     dailyTitle:'Daily Cost by Provider ($)', cumTitle:'Cumulative Cost by Provider ($)',
-    daily: {{type:'bar', datasets: mkDS('cost',true), options: stackOpts}},
-    cum: {{type:'line', datasets: mkDS('cost',false), options: cumOpts}},
+    daily: {{type:'bar', datasets: mkDS('cost',true), options: dCostO}},
+    cum: {{type:'line', datasets: mkDS('cost',false), options: cCostO}},
   }};
   chartConfigs.token = {{
     canvas:'tokenChart', titleEl:'tokenTitle',
     dailyTitle:'Daily Token Use by Provider ('+tU+')', cumTitle:'Cumulative Tokens by Provider ('+tU+')',
-    daily: {{type:'bar', datasets: mkDS('tok',true), options: stackOpts}},
-    cum: {{type:'line', datasets: mkDS('tok',false), options: cumOpts}},
+    daily: {{type:'bar', datasets: mkDS('tok',true), options: dTokO}},
+    cum: {{type:'line', datasets: mkDS('tok',false), options: cTokO}},
   }};
   chartConfigs.energy = {{
     canvas:'energyChart', titleEl:'energyTitle',
     dailyTitle:'Daily Energy by Provider ('+eU+')', cumTitle:'Cumulative Energy ('+eU+')',
-    daily: {{type:'bar', datasets: mkDS('en',true), options: nEOpts}},
-    cum: {{type:'line', datasets: mkDS('en',false), options: cumOpts}},
+    daily: {{type:'bar', datasets: mkDS('en',true), options: dEnO}},
+    cum: {{type:'line', datasets: mkDS('en',false), options: cEnO}},
   }};
   chartConfigs.carbon = {{
     canvas:'carbonChart', titleEl:'carbonTitle',
     dailyTitle:'Daily CO2 Emissions ('+cU+')', cumTitle:'Cumulative CO2 ('+cU+')',
-    daily: {{type:'bar', datasets: mkDS('co',true), options: nCOpts}},
-    cum: {{type:'line', datasets: mkDS('co',false), options: cumOpts}},
+    daily: {{type:'bar', datasets: mkDS('co',true), options: dCoO}},
+    cum: {{type:'line', datasets: mkDS('co',false), options: cCoO}},
   }};
 
   Object.keys(chartConfigs).forEach(key => {{

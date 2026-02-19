@@ -782,7 +782,7 @@ def generate_html(data, output_path):
 <div class="matrix-box">
   <h3>Monthly Estimated API Cost by Provider</h3>
   <table class="cost-matrix">
-    <thead><tr><th></th><th class="claude">Claude</th><th class="codex">Codex</th><th class="gemini">Gemini</th><th>Total</th></tr></thead>
+    <thead id="matrixHead"><tr><th></th><th class="claude">Claude</th><th class="codex">Codex</th><th class="gemini">Gemini</th><th>Total</th></tr></thead>
     <tbody id="matrixBody">{matrix_rows_html}{matrix_footer_html}</tbody>
   </table>
 </div>
@@ -1325,15 +1325,16 @@ function updateDashboard() {{
   setText('eqShowers', fN(tot.water/65000));
   setText('eqIphone', fN(tot.energy/12.7));
 
-  // Matrix (only enabled providers)
+  // Matrix (only enabled provider columns)
+  const epIdx = []; // indices of enabled providers
+  PROVS.forEach((p,i) => {{ if (epSet.has(p)) epIdx.push(i); }});
   const mo = {{}}, mt = {{}};
   fd.forEach(row => {{
     const m = row.d.slice(0,7);
     if (!mo[m]) {{ mo[m] = [0,0,0]; mt[m] = PKEYS.map(()=>({{i:0,o:0,c:0}})); }}
-    PKEYS.forEach((k,i) => {{
-      if (!epSet.has(PROVS[i])) return;
-      mo[m][i] += row[k][3];
-      mt[m][i].i += row[k][0]; mt[m][i].o += row[k][1]; mt[m][i].c += row[k][2];
+    epIdx.forEach(i => {{
+      mo[m][i] += row[PKEYS[i]][3];
+      mt[m][i].i += row[PKEYS[i]][0]; mt[m][i].o += row[PKEYS[i]][1]; mt[m][i].c += row[PKEYS[i]][2];
     }});
   }});
   const mk = Object.keys(mo).sort();
@@ -1348,29 +1349,35 @@ function updateDashboard() {{
   }}
   const sm = Object.keys(mo).sort();
   const ct = [0,0,0], ctk = PKEYS.map(()=>({{i:0,o:0,c:0}}));
+  // Rebuild header with only enabled providers
+  let hdr = '<tr><th></th>';
+  epIdx.forEach(i => hdr += '<th class="'+PROVS[i]+'">'+PNAMES[i]+'</th>');
+  hdr += '<th>Total</th></tr>';
+  document.getElementById('matrixHead').innerHTML = hdr;
   let mh = '';
   sm.forEach(m => {{
-    const c = mo[m], t = mt[m], rt = c[0]+c[1]+c[2];
-    c.forEach((v,i) => {{ ct[i]+=v; ctk[i].i+=t[i].i; ctk[i].o+=t[i].o; ctk[i].c+=t[i].c; }});
+    const c = mo[m], t = mt[m];
+    let rt = 0; epIdx.forEach(i => rt += c[i]);
+    epIdx.forEach(i => {{ ct[i]+=c[i]; ctk[i].i+=t[i].i; ctk[i].o+=t[i].o; ctk[i].c+=t[i].c; }});
     mh += '<tr><td class="month-label">'+m+'</td>';
-    c.forEach((v,i) => mh += '<td class="has-tip">$'+v.toFixed(2)+tipH(t[i])+'</td>');
+    epIdx.forEach(i => mh += '<td class="has-tip">$'+c[i].toFixed(2)+tipH(t[i])+'</td>');
     mh += '<td class="row-total">$'+rt.toFixed(2)+'</td></tr>';
   }});
-  const gt = ct[0]+ct[1]+ct[2];
+  let gt = 0; epIdx.forEach(i => gt += ct[i]);
   mh += '<tr class="col-totals"><td class="month-label">Total</td>';
-  ct.forEach((v,i) => mh += '<td class="has-tip">$'+v.toFixed(2)+tipH(ctk[i])+'</td>');
+  epIdx.forEach(i => mh += '<td class="has-tip">$'+ct[i].toFixed(2)+tipH(ctk[i])+'</td>');
   mh += '<td class="row-total">$'+gt.toFixed(2)+'</td></tr>';
   document.getElementById('matrixBody').innerHTML = mh;
 
-  // Charts (zero out disabled providers)
+  // Charts (only enabled providers)
   const pd = {{}};
   PROVS.forEach(p => {{ pd[p] = {{cost:[],tok:[],en:[],co:[]}}; }});
   const dcg = [];
   fd.forEach(row => {{
     let dc = 0;
     PKEYS.forEach((k,i) => {{
-      const on = epSet.has(PROVS[i]);
-      const [inp,out,cached,cost] = on ? row[k] : [0,0,0,0];
+      if (!epSet.has(PROVS[i])) return;
+      const [inp,out,cached,cost] = row[k];
       const en = cE(inp,out,cached), co = cC(en);
       pd[PROVS[i]].cost.push(Math.round(cost*100)/100);
       pd[PROVS[i]].tok.push(inp+out+cached);
@@ -1381,15 +1388,16 @@ function updateDashboard() {{
     dcg.push(dc);
   }});
 
-  const maxE = Math.max(...fd.map((_,i) => pd.claude.en[i]+pd.codex.en[i]+pd.gemini.en[i]));
+  const sumEp = (obj, key, i) => ep.reduce((s,p) => s + (pd[p][key][i]||0), 0);
+  const maxE = Math.max(...fd.map((_,i) => sumEp(pd,'en',i)), 0);
   const [eD,eU] = maxE >= 1e6 ? [1e6,'MWh'] : maxE >= 500 ? [1e3,'kWh'] : [1,'Wh'];
-  const maxCo = Math.max(...dcg);
+  const maxCo = Math.max(...dcg, 0);
   const [cD,cU] = maxCo >= 1e6 ? [1e6,'tonnes'] : maxCo >= 500 ? [1e3,'kg'] : [1,'g'];
-  const maxTk = Math.max(...fd.map((_,i) => pd.claude.tok[i]+pd.codex.tok[i]+pd.gemini.tok[i]));
+  const maxTk = Math.max(...fd.map((_,i) => sumEp(pd,'tok',i)), 0);
   const [tD,tU] = maxTk >= 1e9 ? [1e9,'B tokens'] : maxTk >= 1e6 ? [1e6,'M tokens'] : maxTk >= 1e3 ? [1e3,'K tokens'] : [1,'tokens'];
 
   const sc = {{}}, cu = {{}};
-  PROVS.forEach(p => {{
+  ep.forEach(p => {{
     sc[p] = {{
       cost: pd[p].cost,
       tok: pd[p].tok.map(v => Math.round(v/tD*100)/100),
@@ -1498,10 +1506,12 @@ function updateDashboard() {{
   }});
 
   function mkDS(key, bar) {{
-    return PROVS.map((p,i) => bar
-      ? {{ label: PNAMES[i], data: sc[p][key], backgroundColor: PCOLORS[i] }}
-      : {{ label: PNAMES[i], data: cu[p][key], borderColor: PCOLORS[i], fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }}
-    );
+    return ep.map(p => {{
+      const i = PROVS.indexOf(p);
+      return bar
+        ? {{ label: PNAMES[i], data: sc[p][key], backgroundColor: PCOLORS[i] }}
+        : {{ label: PNAMES[i], data: cu[p][key], borderColor: PCOLORS[i], fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }};
+    }});
   }}
 
   chartConfigs.cost = {{

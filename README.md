@@ -299,7 +299,7 @@ git reset HEAD test.txt && rm test.txt
 ```bash
 # Check skills installed
 ls ~/.claude/commands/ | wc -l
-# Should show: 23 (22 skills + INSTALL.md)
+# Should show: 22 skills
 
 # Start Claude Code
 claude

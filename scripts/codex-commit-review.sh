@@ -70,17 +70,28 @@ for _try in 1 2 3 4 5; do
         acquired=true
         break
     fi
-    # Remove stale lock left by a crashed process (PID no longer running)
-    lock_pid=$(cat "$LOCK_FILE" 2>/dev/null)
-    if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
-        rm -f "$LOCK_FILE"
-        # Retry immediately after clearing stale lock
+    # Check for stale lock left by a crashed process (PID no longer running).
+    # To avoid a TOCTOU race (another process acquires the lock between our
+    # kill -0 check and our rm), we rename atomically first, then verify the
+    # PID from the renamed file. If the PID is indeed dead, delete it and
+    # retry. If the PID is alive (meaning someone grabbed the lock between
+    # our failed attempt and our rename), restore the lock file.
+    if mv "$LOCK_FILE" "$LOCK_FILE.stale.$$" 2>/dev/null; then
+        lock_pid=$(cat "$LOCK_FILE.stale.$$" 2>/dev/null)
+        if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+            # PID is alive — we stole a valid lock, put it back
+            mv "$LOCK_FILE.stale.$$" "$LOCK_FILE" 2>/dev/null
+        else
+            # PID is dead or unreadable — stale lock cleared
+            rm -f "$LOCK_FILE.stale.$$"
+        fi
+        # Either way, retry lock acquisition
         if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
             acquired=true
             break
         fi
     fi
-    sleep 0.2
+    sleep 0.4
 done
 
 if [ "$acquired" = true ]; then

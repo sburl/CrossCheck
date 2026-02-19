@@ -122,17 +122,61 @@ fi
 # 5. Install skills (commands)
 echo "📝 Step 5: Install skills..."
 mkdir -p "$HOME/.claude/commands"
-# Copy skills but exclude INSTALL.md (meta-doc, not a skill)
+# Load skip list (one skill name per line, e.g. "ai-usage")
+SKIP_FILE="$HOME/.crosscheck/skip-skills"
+if [ -f "$SKIP_FILE" ]; then
+    # Strip comments and blank lines for display
+    SKIP_DISPLAY=$(sed 's/#.*//' "$SKIP_FILE" | xargs)
+    [ -n "$SKIP_DISPLAY" ] && echo "   Skipping (per ~/.crosscheck/skip-skills): $SKIP_DISPLAY"
+fi
+# Copy skills but exclude INSTALL.md (meta-doc, not a skill) and any in skip list
 for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
-    [ "$(basename "$skill_file")" = "INSTALL.md" ] && continue
+    skill_name="$(basename "$skill_file" .md)"
+    [ "$skill_name" = "INSTALL" ] && continue
+    if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
+        continue
+    fi
     cp "$skill_file" "$HOME/.claude/commands/"
 done
 skill_count=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
 echo "   ✅ Installed $skill_count skills to ~/.claude/commands/"
 echo ""
 
-# 6. Install agents (optional)
-echo "📝 Step 6: Install agents..."
+# 6. Install TokenPrint (optional - for /ai-usage skill)
+echo "📊 Step 6: Install TokenPrint (for /ai-usage dashboard)..."
+
+if [ "$INSTALL_MODE" = "multi-project" ]; then
+    TOKENPRINT_DIR="$PROJECTS_DIR/TokenPrint"
+else
+    TOKENPRINT_DIR="$HOME/.tokenprint"
+fi
+
+if [ -d "$TOKENPRINT_DIR" ] && [ -f "$TOKENPRINT_DIR/tokenprint.py" ]; then
+    echo "   ✅ TokenPrint already installed at $TOKENPRINT_DIR"
+else
+    # Clean up partial clone (dir exists but no tokenprint.py)
+    if [ -d "$TOKENPRINT_DIR" ] && [ ! -f "$TOKENPRINT_DIR/tokenprint.py" ]; then
+        echo "   ⚠️  Found incomplete TokenPrint at $TOKENPRINT_DIR, removing..."
+        rm -rf "$TOKENPRINT_DIR"
+    fi
+    read -p "   Install TokenPrint (AI usage dashboard)? (Y/n) " -n 1 -r < /dev/tty
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        echo "   Cloning TokenPrint..."
+        if git clone https://github.com/sburl/TokenPrint.git "$TOKENPRINT_DIR"; then
+            echo "   ✅ TokenPrint installed at $TOKENPRINT_DIR"
+        else
+            echo "   ⚠️  TokenPrint clone failed (network issue?). /ai-usage requires TokenPrint."
+            echo "      Install later: git clone https://github.com/sburl/TokenPrint.git $TOKENPRINT_DIR"
+        fi
+    else
+        echo "   Skipped TokenPrint (/ai-usage will prompt to install when used)"
+    fi
+fi
+echo ""
+
+# 7. Install agents (optional)
+echo "📝 Step 7: Install agents..."
 if [ -d "$CROSSCHECK_DIR/agents" ]; then
     mkdir -p "$HOME/.claude/agents"
     if cp -r "$CROSSCHECK_DIR/agents/"* "$HOME/.claude/agents/" 2>/dev/null; then
@@ -161,6 +205,9 @@ echo "   • Global settings at ~/.claude/settings.json"
 echo "   • Skills at ~/.claude/commands/"
 echo "   • Git hooks for quality gates (if accepted)"
 echo "   • Codex review hooks (if accepted)"
+if [ -d "$TOKENPRINT_DIR" ] && [ -f "$TOKENPRINT_DIR/tokenprint.py" ]; then
+    echo "   • TokenPrint dashboard at $TOKENPRINT_DIR"
+fi
 echo ""
 echo "🎯 Next steps:"
 echo ""

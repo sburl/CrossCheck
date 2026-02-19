@@ -1,7 +1,7 @@
 # Installing Claude Code Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-16-00-00
+**Last Updated:** 2026-02-19-00-00
 
 This directory contains all custom skill sources for Claude Code.
 
@@ -30,7 +30,7 @@ ls ~/.claude/commands/
 mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
 ```
 
-## Available Skills (21 total)
+## Available Skills (22 total)
 
 ### PR Workflow (5)
 - `/submit-pr` - Automated PR submission with checks
@@ -58,10 +58,48 @@ mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/com
 - `/commit-smart` - Atomic Git Commit
 - `/doc-timestamp` - Add/update timestamps in docs
 
+### Analytics (1)
+- `/ai-usage` - Track token usage, costs, and environmental impact across Claude/Codex/Gemini
+
 ### Setup (3)
 - `/setup-automation` - Install all automation for new repo
 - `/setup-statusline` - Customize Claude Code statusline
 - `/garbage-collect` - Manage /garbage folder
+
+## Opting Out of Skills
+
+Don't want a specific skill? Add its name to `~/.crosscheck/skip-skills` (one per line):
+
+```bash
+# Create skip list
+echo "ai-usage" >> ~/.crosscheck/skip-skills
+
+# Remove it locally if already installed
+rm ~/.claude/commands/ai-usage.md
+```
+
+The bootstrap script will skip any skills listed in this file. Lines starting with `#` are ignored.
+
+## TokenPrint (powers /ai-usage)
+
+The `/ai-usage` skill is powered by [TokenPrint](https://github.com/sburl/TokenPrint), which is cloned by the bootstrap script by default. If you skipped it during bootstrap, `/ai-usage` won't work until you install it.
+
+**Install later:**
+```bash
+git clone https://github.com/sburl/TokenPrint.git ~/.tokenprint
+```
+
+**Update:**
+```bash
+cd ~/.tokenprint && git pull
+```
+
+**Remove:**
+```bash
+rm -rf ~/.tokenprint   # or ~/Documents/Developer/TokenPrint for multi-project mode
+```
+
+Without TokenPrint installed, `/ai-usage` will prompt you to install it.
 
 ## Maintenance
 

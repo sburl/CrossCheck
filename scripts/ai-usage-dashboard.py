@@ -367,8 +367,18 @@ def generate_html(data, output_path):
     showers = totals["water_ml"] / 65000
     iphone_charges = totals["energy_wh"] / 12.7
 
-    # Real-world context for cards
-    energy_context = f"~{iphone_charges:,.0f} iPhone charges" if iphone_charges >= 1 else f"~{iphone_charges:,.2f} iPhone charges"
+    # Real-world context for cards (pick best scale)
+    energy_kwh = totals["energy_wh"] / 1000
+    tesla_miles = energy_kwh / 0.25  # Tesla ~0.25 kWh/mile
+    us_home_days = energy_kwh / 30  # US home ~30 kWh/day
+    if us_home_days >= 1:
+        energy_context = f"~{us_home_days:,.1f} days of avg US household electricity"
+    elif tesla_miles >= 1:
+        energy_context = f"~{tesla_miles:,.0f} miles in a Tesla"
+    elif iphone_charges >= 1:
+        energy_context = f"~{iphone_charges:,.0f} iPhone charges"
+    else:
+        energy_context = f"~{iphone_charges:,.2f} iPhone charges"
     carbon_context = f"~{car_miles:,.2f} miles driven"
     water_context = f"~{showers:,.2f} showers"
 
@@ -492,39 +502,52 @@ def generate_html(data, output_path):
     codex_tokens = json.dumps([round(_provider_daily_tokens(r, "codex"), 2) for r in data])
     gemini_tokens = json.dumps([round(_provider_daily_tokens(r, "gemini"), 2) for r in data])
 
-    # Cumulative series (by provider)
-    cum_carbon, cum_energy = [], []
+    # Cumulative series (all by provider)
     cum_claude_cost, cum_codex_cost, cum_gemini_cost = [], [], []
     cum_claude_tok, cum_codex_tok, cum_gemini_tok = [], [], []
-    rcarb, renergy = 0, 0
+    cum_claude_energy, cum_codex_energy, cum_gemini_energy = [], [], []
+    cum_claude_carbon, cum_codex_carbon, cum_gemini_carbon = [], [], []
     rcc, rcxc, rgmc = 0, 0, 0
     rct, rcx, rgm = 0, 0, 0
+    rce, rcxe, rgme = 0, 0, 0
+    rccarb, rcxcarb, rgmcarb = 0, 0, 0
     for row in data:
-        for p in ["claude", "codex", "gemini"]:
-            rcarb += row[p]["carbon_g"]
-            renergy += row[p]["energy_wh"]
         rcc += row["claude"]["cost"]
         rcxc += row["codex"]["cost"]
         rgmc += row["gemini"]["cost"]
         rct += _provider_daily_tokens(row, "claude") * token_divisor
         rcx += _provider_daily_tokens(row, "codex") * token_divisor
         rgm += _provider_daily_tokens(row, "gemini") * token_divisor
-        cum_carbon.append(round(rcarb / carbon_divisor, 2))
-        cum_energy.append(round(renergy / energy_divisor, 2))
+        rce += row["claude"]["energy_wh"]
+        rcxe += row["codex"]["energy_wh"]
+        rgme += row["gemini"]["energy_wh"]
+        rccarb += row["claude"]["carbon_g"]
+        rcxcarb += row["codex"]["carbon_g"]
+        rgmcarb += row["gemini"]["carbon_g"]
         cum_claude_cost.append(round(rcc, 2))
         cum_codex_cost.append(round(rcxc, 2))
         cum_gemini_cost.append(round(rgmc, 2))
         cum_claude_tok.append(round(rct / token_divisor, 2))
         cum_codex_tok.append(round(rcx / token_divisor, 2))
         cum_gemini_tok.append(round(rgm / token_divisor, 2))
-    cum_carbon_json = json.dumps(cum_carbon)
-    cum_energy_json = json.dumps(cum_energy)
+        cum_claude_energy.append(round(rce / energy_divisor, 2))
+        cum_codex_energy.append(round(rcxe / energy_divisor, 2))
+        cum_gemini_energy.append(round(rgme / energy_divisor, 2))
+        cum_claude_carbon.append(round(rccarb / carbon_divisor, 2))
+        cum_codex_carbon.append(round(rcxcarb / carbon_divisor, 2))
+        cum_gemini_carbon.append(round(rgmcarb / carbon_divisor, 2))
     cum_claude_cost_json = json.dumps(cum_claude_cost)
     cum_codex_cost_json = json.dumps(cum_codex_cost)
     cum_gemini_cost_json = json.dumps(cum_gemini_cost)
     cum_claude_tok_json = json.dumps(cum_claude_tok)
     cum_codex_tok_json = json.dumps(cum_codex_tok)
     cum_gemini_tok_json = json.dumps(cum_gemini_tok)
+    cum_claude_energy_json = json.dumps(cum_claude_energy)
+    cum_codex_energy_json = json.dumps(cum_codex_energy)
+    cum_gemini_energy_json = json.dumps(cum_gemini_energy)
+    cum_claude_carbon_json = json.dumps(cum_claude_carbon)
+    cum_codex_carbon_json = json.dumps(cum_codex_carbon)
+    cum_gemini_carbon_json = json.dumps(cum_gemini_carbon)
 
     # Date range for title
     date_range = ""
@@ -596,7 +619,7 @@ def generate_html(data, output_path):
 </head>
 <body>
 <h1>AI Usage & Impact Dashboard</h1>
-<p class="subtitle">{date_range} &middot; Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
+<p class="subtitle">{date_range} ({len(data)} active days) &middot; Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
 
 <div class="legend">
   <div class="legend-item"><div class="legend-dot" style="background: var(--claude)"></div> Claude Code</div>
@@ -611,7 +634,7 @@ def generate_html(data, output_path):
   <div class="card">
     <div class="label">Total API Cost</div>
     <div class="value">{fmt_cost(totals["cost"])}</div>
-    <div class="detail">{fmt_cost(totals["cost"] / len(data))}/day avg over {len(data)} days</div>
+    <div class="detail">{fmt_cost(totals["cost"] / len(data))}/active day avg</div>
   </div>
   <div class="card">
     <div class="label">Total Tokens</div>
@@ -700,7 +723,7 @@ def generate_html(data, output_path):
 <h3 class="section-title">Real-World Equivalents</h3>
 <div class="equiv">
   <div class="equiv-card"><div class="num">{household_months:,.2f}</div><div class="desc">Household-months of electricity</div></div>
-  <div class="equiv-card"><div class="num">{car_miles:,.2f}</div><div class="desc">Miles driven (avg car)</div></div>
+  <div class="equiv-card"><div class="num">{car_miles:,.2f}</div><div class="desc">Miles in a gas car (25 mpg avg)</div></div>
   <div class="equiv-card"><div class="num">{flights_pct:,.2f}</div><div class="desc">NYC-LA flights</div></div>
   <div class="equiv-card"><div class="num">{trees_needed:,.2f}</div><div class="desc">Trees needed (1 year offset)</div></div>
   <div class="equiv-card"><div class="num">{showers:,.2f}</div><div class="desc">Showers (water)</div></div>
@@ -710,9 +733,18 @@ def generate_html(data, output_path):
 
 <script>
 const dates = {dates_json};
+// Carbon equivalents for energy tooltip
+const dailyCarbonG = {daily_carbon_json};
+const carbonDivisor = {carbon_divisor};
+
 const baseOpts = {{
   responsive: true,
-  plugins: {{ legend: {{ display: false }} }},
+  plugins: {{
+    legend: {{
+      display: true,
+      labels: {{ color: '#94a3b8', boxWidth: 12, padding: 12, font: {{ size: 11 }} }}
+    }}
+  }},
   scales: {{
     x: {{ ticks: {{ color: '#94a3b8', maxRotation: 45 }}, grid: {{ color: '#1e293b' }} }},
     y: {{ ticks: {{ color: '#94a3b8' }}, grid: {{ color: '#334155' }} }}
@@ -721,6 +753,19 @@ const baseOpts = {{
 const stackOpts = JSON.parse(JSON.stringify(baseOpts));
 stackOpts.scales.x.stacked = true;
 stackOpts.scales.y.stacked = true;
+
+// Energy chart gets a custom tooltip showing carbon equivalent
+const energyOpts = JSON.parse(JSON.stringify(stackOpts));
+energyOpts.plugins.tooltip = {{
+  callbacks: {{
+    afterBody: function(items) {{
+      const idx = items[0].dataIndex;
+      const cg = dailyCarbonG[idx];
+      const miles = (cg / 1000 / 0.404).toFixed(3);
+      return 'CO2: ' + (cg >= 1000 ? (cg/1000).toFixed(2) + ' kg' : cg.toFixed(1) + ' g') + ' (~' + miles + ' mi driven)';
+    }}
+  }}
+}};
 
 // Chart configs: daily (bar, stacked) and cumulative (line, by provider)
 const chartConfigs = {{
@@ -765,9 +810,11 @@ const chartConfigs = {{
       {{ label: 'Claude', data: {claude_energy}, backgroundColor: '#6366f1' }},
       {{ label: 'Codex', data: {codex_energy}, backgroundColor: '#22c55e' }},
       {{ label: 'Gemini', data: {gemini_energy}, backgroundColor: '#f59e0b' }},
-    ], options: stackOpts }},
+    ], options: energyOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Energy', data: {cum_energy_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
+      {{ label: 'Claude', data: {cum_claude_energy_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
+      {{ label: 'Codex', data: {cum_codex_energy_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
+      {{ label: 'Gemini', data: {cum_gemini_energy_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
     ], options: baseOpts }},
   }},
   carbon: {{
@@ -779,7 +826,9 @@ const chartConfigs = {{
       {{ label: 'CO2', data: {daily_carbon_json}, backgroundColor: {carbon_colors} }},
     ], options: baseOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'CO2', data: {cum_carbon_json}, borderColor: '#ef4444', fill: false, tension: 0.3, pointRadius: 0 }},
+      {{ label: 'Claude', data: {cum_claude_carbon_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0 }},
+      {{ label: 'Codex', data: {cum_codex_carbon_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0 }},
+      {{ label: 'Gemini', data: {cum_gemini_carbon_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0 }},
     ], options: baseOpts }},
   }},
 }};

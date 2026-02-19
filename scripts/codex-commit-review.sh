@@ -64,25 +64,16 @@ ENTRY
 )"
 
 # Acquire lock (noclobber = atomic create-or-fail), retry up to 5 times.
-# Stale lock detection uses file age instead of PID to avoid TOCTOU races
-# inherent in PID-based cleanup (read PID → check liveness → rm has a window
-# where another process can acquire the lock between check and rm).
-# Age-based: a lock older than 60s is certainly stale (operation takes <1s).
-# The rm + noclobber pair is safe: even if multiple processes rm a stale lock
-# simultaneously, noclobber ensures exactly one acquires the replacement.
+# No stale lock cleanup — every check-then-delete approach has TOCTOU races
+# in POSIX shell. The lock is trap-EXIT protected so only SIGKILL during the
+# <1 second critical section could leave a stale lock. If that happens, the
+# consequence is skipped log entries (not data loss) until the user removes
+# the lock file manually: rm ~/.claude/codex-commit-reviews.log.lock
 acquired=false
 for _try in 1 2 3 4 5; do
     if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
         acquired=true
         break
-    fi
-    # On second retry, check for stale lock (age > 60 seconds).
-    # Fresh locks from active writers are never removed.
-    if [ "$_try" -eq 2 ] && [ -f "$LOCK_FILE" ]; then
-        lock_mtime=$(stat -f %m "$LOCK_FILE" 2>/dev/null || stat -c %Y "$LOCK_FILE" 2>/dev/null || echo "0")
-        if [ $(( $(date +%s) - lock_mtime )) -gt 60 ]; then
-            rm -f "$LOCK_FILE"
-        fi
     fi
     sleep 0.4
 done

@@ -968,7 +968,7 @@ function dailyTooltipOpts(unit, extraFn) {{
       }},
       footer: function(items) {{
         const total = items.reduce((s,i) => s + (i.raw||0), 0);
-        let lines = ['Total: ' + unit + total.toFixed(2)];
+        let lines = ['Total: ' + unit + fFix(total,2)];
         if (extraFn) lines.push(extraFn(items));
         return lines;
       }}
@@ -985,7 +985,7 @@ const energyOpts = dailyTooltipOpts('', function(items) {{
   let totalWh = 0;
   items.forEach(i => totalWh += (i.raw || 0) * {energy_divisor});
   const kwh = totalWh / 1000;
-  return 'Electricity: $' + (kwh * {ELECTRICITY_COST_KWH}).toFixed(2) + ' (~' + (kwh / 1.25).toFixed(1) + ' hrs household use)';
+  return 'Electricity: $' + fFix(kwh * {ELECTRICITY_COST_KWH},2) + ' (~' + fFix(kwh / 1.25,1) + ' hrs household use)';
 }});
 // Patch energy label to show unit suffix instead of prefix
 energyOpts.plugins.tooltip.callbacks.label = function(ctx) {{
@@ -995,7 +995,7 @@ energyOpts.plugins.tooltip.callbacks.footer = function(items) {{
   const total = items.reduce((s,i) => s + (i.raw||0), 0);
   let totalWh = total * {energy_divisor};
   const kwh = totalWh / 1000;
-  return ['Total: ' + total.toFixed(2) + ' {energy_unit}', 'Electricity: $' + (kwh * {ELECTRICITY_COST_KWH}).toFixed(2) + ' (~' + (kwh / 1.25).toFixed(1) + ' hrs household use)'];
+  return ['Total: ' + fFix(total,2) + ' {energy_unit}', 'Electricity: $' + fFix(kwh * {ELECTRICITY_COST_KWH},2) + ' (~' + fFix(kwh / 1.25,1) + ' hrs household use)'];
 }};
 
 // Daily carbon: unit suffix + miles context
@@ -1010,7 +1010,7 @@ carbonOpts.plugins.tooltip = {{
       const idx = items[0].dataIndex;
       const cg = dailyCarbonG[idx];
       const total = items.reduce((s,i) => s + (i.raw||0), 0);
-      return ['Total: ' + total.toFixed(4) + ' {carbon_unit}', '~' + (cg / 1000 / 0.404).toFixed(3) + ' mi in a gas car (25 mpg)'];
+      return ['Total: ' + fFix(total,4) + ' {carbon_unit}', '~' + fFix(cg / 1000 / 0.404,3) + ' mi in a gas car (25 mpg)'];
     }}
   }}
 }};
@@ -1049,8 +1049,8 @@ function cumTooltipOpts(unit, unitSuffix, extraFn) {{
         const total = items.reduce((s,i) => s + (i.raw||0), 0);
         const days = idx + 1;
         const avg = total / days;
-        let lines = ['', 'Total: ' + pre + total.toFixed(2) + suf,
-                     'Daily avg: ' + pre + avg.toFixed(2) + suf + ' over ' + days + ' days'];
+        let lines = ['', 'Total: ' + pre + fFix(total,2) + suf,
+                     'Daily avg: ' + pre + fFix(avg,2) + suf + ' over ' + days + ' days'];
         if (extraFn) lines.push(extraFn(items, total, idx));
         return lines;
       }}
@@ -1080,11 +1080,11 @@ const cumTokenOpts = (function() {{
 const cumEnergyOpts = cumTooltipOpts('{energy_unit}', true, function(items, total, idx) {{
   const totalWh = total * {energy_divisor};
   const kwh = totalWh / 1000;
-  return 'Electricity: $' + (kwh * {ELECTRICITY_COST_KWH}).toFixed(2) + ' (~' + (kwh / 30).toFixed(1) + ' days household use)';
+  return 'Electricity: $' + fFix(kwh * {ELECTRICITY_COST_KWH},2) + ' (~' + fFix(kwh / 30,1) + ' days household use)';
 }});
 const cumCarbonOpts = cumTooltipOpts('{carbon_unit}', true, function(items, total, idx) {{
   const totalG = total * {carbon_divisor};
-  return '~' + (totalG / 1000 / 0.404).toFixed(2) + ' mi in a gas car (25 mpg)';
+  return '~' + fFix(totalG / 1000 / 0.404,2) + ' mi in a gas car (25 mpg)';
 }});
 
 // Chart configs: daily (bar, stacked) and cumulative (line, by provider)
@@ -1225,6 +1225,7 @@ function fEn(wh) {{ return wh >= 1e6 ? (wh/1e6).toFixed(2)+' MWh' : wh >= 1e3 ? 
 function fCO(g) {{ return g >= 1e6 ? (g/1e6).toFixed(2)+' tonnes' : g >= 1e3 ? (g/1e3).toFixed(2)+' kg' : g.toFixed(1)+' g'; }}
 function fWa(ml) {{ return ml >= 1e6 ? (ml/1e6).toFixed(2)+' m³' : ml >= 1e3 ? (ml/1e3).toFixed(2)+' L' : ml.toFixed(0)+' mL'; }}
 function fN(v) {{ return v >= 10 ? v.toLocaleString('en',{{maximumFractionDigits:0}}) : v >= 1 ? v.toFixed(1) : v.toFixed(2); }}
+function fFix(v,d) {{ return v.toLocaleString('en',{{minimumFractionDigits:d,maximumFractionDigits:d}}); }}
 function setText(id, t) {{ const el = document.getElementById(id); if (el) el.textContent = t; }}
 
 function tipH(t) {{
@@ -1316,7 +1317,7 @@ function updateDashboard() {{
   const ec = (tot.energy/1000)*CN.ELEC;
   const elecPct = tot.cost > 0 ? (ec/tot.cost*100) : 0;
   const usDays = (tot.energy/1000)/30;
-  const eCtx = usDays >= 1 ? '~'+usDays.toFixed(1)+' days of avg US household electricity' : '~'+(tot.energy/12.7).toFixed(0)+' iPhone charges';
+  const eCtx = usDays >= 1 ? '~'+fFix(usDays,1)+' days of avg US household electricity' : '~'+fFix(tot.energy/12.7,0)+' iPhone charges';
   setText('cardEnergyVal', fEn(tot.energy));
   const enParts = []; ep.forEach(p => {{ if (pv[p].en > 0) enParts.push(p.charAt(0).toUpperCase()+p.slice(1)+' '+fEn(pv[p].en)); }});
   setText('cardEnergyDetail', eCtx+(enParts.length ? ' · '+enParts.join(' · ') : ''));
@@ -1325,8 +1326,8 @@ function updateDashboard() {{
   setText('cardCarbonDetail', coParts.join(' · ') || 'No data');
   setText('cardWaterVal', fWa(tot.water));
   setText('cardWaterDetail', '~'+fN(tot.water/65000)+' showers');
-  setText('cardElecVal', '$'+ec.toFixed(2));
-  setText('cardElecDetail', elecPct.toFixed(2)+'% of API cost');
+  setText('cardElecVal', '$'+fFix(ec,2));
+  setText('cardElecDetail', fFix(elecPct,2)+'% of API cost');
 
   // Equivalents
   const cKg = tot.carbon/1000;
@@ -1372,13 +1373,13 @@ function updateDashboard() {{
     let rt = 0; epIdx.forEach(i => rt += c[i]);
     epIdx.forEach(i => {{ ct[i]+=c[i]; ctk[i].i+=t[i].i; ctk[i].o+=t[i].o; ctk[i].c+=t[i].c; }});
     mh += '<tr><td class="month-label">'+m+'</td>';
-    epIdx.forEach(i => mh += '<td class="has-tip">$'+c[i].toFixed(2)+tipH(t[i])+'</td>');
-    mh += '<td class="row-total">$'+rt.toFixed(2)+'</td></tr>';
+    epIdx.forEach(i => mh += '<td class="has-tip">$'+fFix(c[i],2)+tipH(t[i])+'</td>');
+    mh += '<td class="row-total">$'+fFix(rt,2)+'</td></tr>';
   }});
   let gt = 0; epIdx.forEach(i => gt += ct[i]);
   mh += '<tr class="col-totals"><td class="month-label">Total</td>';
-  epIdx.forEach(i => mh += '<td class="has-tip">$'+ct[i].toFixed(2)+tipH(ctk[i])+'</td>');
-  mh += '<td class="row-total">$'+gt.toFixed(2)+'</td></tr>';
+  epIdx.forEach(i => mh += '<td class="has-tip">$'+fFix(ct[i],2)+tipH(ctk[i])+'</td>');
+  mh += '<td class="row-total">$'+fFix(gt,2)+'</td></tr>';
   document.getElementById('matrixBody').innerHTML = mh;
 
   // Charts (only enabled providers)
@@ -1444,7 +1445,7 @@ function updateDashboard() {{
       label: function(ctx) {{ return ' '+ctx.dataset.label+': '+pre+ctx.formattedValue+suf; }},
       footer: function(items) {{
         const total = items.reduce((s,i)=>s+(i.raw||0),0);
-        let l = ['Total: '+pre+total.toFixed(2)+suf];
+        let l = ['Total: '+pre+fFix(total,2)+suf];
         if (extraFn) l.push(extraFn(items, total));
         return l;
       }}
@@ -1464,7 +1465,7 @@ function updateDashboard() {{
         const idx = items[0].dataIndex;
         const total = items.reduce((s,i)=>s+(i.raw||0),0);
         const days = idx+1, avg = total/days;
-        let l = ['','Total: '+pre+total.toFixed(2)+suf, 'Daily avg: '+pre+avg.toFixed(2)+suf+' over '+days+' days'];
+        let l = ['','Total: '+pre+fFix(total,2)+suf, 'Daily avg: '+pre+fFix(avg,2)+suf+' over '+days+' days'];
         if (extraFn) l.push(extraFn(items,total,idx));
         return l;
       }}
@@ -1494,11 +1495,11 @@ function updateDashboard() {{
   }})();
   const dEnO = dynDailyOpts(eU, false, function(items, total) {{
     const kw = total*eD/1000;
-    return 'Electricity: $'+(kw*CN.ELEC).toFixed(2)+' (~'+(kw/1.25).toFixed(1)+' hrs household use)';
+    return 'Electricity: $'+fFix(kw*CN.ELEC,2)+' (~'+fFix(kw/1.25,1)+' hrs household use)';
   }});
   const dCoO = dynDailyOpts(cU, false, function(items, total) {{
     const idx = items[0].dataIndex;
-    return '~'+(dcg[idx]/1000/0.404).toFixed(3)+' mi in a gas car (25 mpg)';
+    return '~'+fFix(dcg[idx]/1000/0.404,3)+' mi in a gas car (25 mpg)';
   }});
   const cCostO = dynCumOpts('$', true, null);
   const cTokO = (function() {{
@@ -1519,10 +1520,10 @@ function updateDashboard() {{
   }})();
   const cEnO = dynCumOpts(eU, false, function(items, total) {{
     const kw = total*eD/1000;
-    return 'Electricity: $'+(kw*CN.ELEC).toFixed(2)+' (~'+(kw/30).toFixed(1)+' days household use)';
+    return 'Electricity: $'+fFix(kw*CN.ELEC,2)+' (~'+fFix(kw/30,1)+' days household use)';
   }});
   const cCoO = dynCumOpts(cU, false, function(items, total) {{
-    return '~'+(total*cD/1000/0.404).toFixed(2)+' mi in a gas car (25 mpg)';
+    return '~'+fFix(total*cD/1000/0.404,2)+' mi in a gas car (25 mpg)';
   }});
 
   function mkDS(key, bar) {{

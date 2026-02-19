@@ -257,7 +257,7 @@ fi
 
 ```json
 {
-  "bashPermissions": {
+  "permissions": {
     "allow": [
       "Bash(git*)",
       "Bash(npm*)",
@@ -280,7 +280,7 @@ fi
 
 ```json
 {
-  "bashPermissions": {
+  "permissions": {
     "allow": [
       // Platform tools
       "Bash(vercel*)",      // Vercel
@@ -319,7 +319,7 @@ fi
 
 ```json
 {
-  "bashPermissions": {
+  "permissions": {
     "allow": [
       "Bash(git*)",      // ✅ Runs without asking
       "Bash(npm*)"

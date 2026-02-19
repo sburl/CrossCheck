@@ -202,7 +202,7 @@ claude "Build user authentication"
 # Claude creates feature branch, writes code + tests, gets Codex review, ships
 ```
 
-**That's it!** All 21 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
+**That's it!** All 22 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
 
 ---
 
@@ -218,9 +218,9 @@ CrossCheck uses a **single source of truth** pattern:
 │
 ├── CrossCheck/                # 🎯 Source repository
 │   ├── CLAUDE.md             # Source of truth for workflow
-│   ├── QUICK-REFERENCE.md    # Supporting reference (21 skills, tables)
+│   ├── QUICK-REFERENCE.md    # Supporting reference (22 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history)
-│   ├── skill-sources/        # 21 skills (copied to ~/.claude/commands/)
+│   ├── skill-sources/        # 22 skills (copied to ~/.claude/commands/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
@@ -299,7 +299,7 @@ git reset HEAD test.txt && rm test.txt
 ```bash
 # Check skills installed
 ls ~/.claude/commands/ | wc -l
-# Should show: 22 (21 skills + INSTALL.md)
+# Should show: 22 skills
 
 # Start Claude Code
 claude
@@ -360,12 +360,11 @@ The core idea is two AI models from different labs: one writes, one reviews. Thi
 
 **When things break:**
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Debug hooks, CI, permissions
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md#hook-error-reference)** - Hook-specific debugging
 
 **Deep dives:**
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design, data flow
 - **[ADVANCED.md](ADVANCED.md)** - Customization, multi-agent workflows
-
-- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md#hook-error-reference)** - Hook-specific debugging
 - **[The Full Story](https://spencerburleigh.com/blog/crosscheck)** - Philosophy and story behind CrossCheck
 
 ---
@@ -382,31 +381,6 @@ Both humans and AI agents can contribute.
 cd ~/path/to/CrossCheck
 ./scripts/install-git-hooks.sh
 ```
-
----
-
-## Get Started
-
-**1. Clone alongside your projects:**
-```bash
-cd ~/Documents/Developer  # Or your projects folder
-git clone https://github.com/sburl/CrossCheck.git
-cd CrossCheck
-./scripts/bootstrap-crosscheck.sh
-```
-
-**2. Enable for each project:**
-```bash
-cd ../YourProject
-../CrossCheck/scripts/install-git-hooks.sh
-```
-
-**3. Build autonomously:**
-```bash
-claude "Build user authentication"
-```
-
-**Build the loops. Trust the enforcement. Review the output.**
 
 ---
 

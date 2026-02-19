@@ -78,7 +78,7 @@ Repeat Steps 3-5 until Codex explicitly approves merge with destination.
 
 When Codex explicitly approves:
 ```bash
-gh pr merge {PR_NUMBER} --merge  # or --squash or --rebase as appropriate
+gh pr merge {PR_NUMBER} --squash  # GitHub ruleset enforces squash-only merges
 ```
 
 ## Step 8: Return to Roadmap

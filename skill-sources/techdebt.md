@@ -269,4 +269,4 @@ pip install vulture radon
 
 - `/pre-pr-check` - Comprehensive pre-PR checklist
 - `/submit-pr` - Auto PR submission (calls /techdebt)
-- `/enforce-no-disable` - MERGED INTO THIS SKILL
+- Enforce-no-disable checks are built into this skill

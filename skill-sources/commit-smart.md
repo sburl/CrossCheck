@@ -54,7 +54,7 @@ Create an atomic git commit for the changes made in this session.
 1. Run `git status` - review what changed
 2. Run `git diff --staged` and `git diff` - understand the changes
 3. Identify files from your session only
-4. **Check if docs need updating** - if the change introduces a gotcha, design decision, or behavior change, add a brief note to the relevant `.md` file (e.g., COMPUTE.md, FITNESS.md, CLAUDE.md). Keep it minimal.
+4. **Check if docs need updating** - if the change introduces a gotcha, design decision, or behavior change, add a brief note to the relevant `.md` file (e.g., CLAUDE.md, QUICK-REFERENCE.md). Keep it minimal.
 5. Compose a clear commit message
 6. Execute the appropriate commit command
 7. Run `git status` again to verify success

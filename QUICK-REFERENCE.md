@@ -26,7 +26,6 @@ When user requests these tasks, invoke the corresponding skill:
 | "show worktrees" | `/list-worktrees` | List active worktrees |
 | "cleanup worktrees" | `/cleanup-worktrees` | Remove merged worktrees |
 | "delete branches" | `/cleanup-branches` | Safe batch deletion |
-
 | Modified .md file | `/doc-timestamp` | Update timestamps |
 | "setup automation" | `/setup-automation` | Install hooks + CI |
 | "customize statusline" | `/setup-statusline` | Configure status bar |
@@ -258,7 +257,6 @@ mv old-file.js garbage/
 |-------|-------------|--------------|
 | `/plan` | Complex task (>3 files) | Enters plan mode, designs before implementation |
 | `/do-work` | Process task queue | Reads do-work/ folder, executes tasks autonomously |
-
 | `/doc-timestamp` | Modified .md file | Updates "Last Updated:" timestamp |
 
 ### Analytics

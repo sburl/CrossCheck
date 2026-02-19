@@ -121,7 +121,7 @@ git push
 ```
 ~/.claude/
 ├── commands/              ← Active skills (copied from CrossCheck/skill-sources/)
-│   └── *.md              ← 21 skill files
+│   └── *.md              ← 22 skill files
 └── settings.json         ← Global permissions
 
 ~/.crosscheck/                 ← Git repo (source of truth, traditional install)

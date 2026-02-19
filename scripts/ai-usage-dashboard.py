@@ -853,7 +853,7 @@ def generate_html(data, output_path):
 
 <h3 class="section-title">Real-World Equivalents</h3>
 <div class="equiv">
-  <div class="equiv-card"><div class="emoji">🏠</div><div class="eq-content"><div class="num" id="eqHousehold">{fmt_num(household_months)}</div><div class="desc" id="eqHouseholdDesc">Household-months of CO2 (~900 kg/mo)</div></div></div>
+  <div class="equiv-card"><div class="emoji">🚘</div><div class="eq-content"><div class="num" id="eqTesla">{fmt_num(tesla_miles)}</div><div class="desc" id="eqTeslaDesc">Tesla miles of energy (~0.25 kWh/mi)</div></div></div>
   <div class="equiv-card"><div class="emoji">🚗</div><div class="eq-content"><div class="num" id="eqCar">{fmt_num(car_miles)}</div><div class="desc" id="eqCarDesc">Miles of CO2 in a gas car (25 mpg)</div></div></div>
   <div class="equiv-card"><div class="emoji">✈️</div><div class="eq-content"><div class="num" id="eqFlights">{fmt_num(flights_pct)}</div><div class="desc" id="eqFlightsDesc">NYC-LA flights of CO2 (~90 kg each)</div></div></div>
   <div class="equiv-card"><div class="emoji">🌳</div><div class="eq-content"><div class="num" id="eqTrees">{fmt_num(trees_needed)}</div><div class="desc" id="eqTreesDesc">Trees to offset CO2 (~22 kg/yr each)</div></div></div>
@@ -1340,7 +1340,7 @@ function updateDashboard() {{
 
   // Equivalents
   const cKg = tot.carbon/1000;
-  setText('eqHousehold', fN(cKg/900));
+  setText('eqTesla', fN((tot.energy/1000)*4));
   setText('eqCar', fN(cKg/0.404));
   setText('eqFlights', fN(cKg/90));
   setText('eqTrees', fN(cKg/22));

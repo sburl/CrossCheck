@@ -1592,6 +1592,8 @@ function resetDates() {{
   document.getElementById('endDate').value = RAW[RAW.length-1].d;
   updateDashboard();
 }}
+// Initial render: rebuild table/cards with correct provider visibility
+updateDashboard();
 </script>
 </body>
 </html>"""

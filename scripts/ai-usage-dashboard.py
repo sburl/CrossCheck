@@ -755,7 +755,7 @@ def generate_html(data, output_path):
   <div class="card">
     <div class="label">Total API Cost</div>
     <div class="value" id="cardCostVal">{fmt_cost(totals["cost"])}</div>
-    <div class="detail" id="cardCostDetail">{fmt_cost(cost_per_m)}/M tokens &middot; Claude {claude_pct:.0f}% &middot; Codex {codex_pct:.0f}%{f" &middot; Gemini {gemini_pct:.0f}%" if provider_cost["gemini"] > 0 else ""}</div>
+    <div class="detail" id="cardCostDetail">{fmt_cost(cost_per_m)}/M tokens &middot; {" &middot; ".join(f"{p.title()} {(provider_cost[p] / totals['cost'] * 100):.0f}%" for p in ["claude", "codex", "gemini"] if provider_cost[p] > 0)}</div>
   </div>
   <div class="card">
     <div class="label">Total Tokens</div>
@@ -1236,11 +1236,11 @@ function updateDashboard() {{
 
   // Cost: per-M-token rate + provider percentages
   const costPerM = tTok > 0 ? tot.cost / (tTok / 1e6) : 0;
-  const clPct = tot.cost > 0 ? (pv.claude.cost / tot.cost * 100).toFixed(0) : 0;
-  const cxPct = tot.cost > 0 ? (pv.codex.cost / tot.cost * 100).toFixed(0) : 0;
-  const gmPct = tot.cost > 0 ? (pv.gemini.cost / tot.cost * 100).toFixed(0) : 0;
-  let costDetail = fC(costPerM)+'/M tokens \u00b7 Claude '+clPct+'% \u00b7 Codex '+cxPct+'%';
-  if (pv.gemini.cost > 0) costDetail += ' \u00b7 Gemini '+gmPct+'%';
+  let costParts = [];
+  [['Claude',pv.claude.cost],['Codex',pv.codex.cost],['Gemini',pv.gemini.cost]].forEach(([name,c]) => {{
+    if (c > 0 && tot.cost > 0) costParts.push(name+' '+(c/tot.cost*100).toFixed(0)+'%');
+  }});
+  let costDetail = fC(costPerM)+'/M tokens \u00b7 '+costParts.join(' \u00b7 ');
   setText('cardCostVal', fC(tot.cost));
   setText('cardCostDetail', costDetail);
 

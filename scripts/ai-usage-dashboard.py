@@ -451,10 +451,8 @@ def generate_html(data, output_path):
     energy_kwh = totals["energy_wh"] / 1000
     tesla_miles = energy_kwh / 0.25  # Tesla ~0.25 kWh/mile
     us_home_days = energy_kwh / 30  # US home ~30 kWh/day
-    if us_home_days >= 1:
-        energy_context = f"~{fmt_num(us_home_days)} days of avg US household electricity"
-    elif tesla_miles >= 1:
-        energy_context = f"~{fmt_num(tesla_miles)} miles in a Tesla"
+    if tesla_miles >= 1:
+        energy_context = f"~{fmt_num(tesla_miles)} mi in a Tesla"
     else:
         energy_context = f"~{fmt_num(iphone_charges)} iPhone charges"
     carbon_context = f"~{fmt_num(car_miles)} miles driven"
@@ -984,7 +982,7 @@ const energyOpts = dailyTooltipOpts('', function(items) {{
   let totalWh = 0;
   items.forEach(i => totalWh += (i.raw || 0) * {energy_divisor});
   const kwh = totalWh / 1000;
-  return 'Electricity: $' + fFix(kwh * {ELECTRICITY_COST_KWH},2) + ' (~' + fFix(kwh / 1.25,1) + ' hrs household use)';
+  return 'Electricity: $' + fFix(kwh * {ELECTRICITY_COST_KWH},2) + ' (~' + fFix(kwh * 4,1) + ' mi in a Tesla)';
 }});
 // Patch energy label to show unit suffix instead of prefix
 energyOpts.plugins.tooltip.callbacks.label = function(ctx) {{
@@ -994,7 +992,7 @@ energyOpts.plugins.tooltip.callbacks.footer = function(items) {{
   const total = items.reduce((s,i) => s + (i.raw||0), 0);
   let totalWh = total * {energy_divisor};
   const kwh = totalWh / 1000;
-  return ['Total: ' + fFix(total,2) + ' {energy_unit}', 'Electricity: $' + fFix(kwh * {ELECTRICITY_COST_KWH},2) + ' (~' + fFix(kwh / 1.25,1) + ' hrs household use)'];
+  return ['Total: ' + fFix(total,2) + ' {energy_unit}', 'Electricity: $' + fFix(kwh * {ELECTRICITY_COST_KWH},2) + ' (~' + fFix(kwh * 4,1) + ' mi in a Tesla)'];
 }};
 
 // Daily carbon: unit suffix + miles context
@@ -1009,7 +1007,7 @@ carbonOpts.plugins.tooltip = {{
       const idx = items[0].dataIndex;
       const cg = dailyCarbonG[idx];
       const total = items.reduce((s,i) => s + (i.raw||0), 0);
-      return ['Total: ' + fFix(total,4) + ' {carbon_unit}', '~' + fFix(cg / 1000 / 0.404,3) + ' mi in a gas car (25 mpg)'];
+      return ['Total: ' + fFix(total,2) + ' {carbon_unit}', '~' + fFix(cg / 1000 / 0.404,2) + ' mi in a gas car (25 mpg)'];
     }}
   }}
 }};
@@ -1079,7 +1077,7 @@ const cumTokenOpts = (function() {{
 const cumEnergyOpts = cumTooltipOpts('{energy_unit}', true, function(items, total, idx) {{
   const totalWh = total * {energy_divisor};
   const kwh = totalWh / 1000;
-  return 'Electricity: $' + fFix(kwh * {ELECTRICITY_COST_KWH},2) + ' (~' + fFix(kwh / 30,1) + ' days household use)';
+  return 'Electricity: $' + fFix(kwh * {ELECTRICITY_COST_KWH},2) + ' (~' + fFix(kwh * 4,1) + ' mi in a Tesla)';
 }});
 const cumCarbonOpts = cumTooltipOpts('{carbon_unit}', true, function(items, total, idx) {{
   const totalG = total * {carbon_divisor};
@@ -1319,7 +1317,8 @@ function updateDashboard() {{
   const ec = (tot.energy/1000)*CN.ELEC;
   const elecPct = tot.cost > 0 ? (ec/tot.cost*100) : 0;
   const usDays = (tot.energy/1000)/30;
-  const eCtx = usDays >= 1 ? '~'+fFix(usDays,1)+' days of avg US household electricity' : '~'+fFix(tot.energy/12.7,0)+' iPhone charges';
+  const teslaMi = (tot.energy/1000)*4;
+  const eCtx = teslaMi >= 1 ? '~'+fFix(teslaMi,1)+' mi in a Tesla' : '~'+fFix(tot.energy/12.7,0)+' iPhone charges';
   setText('cardEnergyVal', fEn(tot.energy));
   const enParts = []; ep.forEach(p => {{ if (pv[p].en > 0) enParts.push(p.charAt(0).toUpperCase()+p.slice(1)+' '+fEn(pv[p].en)); }});
   setText('cardEnergyDetail', eCtx+(enParts.length ? ' · '+enParts.join(' · ') : ''));
@@ -1497,11 +1496,11 @@ function updateDashboard() {{
   }})();
   const dEnO = dynDailyOpts(eU, false, function(items, total) {{
     const kw = total*eD/1000;
-    return 'Electricity: $'+fFix(kw*CN.ELEC,2)+' (~'+fFix(kw/1.25,1)+' hrs household use)';
+    return 'Electricity: $'+fFix(kw*CN.ELEC,2)+' (~'+fFix(kw*4,1)+' mi in a Tesla)';
   }});
   const dCoO = dynDailyOpts(cU, false, function(items, total) {{
     const idx = items[0].dataIndex;
-    return '~'+fFix(dcg[idx]/1000/0.404,3)+' mi in a gas car (25 mpg)';
+    return '~'+fFix(dcg[idx]/1000/0.404,2)+' mi in a gas car (25 mpg)';
   }});
   const cCostO = dynCumOpts('$', true, null);
   const cTokO = (function() {{
@@ -1522,7 +1521,7 @@ function updateDashboard() {{
   }})();
   const cEnO = dynCumOpts(eU, false, function(items, total) {{
     const kw = total*eD/1000;
-    return 'Electricity: $'+fFix(kw*CN.ELEC,2)+' (~'+fFix(kw/30,1)+' days household use)';
+    return 'Electricity: $'+fFix(kw*CN.ELEC,2)+' (~'+fFix(kw*4,1)+' mi in a Tesla)';
   }});
   const cCoO = dynCumOpts(cU, false, function(items, total) {{
     return '~'+fFix(total*cD/1000/0.404,2)+' mi in a gas car (25 mpg)';

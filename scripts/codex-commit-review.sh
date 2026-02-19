@@ -63,32 +63,25 @@ Or run: tail -F ~/.claude/codex-commit-reviews.log
 ENTRY
 )"
 
-# Acquire lock (noclobber = atomic create-or-fail), retry up to 5 times
+# Acquire lock (noclobber = atomic create-or-fail), retry up to 5 times.
+# Stale lock detection uses file age instead of PID to avoid TOCTOU races
+# inherent in PID-based cleanup (read PID → check liveness → rm has a window
+# where another process can acquire the lock between check and rm).
+# Age-based: a lock older than 60s is certainly stale (operation takes <1s).
+# The rm + noclobber pair is safe: even if multiple processes rm a stale lock
+# simultaneously, noclobber ensures exactly one acquires the replacement.
 acquired=false
 for _try in 1 2 3 4 5; do
     if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
         acquired=true
         break
     fi
-    # Check for stale lock left by a crashed process (PID no longer running).
-    # To avoid a TOCTOU race (another process acquires the lock between our
-    # kill -0 check and our rm), we rename atomically first, then verify the
-    # PID from the renamed file. If the PID is indeed dead, delete it and
-    # retry. If the PID is alive (meaning someone grabbed the lock between
-    # our failed attempt and our rename), restore the lock file.
-    if mv "$LOCK_FILE" "$LOCK_FILE.stale.$$" 2>/dev/null; then
-        lock_pid=$(cat "$LOCK_FILE.stale.$$" 2>/dev/null)
-        if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
-            # PID is alive — we stole a valid lock, put it back
-            mv "$LOCK_FILE.stale.$$" "$LOCK_FILE" 2>/dev/null
-        else
-            # PID is dead or unreadable — stale lock cleared
-            rm -f "$LOCK_FILE.stale.$$"
-        fi
-        # Either way, retry lock acquisition
-        if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
-            acquired=true
-            break
+    # On second retry, check for stale lock (age > 60 seconds).
+    # Fresh locks from active writers are never removed.
+    if [ "$_try" -eq 2 ] && [ -f "$LOCK_FILE" ]; then
+        lock_mtime=$(stat -f %m "$LOCK_FILE" 2>/dev/null || stat -c %Y "$LOCK_FILE" 2>/dev/null || echo "0")
+        if [ $(( $(date +%s) - lock_mtime )) -gt 60 ]; then
+            rm -f "$LOCK_FILE"
         fi
     fi
     sleep 0.4

@@ -859,6 +859,7 @@ def generate_html(data, output_path):
   <div class="equiv-card"><div class="emoji">🌳</div><div class="eq-content"><div class="num" id="eqTrees">{fmt_num(trees_needed)}</div><div class="desc" id="eqTreesDesc">Trees to offset CO2 (~22 kg/yr each)</div></div></div>
   <div class="equiv-card"><div class="emoji">🚿</div><div class="eq-content"><div class="num" id="eqShowers">{fmt_num(showers)}</div><div class="desc" id="eqShowersDesc">Showers of water used (~65 L each)</div></div></div>
   <div class="equiv-card"><div class="emoji">📱</div><div class="eq-content"><div class="num" id="eqIphone">{fmt_num(iphone_charges)}</div><div class="desc" id="eqIphoneDesc">iPhone charges of energy (~12.7 Wh each)</div></div></div>
+  <div class="equiv-card"><div class="emoji">🌯</div><div class="eq-content"><div class="num" id="eqBurrito">{fmt_num(totals["cost"] / 11.75)}</div><div class="desc" id="eqBurritoDesc">Chipotle burritos of API cost (~$11.75 each)</div></div></div>
 </div>
 
 <details class="assumptions">
@@ -1346,6 +1347,7 @@ function updateDashboard() {{
   setText('eqTrees', fN(cKg/22));
   setText('eqShowers', fN(tot.water/65000));
   setText('eqIphone', fN(tot.energy/12.7));
+  setText('eqBurrito', fN(tot.cost/11.75));
 
   // Matrix (only enabled provider columns)
   const epIdx = []; // indices of enabled providers

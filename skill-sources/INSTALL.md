@@ -82,7 +82,7 @@ The bootstrap script will skip any skills listed in this file. Lines starting wi
 
 ## TokenPrint (powers /ai-usage)
 
-The `/ai-usage` skill is powered by [TokenPrint](https://github.com/sburl/TokenPrint), which is cloned by the bootstrap script by default. If you skipped it during bootstrap, the skill falls back to a bundled script.
+The `/ai-usage` skill is powered by [TokenPrint](https://github.com/sburl/TokenPrint), which is cloned by the bootstrap script by default. If you skipped it during bootstrap, `/ai-usage` won't work until you install it.
 
 **Install later:**
 ```bash
@@ -99,7 +99,7 @@ cd ~/.tokenprint && git pull
 rm -rf ~/.tokenprint   # or ~/Documents/Developer/TokenPrint for multi-project mode
 ```
 
-The `/ai-usage` skill works with or without TokenPrint -- without it, the bundled fallback script is used instead.
+Without TokenPrint installed, `/ai-usage` will prompt you to install it.
 
 ## Maintenance
 

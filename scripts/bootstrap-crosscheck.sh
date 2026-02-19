@@ -167,11 +167,11 @@ else
         if git clone https://github.com/sburl/TokenPrint.git "$TOKENPRINT_DIR"; then
             echo "   ✅ TokenPrint installed at $TOKENPRINT_DIR"
         else
-            echo "   ⚠️  TokenPrint clone failed (network issue?). /ai-usage will use bundled fallback."
+            echo "   ⚠️  TokenPrint clone failed (network issue?). /ai-usage requires TokenPrint."
             echo "      Install later: git clone https://github.com/sburl/TokenPrint.git $TOKENPRINT_DIR"
         fi
     else
-        echo "   Skipped TokenPrint (/ai-usage will use bundled fallback)"
+        echo "   Skipped TokenPrint (/ai-usage will prompt to install when used)"
     fi
 fi
 echo ""

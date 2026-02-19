@@ -487,7 +487,7 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
    - Admin actions logged?
 
 4. **Security documentation**
-   - Threat model exists? (`docs/threat-model.md` or similar)
+   - Threat model exists? (`docs/rules/trust-model.md` or similar)
    - Data classification documented?
    - Security contact documented? (`SECURITY.md`)
 

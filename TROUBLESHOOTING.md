@@ -477,7 +477,7 @@ cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.claude/commands/
 
 # Verify installation
 ls ~/.claude/commands/ | wc -l
-# Should show 21 skill files
+# Should show 22 skill files
 
 # Restart Claude Code
 # Skills should now be available

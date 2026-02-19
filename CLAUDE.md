@@ -36,7 +36,7 @@ The user decides *what* to build and reviews PRs. You do *everything else*. Don'
 
 ---
 
-## Skills (21)
+## Skills (22)
 
 If a skill exists for what you're doing, use it. Skills save context and ensure correctness.
 
@@ -125,6 +125,8 @@ Every file read, every test dump, every long exploration burns tokens. The main 
 Each worktree is fully autonomous: own branch, own context, own PR counter. No conflicts between sessions. Submit multiple PRs per day. The main worktree coordinates; satellite worktrees execute.
 
 **Manage:** `/list-worktrees` to see all | `/cleanup-worktrees` to remove merged ones
+
+**IMPORTANT: Clean up when done.** After a worktree's PR is merged, delete the worktree directory and its branch immediately. Don't leave stale worktrees, temp directories, or scratch copies cluttering the Developer folder. Run `/cleanup-worktrees` at the end of every session that used worktrees.
 
 ---
 

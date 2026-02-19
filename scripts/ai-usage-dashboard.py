@@ -391,6 +391,9 @@ def generate_html(data, output_path):
         provider_energy[prov] = sum(r[prov]["energy_wh"] for r in data)
         provider_cost[prov] = sum(r[prov]["cost"] for r in data)
 
+    # Provider data presence (for default toggle state)
+    provider_has_data = {p: any(r[p]["input_tokens"] + r[p]["output_tokens"] + r[p]["cache_read_tokens"] > 0 for r in data) for p in ["claude", "codex", "gemini"]}
+
     # Token composition & efficiency metrics
     total_input_all = totals["input_tokens"] + totals["cache_read_tokens"]
     cache_hit_rate = (totals["cache_read_tokens"] / total_input_all * 100) if total_input_all else 0
@@ -685,7 +688,9 @@ def generate_html(data, output_path):
   .equiv-card .num {{ font-size: 1.5rem; font-weight: 700; color: var(--accent); }}
   .equiv-card .desc {{ color: var(--muted); font-size: 0.75rem; margin-top: 0.125rem; }}
   .legend {{ display: flex; gap: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }}
-  .legend-item {{ display: flex; align-items: center; gap: 0.375rem; font-size: 0.8rem; color: var(--muted); }}
+  .legend-item {{ display: flex; align-items: center; gap: 0.375rem; font-size: 0.8rem; color: var(--text); cursor: pointer; user-select: none; transition: opacity 0.15s; }}
+  .legend-item.off {{ opacity: 0.35; }}
+  .legend-item.off .legend-dot {{ background: var(--muted) !important; }}
   .legend-dot {{ width: 10px; height: 10px; border-radius: 50%; }}
   .section-title {{ font-size: 1.1rem; margin: 2rem 0 1rem; color: var(--muted); }}
   .no-data {{ text-align: center; padding: 4rem 2rem; color: var(--muted); }}
@@ -745,9 +750,9 @@ def generate_html(data, output_path):
 </div>
 
 <div class="legend">
-  <div class="legend-item"><div class="legend-dot" style="background: var(--claude)"></div> Claude Code</div>
-  <div class="legend-item"><div class="legend-dot" style="background: var(--codex)"></div> Codex CLI</div>
-  <div class="legend-item"><div class="legend-dot" style="background: var(--gemini)"></div> Gemini CLI</div>
+  <div class="legend-item{'' if provider_has_data.get('claude') else ' off'}" data-provider="claude" onclick="toggleProvider(this)"><div class="legend-dot" style="background: var(--claude)"></div> Claude Code</div>
+  <div class="legend-item{'' if provider_has_data.get('codex') else ' off'}" data-provider="codex" onclick="toggleProvider(this)"><div class="legend-dot" style="background: var(--codex)"></div> Codex CLI</div>
+  <div class="legend-item{'' if provider_has_data.get('gemini') else ' off'}" data-provider="gemini" onclick="toggleProvider(this)"><div class="legend-dot" style="background: var(--gemini)"></div> Gemini CLI</div>
 </div>
 
 {"<div class='no-data'>No usage data found. Make sure ccusage is installed (npm i -g ccusage).</div>" if not data else f'''
@@ -1187,6 +1192,18 @@ const PNAMES = ['Claude', 'Codex', 'Gemini'];
 const EN = {{OUT: 0.001, IN: 0.0002, CACHE: 0.00005, PUE: 1.2, GRID: 1.06}};
 const CN = {{INT: 390, EMB: 1.2, WUE: 0.5, ELEC: {ELECTRICITY_COST_KWH}}};
 
+// Provider toggle
+function toggleProvider(el) {{
+  el.classList.toggle('off');
+  updateDashboard();
+}}
+function enabledProviders() {{
+  const items = document.querySelectorAll('.legend-item');
+  const on = [];
+  items.forEach(el => {{ if (!el.classList.contains('off')) on.push(el.dataset.provider); }});
+  return on;
+}}
+
 function cE(i,o,c) {{ return (o*EN.OUT + i*EN.IN + c*EN.CACHE) * EN.PUE * EN.GRID; }}
 function cC(wh) {{ return (wh/1000) * CN.INT * CN.EMB; }}
 function cW(wh) {{ return (wh/1000) * CN.WUE * 1000; }}
@@ -1211,12 +1228,15 @@ function updateDashboard() {{
   if (!fd.length) return;
   const n = fd.length;
   const dl = fd.map(r => r.d);
+  const ep = enabledProviders();
+  const epSet = new Set(ep);
 
-  // Totals
+  // Totals (only enabled providers)
   let tot = {{cost:0,inp:0,out:0,cached:0,energy:0,carbon:0,water:0}};
   let pv = {{claude:{{cost:0,en:0,co:0}},codex:{{cost:0,en:0,co:0}},gemini:{{cost:0,en:0,co:0}}}};
   fd.forEach(row => {{
     PKEYS.forEach((k,i) => {{
+      if (!epSet.has(PROVS[i])) return;
       const [inp,out,cached,cost] = row[k];
       const en = cE(inp,out,cached);
       tot.cost += cost; tot.inp += inp; tot.out += out; tot.cached += cached;
@@ -1244,10 +1264,11 @@ function updateDashboard() {{
   setText('cardCostVal', fC(tot.cost));
   setText('cardCostDetail', costDetail);
 
-  // Tokens: daily avg + busiest day
+  // Tokens: daily avg + busiest day (enabled providers only)
   let busiestVal = 0, busiestDate = '';
   fd.forEach(row => {{
-    const dt = row.c[0]+row.c[1]+row.c[2]+row.x[0]+row.x[1]+row.x[2]+row.g[0]+row.g[1]+row.g[2];
+    let dt = 0;
+    PKEYS.forEach((k,i) => {{ if (epSet.has(PROVS[i])) dt += row[k][0]+row[k][1]+row[k][2]; }});
     if (dt > busiestVal) {{ busiestVal = dt; busiestDate = row.d; }}
   }});
   const bDateObj = new Date(busiestDate+'T00:00:00');
@@ -1267,7 +1288,8 @@ function updateDashboard() {{
   const RATES = {{c:[3e-6,15e-6,0.30e-6], x:[0.69e-6,2.76e-6,0.17e-6], g:[0.15e-6,0.60e-6,0.0375e-6]}};
   let estOutCost = 0, estAllCost = 0;
   fd.forEach(row => {{
-    [['c',RATES.c],['x',RATES.x],['g',RATES.g]].forEach(([k,r]) => {{
+    [['c','claude',RATES.c],['x','codex',RATES.x],['g','gemini',RATES.g]].forEach(([k,p,r]) => {{
+      if (!epSet.has(p)) return;
       const [inp,out,cached] = row[k];
       estOutCost += out * r[1];
       estAllCost += inp * r[0] + out * r[1] + cached * r[2];
@@ -1284,9 +1306,11 @@ function updateDashboard() {{
   const usDays = (tot.energy/1000)/30;
   const eCtx = usDays >= 1 ? '~'+usDays.toFixed(1)+' days of avg US household electricity' : '~'+(tot.energy/12.7).toFixed(0)+' iPhone charges';
   setText('cardEnergyVal', fEn(tot.energy));
-  setText('cardEnergyDetail', eCtx+' · Claude '+fEn(pv.claude.en)+' · Codex '+fEn(pv.codex.en));
+  let enParts = []; ep.forEach(p => {{ if (pv[p].en > 0) enParts.push(p.charAt(0).toUpperCase()+p.slice(1)+' '+fEn(pv[p].en)); }});
+  setText('cardEnergyDetail', eCtx+(enParts.length ? ' · '+enParts.join(' · ') : ''));
   setText('cardCarbonVal', fCO(tot.carbon));
-  setText('cardCarbonDetail', 'Claude '+fCO(pv.claude.co)+' · Codex '+fCO(pv.codex.co)+' · Gemini '+fCO(pv.gemini.co));
+  let coParts = []; ep.forEach(p => {{ if (pv[p].co > 0) coParts.push(p.charAt(0).toUpperCase()+p.slice(1)+' '+fCO(pv[p].co)); }});
+  setText('cardCarbonDetail', coParts.join(' · ') || 'No data');
   setText('cardWaterVal', fWa(tot.water));
   setText('cardWaterDetail', '~'+fN(tot.water/65000)+' showers');
   setText('cardElecVal', '$'+ec.toFixed(2));
@@ -1301,12 +1325,13 @@ function updateDashboard() {{
   setText('eqShowers', fN(tot.water/65000));
   setText('eqIphone', fN(tot.energy/12.7));
 
-  // Matrix
+  // Matrix (only enabled providers)
   const mo = {{}}, mt = {{}};
   fd.forEach(row => {{
     const m = row.d.slice(0,7);
     if (!mo[m]) {{ mo[m] = [0,0,0]; mt[m] = PKEYS.map(()=>({{i:0,o:0,c:0}})); }}
     PKEYS.forEach((k,i) => {{
+      if (!epSet.has(PROVS[i])) return;
       mo[m][i] += row[k][3];
       mt[m][i].i += row[k][0]; mt[m][i].o += row[k][1]; mt[m][i].c += row[k][2];
     }});
@@ -1337,14 +1362,15 @@ function updateDashboard() {{
   mh += '<td class="row-total">$'+gt.toFixed(2)+'</td></tr>';
   document.getElementById('matrixBody').innerHTML = mh;
 
-  // Charts
+  // Charts (zero out disabled providers)
   const pd = {{}};
   PROVS.forEach(p => {{ pd[p] = {{cost:[],tok:[],en:[],co:[]}}; }});
   const dcg = [];
   fd.forEach(row => {{
     let dc = 0;
     PKEYS.forEach((k,i) => {{
-      const [inp,out,cached,cost] = row[k];
+      const on = epSet.has(PROVS[i]);
+      const [inp,out,cached,cost] = on ? row[k] : [0,0,0,0];
       const en = cE(inp,out,cached), co = cC(en);
       pd[PROVS[i]].cost.push(Math.round(cost*100)/100);
       pd[PROVS[i]].tok.push(inp+out+cached);

@@ -961,6 +961,7 @@ stackOpts.scales.y.stacked = true;
 function dailyTooltipOpts(unit, extraFn) {{
   const opts = JSON.parse(JSON.stringify(stackOpts));
   opts.plugins.tooltip = {{
+    usePointStyle: true,
     callbacks: {{
       label: function(ctx) {{
         return ' ' + ctx.dataset.label + ': ' + unit + ctx.formattedValue;
@@ -1000,6 +1001,7 @@ energyOpts.plugins.tooltip.callbacks.footer = function(items) {{
 // Daily carbon: unit suffix + miles context
 const carbonOpts = JSON.parse(JSON.stringify(stackOpts));
 carbonOpts.plugins.tooltip = {{
+  usePointStyle: true,
   callbacks: {{
     label: function(ctx) {{
       return ' ' + ctx.dataset.label + ': ' + ctx.formattedValue + ' {carbon_unit}';
@@ -1016,6 +1018,7 @@ carbonOpts.plugins.tooltip = {{
 // Daily token: smart auto-scaling units
 const tokenDailyOpts = JSON.parse(JSON.stringify(stackOpts));
 tokenDailyOpts.plugins.tooltip = {{
+  usePointStyle: true,
   callbacks: {{
     label: function(ctx) {{
       return ' ' + ctx.dataset.label + ': ' + fmtTok(ctx.raw||0);
@@ -1036,7 +1039,7 @@ function cumTooltipOpts(unit, unitSuffix, extraFn) {{
   const pre = unitSuffix ? '' : unit;
   const suf = unitSuffix ? ' ' + unit : '';
   opts.plugins.tooltip = {{
-    mode: 'index', intersect: false,
+    mode: 'index', intersect: false, usePointStyle: true,
     callbacks: {{
       label: function(ctx) {{
         return ' ' + ctx.dataset.label + ': ' + pre + ctx.formattedValue + suf;
@@ -1063,7 +1066,7 @@ const cumTokenOpts = (function() {{
   o.plugins.legend.labels.usePointStyle = true;
   o.plugins.legend.labels.pointStyle = 'circle';
   o.interaction = {{mode:'index',intersect:false}};
-  o.plugins.tooltip = {{mode:'index',intersect:false, callbacks: {{
+  o.plugins.tooltip = {{mode:'index',intersect:false, usePointStyle:true, callbacks: {{
     label: function(ctx) {{ return ' '+ctx.dataset.label+': '+fmtTok(ctx.raw||0); }},
     afterBody: function(items) {{
       const idx = items[0].dataIndex;
@@ -1437,7 +1440,7 @@ function updateDashboard() {{
     const o = JSON.parse(JSON.stringify(stackOpts));
     const pre = isPrefix ? unit : '';
     const suf = isPrefix ? '' : ' '+unit;
-    o.plugins.tooltip = {{ callbacks: {{
+    o.plugins.tooltip = {{ usePointStyle:true, callbacks: {{
       label: function(ctx) {{ return ' '+ctx.dataset.label+': '+pre+ctx.formattedValue+suf; }},
       footer: function(items) {{
         const total = items.reduce((s,i)=>s+(i.raw||0),0);
@@ -1455,7 +1458,7 @@ function updateDashboard() {{
     o.interaction = {{mode:'index',intersect:false}};
     const pre = isPrefix ? unit : '';
     const suf = isPrefix ? '' : ' '+unit;
-    o.plugins.tooltip = {{ mode:'index', intersect:false, callbacks: {{
+    o.plugins.tooltip = {{ mode:'index', intersect:false, usePointStyle:true, callbacks: {{
       label: function(ctx) {{ return ' '+ctx.dataset.label+': '+pre+ctx.formattedValue+suf; }},
       afterBody: function(items) {{
         const idx = items[0].dataIndex;
@@ -1480,7 +1483,7 @@ function updateDashboard() {{
   }}
   const dTokO = (function() {{
     const o = JSON.parse(JSON.stringify(stackOpts));
-    o.plugins.tooltip = {{ callbacks: {{
+    o.plugins.tooltip = {{ usePointStyle:true, callbacks: {{
       label: function(ctx) {{ return ' '+ctx.dataset.label+': '+fmtTokD(ctx.raw||0); }},
       footer: function(items) {{
         const total = items.reduce((s,i)=>s+(i.raw||0),0);
@@ -1503,7 +1506,7 @@ function updateDashboard() {{
     o.plugins.legend.labels.usePointStyle = true;
     o.plugins.legend.labels.pointStyle = 'circle';
     o.interaction = {{mode:'index',intersect:false}};
-    o.plugins.tooltip = {{mode:'index',intersect:false, callbacks: {{
+    o.plugins.tooltip = {{mode:'index',intersect:false, usePointStyle:true, callbacks: {{
       label: function(ctx) {{ return ' '+ctx.dataset.label+': '+fmtTokD(ctx.raw||0); }},
       afterBody: function(items) {{
         const idx = items[0].dataIndex;

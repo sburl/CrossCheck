@@ -357,7 +357,7 @@ def generate_html(data, output_path):
     def fmt_cost(val):
         if val >= 1000:
             return f"${val:,.0f}"
-        if val >= 1:
+        if val >= 0.01:
             return f"${val:,.2f}"
         return f"${val:,.4f}"
 
@@ -391,11 +391,49 @@ def generate_html(data, output_path):
         provider_energy[prov] = sum(r[prov]["energy_wh"] for r in data)
         provider_cost[prov] = sum(r[prov]["cost"] for r in data)
 
-    # Token composition
-    total_input_all = totals["input_tokens"] + totals["cache_read_tokens"]  # all input (cached + non-cached)
+    # Token composition & efficiency metrics
+    total_input_all = totals["input_tokens"] + totals["cache_read_tokens"]
     cache_hit_rate = (totals["cache_read_tokens"] / total_input_all * 100) if total_input_all else 0
     _all_tokens = totals["input_tokens"] + totals["output_tokens"] + totals["cache_read_tokens"]
     output_pct = (totals["output_tokens"] / _all_tokens * 100) if _all_tokens else 0
+
+    # Cost: per-M-token rate + provider percentages
+    cost_per_m = (totals["cost"] / (_all_tokens / 1e6)) if _all_tokens else 0
+    claude_pct = (provider_cost["claude"] / totals["cost"] * 100) if totals["cost"] else 0
+    codex_pct = (provider_cost["codex"] / totals["cost"] * 100) if totals["cost"] else 0
+    gemini_pct = (provider_cost["gemini"] / totals["cost"] * 100) if totals["cost"] else 0
+
+    # Tokens: busiest day
+    daily_totals = [(r["date"], r["claude"]["input_tokens"] + r["claude"]["output_tokens"] + r["claude"]["cache_read_tokens"]
+                     + r["codex"]["input_tokens"] + r["codex"]["output_tokens"] + r["codex"]["cache_read_tokens"]
+                     + r["gemini"]["input_tokens"] + r["gemini"]["output_tokens"] + r["gemini"]["cache_read_tokens"]) for r in data]
+    busiest = max(daily_totals, key=lambda x: x[1])
+    busiest_date = datetime.strptime(busiest[0], "%Y-%m-%d").strftime("%b %-d")
+    busiest_tokens = busiest[1]
+
+    # Input: estimated cache savings
+    # If all cached tokens were charged at non-cached input rates instead
+    # Use blended non-cached cost rate: total_cost / (non_cached_input + output) as proxy
+    non_cache_tokens = totals["input_tokens"] + totals["output_tokens"]
+    blended_rate = (totals["cost"] / non_cache_tokens) if non_cache_tokens else 0
+    # Cached tokens are ~75% cheaper than non-cached; savings = cached * blended_rate * 0.75
+    cache_savings = totals["cache_read_tokens"] * blended_rate * 0.75
+
+    # Output: estimate actual output cost using known rates
+    # Claude: $15/M output, $3/M input, $0.30/M cached
+    # Codex: ~$2.76/M output, ~$0.69/M input, ~$0.17/M cached
+    est_output_cost = 0
+    est_total_cost = 0
+    for prov in ["claude", "codex", "gemini"]:
+        pt = {"claude": (3e-6, 15e-6, 0.30e-6), "codex": (0.69e-6, 2.76e-6, 0.17e-6), "gemini": (0.15e-6, 0.60e-6, 0.0375e-6)}
+        ri, ro, rc = pt[prov]
+        p_out = sum(r[prov]["output_tokens"] for r in data) * ro
+        p_inp = sum(r[prov]["input_tokens"] for r in data) * ri
+        p_cache = sum(r[prov]["cache_read_tokens"] for r in data) * rc
+        est_output_cost += p_out
+        est_total_cost += p_out + p_inp + p_cache
+    output_cost_pct = (est_output_cost / est_total_cost * 100) if est_total_cost else 0
+    cost_per_m_output = (est_output_cost / (totals["output_tokens"] / 1e6)) if totals["output_tokens"] else 0
 
     # Equivalents
     carbon_kg = totals["carbon_g"] / 1000
@@ -717,22 +755,22 @@ def generate_html(data, output_path):
   <div class="card">
     <div class="label">Total API Cost</div>
     <div class="value" id="cardCostVal">{fmt_cost(totals["cost"])}</div>
-    <div class="detail" id="cardCostDetail">{fmt_cost(totals["cost"] / len(data))}/day avg &middot; Claude {fmt_cost(provider_cost["claude"])} &middot; Codex {fmt_cost(provider_cost["codex"])}</div>
+    <div class="detail" id="cardCostDetail">{fmt_cost(cost_per_m)}/M tokens &middot; Claude {claude_pct:.0f}% &middot; Codex {codex_pct:.0f}%{f" &middot; Gemini {gemini_pct:.0f}%" if gemini_pct >= 0.5 else ""}</div>
   </div>
   <div class="card">
     <div class="label">Total Tokens</div>
     <div class="value" id="cardTokensVal">{fmt_tokens(total_tokens)}</div>
-    <div class="detail" id="cardTokensDetail">{fmt_tokens(total_tokens / len(data))}/day avg &middot; {cache_hit_rate:.0f}% served from cache</div>
+    <div class="detail" id="cardTokensDetail">{fmt_tokens(total_tokens / len(data))}/day avg &middot; busiest: {fmt_tokens(busiest_tokens)} ({busiest_date})</div>
   </div>
   <div class="card">
     <div class="label">Input Tokens</div>
     <div class="value" id="cardInputVal">{fmt_tokens(totals["input_tokens"])}</div>
-    <div class="detail" id="cardInputDetail">{fmt_tokens(totals["input_tokens"])} non-cached + {fmt_tokens(totals["cache_read_tokens"])} cached ({cache_hit_rate:.0f}% hit rate)</div>
+    <div class="detail" id="cardInputDetail">{cache_hit_rate:.0f}% cache hit rate &middot; ~{fmt_cost(cache_savings)} saved vs uncached</div>
   </div>
   <div class="card">
     <div class="label">Output Tokens</div>
     <div class="value" id="cardOutputVal">{fmt_tokens(totals["output_tokens"])}</div>
-    <div class="detail" id="cardOutputDetail">{fmt_tokens(totals["output_tokens"] / len(data))}/day avg &middot; {output_pct:.1f}% of all tokens</div>
+    <div class="detail" id="cardOutputDetail">{fmt_cost(cost_per_m_output)}/M output tokens &middot; drives ~{output_cost_pct:.0f}% of total cost</div>
   </div>
 </div>
 
@@ -1195,15 +1233,50 @@ function updateDashboard() {{
   // Usage cards
   const allInp = tot.inp + tot.cached;
   const cacheRate = allInp > 0 ? (tot.cached / allInp * 100).toFixed(0) : 0;
-  const outPct = tTok > 0 ? (tot.out / tTok * 100).toFixed(1) : 0;
+
+  // Cost: per-M-token rate + provider percentages
+  const costPerM = tTok > 0 ? tot.cost / (tTok / 1e6) : 0;
+  const clPct = tot.cost > 0 ? (pv.claude.cost / tot.cost * 100).toFixed(0) : 0;
+  const cxPct = tot.cost > 0 ? (pv.codex.cost / tot.cost * 100).toFixed(0) : 0;
+  const gmPct = tot.cost > 0 ? (pv.gemini.cost / tot.cost * 100).toFixed(0) : 0;
+  let costDetail = fC(costPerM)+'/M tokens \u00b7 Claude '+clPct+'% \u00b7 Codex '+cxPct+'%';
+  if (gmPct >= 1) costDetail += ' \u00b7 Gemini '+gmPct+'%';
   setText('cardCostVal', fC(tot.cost));
-  setText('cardCostDetail', fC(tot.cost/n)+'/day avg \u00b7 Claude '+fC(pv.claude.cost)+' \u00b7 Codex '+fC(pv.codex.cost));
+  setText('cardCostDetail', costDetail);
+
+  // Tokens: daily avg + busiest day
+  let busiestVal = 0, busiestDate = '';
+  fd.forEach(row => {{
+    const dt = row.c[0]+row.c[1]+row.c[2]+row.x[0]+row.x[1]+row.x[2]+row.g[0]+row.g[1]+row.g[2];
+    if (dt > busiestVal) {{ busiestVal = dt; busiestDate = row.d; }}
+  }});
+  const bDateObj = new Date(busiestDate+'T00:00:00');
+  const bDateStr = bDateObj.toLocaleDateString('en',{{month:'short',day:'numeric'}});
   setText('cardTokensVal', fT(tTok));
-  setText('cardTokensDetail', fT(tTok/n)+'/day avg \u00b7 '+cacheRate+'% served from cache');
+  setText('cardTokensDetail', fT(tTok/n)+'/day avg \u00b7 busiest: '+fT(busiestVal)+' ('+bDateStr+')');
+
+  // Input: cache hit rate + savings
+  const nonCacheTok = tot.inp + tot.out;
+  const blendedRate = nonCacheTok > 0 ? tot.cost / nonCacheTok : 0;
+  const cacheSavings = tot.cached * blendedRate * 0.75;
   setText('cardInputVal', fT(tot.inp));
-  setText('cardInputDetail', fT(tot.inp)+' non-cached + '+fT(tot.cached)+' cached ('+cacheRate+'% hit rate)');
+  setText('cardInputDetail', cacheRate+'% cache hit rate \u00b7 ~'+fC(cacheSavings)+' saved vs uncached');
+
+  // Output: estimate actual output cost using known rates per provider
+  // c=Claude[inp,out,cached], x=Codex, g=Gemini
+  const RATES = {{c:[3e-6,15e-6,0.30e-6], x:[0.69e-6,2.76e-6,0.17e-6], g:[0.15e-6,0.60e-6,0.0375e-6]}};
+  let estOutCost = 0, estAllCost = 0;
+  fd.forEach(row => {{
+    [['c',RATES.c],['x',RATES.x],['g',RATES.g]].forEach(([k,r]) => {{
+      const [inp,out,cached] = row[k];
+      estOutCost += out * r[1];
+      estAllCost += inp * r[0] + out * r[1] + cached * r[2];
+    }});
+  }});
+  const outCostPct = estAllCost > 0 ? (estOutCost / estAllCost * 100).toFixed(0) : 0;
+  const costPerMOut = tot.out > 0 ? estOutCost / (tot.out / 1e6) : 0;
   setText('cardOutputVal', fT(tot.out));
-  setText('cardOutputDetail', fT(tot.out/n)+'/day avg \u00b7 '+outPct+'% of all tokens');
+  setText('cardOutputDetail', fC(costPerMOut)+'/M output tokens \u00b7 drives ~'+outCostPct+'% of total cost');
 
   // Env cards
   const ec = (tot.energy/1000)*CN.ELEC;

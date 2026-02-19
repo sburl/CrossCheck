@@ -628,6 +628,11 @@ def generate_html(data, output_path):
     cum_claude_carbon_json = json.dumps(cum_claude_carbon)
     cum_codex_carbon_json = json.dumps(cum_codex_carbon)
     cum_gemini_carbon_json = json.dumps(cum_gemini_carbon)
+    # Total cumulative (sum of all providers per day)
+    cum_total_cost_json = json.dumps([round(cum_claude_cost[i] + cum_codex_cost[i] + cum_gemini_cost[i], 2) for i in range(len(data))])
+    cum_total_tok_json = json.dumps([round(cum_claude_tok[i] + cum_codex_tok[i] + cum_gemini_tok[i], 2) for i in range(len(data))])
+    cum_total_energy_json = json.dumps([round(cum_claude_energy[i] + cum_codex_energy[i] + cum_gemini_energy[i], 2) for i in range(len(data))])
+    cum_total_carbon_json = json.dumps([round(cum_claude_carbon[i] + cum_codex_carbon[i] + cum_gemini_carbon[i], 2) for i in range(len(data))])
 
     # Date range for title
     date_range = ""
@@ -1092,9 +1097,10 @@ const chartConfigs = {{
       {{ label: 'Gemini', data: {gemini_cost}, backgroundColor: '#f59e0b' }},
     ], options: costDailyOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_cost_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
-      {{ label: 'Codex', data: {cum_codex_cost_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
-      {{ label: 'Gemini', data: {cum_gemini_cost_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Total', data: {cum_total_cost_json}, borderColor: '#e2e8f0', backgroundColor: '#e2e8f0', borderDash: [5,3], borderWidth: 2, fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Claude', data: {cum_claude_cost_json}, borderColor: '#6366f1', backgroundColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_cost_json}, borderColor: '#22c55e', backgroundColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_cost_json}, borderColor: '#f59e0b', backgroundColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
     ], options: cumCostOpts }},
   }},
   token: {{
@@ -1108,9 +1114,10 @@ const chartConfigs = {{
       {{ label: 'Gemini', data: {gemini_tokens}, backgroundColor: '#f59e0b' }},
     ], options: tokenDailyOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_tok_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
-      {{ label: 'Codex', data: {cum_codex_tok_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
-      {{ label: 'Gemini', data: {cum_gemini_tok_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Total', data: {cum_total_tok_json}, borderColor: '#e2e8f0', backgroundColor: '#e2e8f0', borderDash: [5,3], borderWidth: 2, fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Claude', data: {cum_claude_tok_json}, borderColor: '#6366f1', backgroundColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_tok_json}, borderColor: '#22c55e', backgroundColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_tok_json}, borderColor: '#f59e0b', backgroundColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
     ], options: cumTokenOpts }},
   }},
   energy: {{
@@ -1124,9 +1131,10 @@ const chartConfigs = {{
       {{ label: 'Gemini', data: {gemini_energy}, backgroundColor: '#f59e0b' }},
     ], options: energyOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_energy_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
-      {{ label: 'Codex', data: {cum_codex_energy_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
-      {{ label: 'Gemini', data: {cum_gemini_energy_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Total', data: {cum_total_energy_json}, borderColor: '#e2e8f0', backgroundColor: '#e2e8f0', borderDash: [5,3], borderWidth: 2, fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Claude', data: {cum_claude_energy_json}, borderColor: '#6366f1', backgroundColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_energy_json}, borderColor: '#22c55e', backgroundColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_energy_json}, borderColor: '#f59e0b', backgroundColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
     ], options: cumEnergyOpts }},
   }},
   carbon: {{
@@ -1140,9 +1148,10 @@ const chartConfigs = {{
       {{ label: 'Gemini', data: {gemini_carbon}, backgroundColor: '#f59e0b' }},
     ], options: carbonOpts }},
     cum: {{ type: 'line', datasets: [
-      {{ label: 'Claude', data: {cum_claude_carbon_json}, borderColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
-      {{ label: 'Codex', data: {cum_codex_carbon_json}, borderColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
-      {{ label: 'Gemini', data: {cum_gemini_carbon_json}, borderColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Total', data: {cum_total_carbon_json}, borderColor: '#e2e8f0', backgroundColor: '#e2e8f0', borderDash: [5,3], borderWidth: 2, fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Claude', data: {cum_claude_carbon_json}, borderColor: '#6366f1', backgroundColor: '#6366f1', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Codex', data: {cum_codex_carbon_json}, borderColor: '#22c55e', backgroundColor: '#22c55e', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
+      {{ label: 'Gemini', data: {cum_gemini_carbon_json}, borderColor: '#f59e0b', backgroundColor: '#f59e0b', fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }},
     ], options: cumCarbonOpts }},
   }},
 }};
@@ -1415,6 +1424,14 @@ function updateDashboard() {{
     }});
   }});
 
+  // Total cumulative (sum of enabled providers)
+  const cuTotal = {{cost:[],tok:[],en:[],co:[]}};
+  fd.forEach((_,i) => {{
+    ['cost','tok','en','co'].forEach(k => {{
+      cuTotal[k].push(Math.round(ep.reduce((s,p) => s + cu[p][k][i], 0)*100)/100);
+    }});
+  }});
+
   // Build dynamic tooltip options matching the static ones
   function dynDailyOpts(unit, isPrefix, extraFn) {{
     const o = JSON.parse(JSON.stringify(stackOpts));
@@ -1506,12 +1523,19 @@ function updateDashboard() {{
   }});
 
   function mkDS(key, bar) {{
-    return ep.map(p => {{
+    if (bar) {{
+      return ep.map(p => {{
+        const i = PROVS.indexOf(p);
+        return {{ label: PNAMES[i], data: sc[p][key], backgroundColor: PCOLORS[i] }};
+      }});
+    }}
+    // Cumulative: Total line first, then per-provider
+    const ds = [{{ label: 'Total', data: cuTotal[key], borderColor: '#e2e8f0', backgroundColor: '#e2e8f0', borderDash: [5,3], borderWidth: 2, fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }}];
+    ep.forEach(p => {{
       const i = PROVS.indexOf(p);
-      return bar
-        ? {{ label: PNAMES[i], data: sc[p][key], backgroundColor: PCOLORS[i] }}
-        : {{ label: PNAMES[i], data: cu[p][key], borderColor: PCOLORS[i], fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }};
+      ds.push({{ label: PNAMES[i], data: cu[p][key], borderColor: PCOLORS[i], backgroundColor: PCOLORS[i], fill: false, tension: 0.3, pointRadius: 0, pointHoverRadius: 5, pointHitRadius: 8 }});
     }});
+    return ds;
   }}
 
   chartConfigs.cost = {{

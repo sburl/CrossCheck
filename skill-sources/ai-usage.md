@@ -88,7 +88,8 @@ Find and run the dashboard script. Check these locations in order:
 
 1. **TokenPrint (multi-project):** Look for `TokenPrint/tokenprint.py` as a sibling of the CrossCheck directory (e.g., `~/Documents/Developer/TokenPrint/tokenprint.py`)
 2. **TokenPrint (traditional):** `~/.tokenprint/tokenprint.py`
-3. **Bundled fallback:** `~/.crosscheck/scripts/ai-usage-dashboard.py`
+3. **Bundled fallback (multi-project):** `scripts/ai-usage-dashboard.py` in the CrossCheck repo (e.g., `~/Documents/Developer/CrossCheck/scripts/ai-usage-dashboard.py`)
+4. **Bundled fallback (traditional):** `~/.crosscheck/scripts/ai-usage-dashboard.py`
 
 Run whichever is found first:
 

@@ -155,12 +155,21 @@ fi
 if [ -d "$TOKENPRINT_DIR" ] && [ -f "$TOKENPRINT_DIR/tokenprint.py" ]; then
     echo "   ✅ TokenPrint already installed at $TOKENPRINT_DIR"
 else
+    # Clean up partial clone (dir exists but no tokenprint.py)
+    if [ -d "$TOKENPRINT_DIR" ] && [ ! -f "$TOKENPRINT_DIR/tokenprint.py" ]; then
+        echo "   ⚠️  Found incomplete TokenPrint at $TOKENPRINT_DIR, removing..."
+        rm -rf "$TOKENPRINT_DIR"
+    fi
     read -p "   Install TokenPrint (AI usage dashboard)? (Y/n) " -n 1 -r < /dev/tty
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         echo "   Cloning TokenPrint..."
-        git clone https://github.com/sburl/TokenPrint.git "$TOKENPRINT_DIR"
-        echo "   ✅ TokenPrint installed at $TOKENPRINT_DIR"
+        if git clone https://github.com/sburl/TokenPrint.git "$TOKENPRINT_DIR"; then
+            echo "   ✅ TokenPrint installed at $TOKENPRINT_DIR"
+        else
+            echo "   ⚠️  TokenPrint clone failed (network issue?). /ai-usage will use bundled fallback."
+            echo "      Install later: git clone https://github.com/sburl/TokenPrint.git $TOKENPRINT_DIR"
+        fi
     else
         echo "   Skipped TokenPrint (/ai-usage will use bundled fallback)"
     fi

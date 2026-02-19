@@ -853,12 +853,12 @@ def generate_html(data, output_path):
 
 <h3 class="section-title">Real-World Equivalents</h3>
 <div class="equiv">
-  <div class="equiv-card"><div class="emoji">🏠</div><div class="eq-content"><div class="num" id="eqHousehold">{fmt_num(household_months)}</div><div class="desc">Household-months of electricity</div></div></div>
-  <div class="equiv-card"><div class="emoji">🚗</div><div class="eq-content"><div class="num" id="eqCar">{fmt_num(car_miles)}</div><div class="desc">Miles in a gas car (25 mpg avg)</div></div></div>
-  <div class="equiv-card"><div class="emoji">✈️</div><div class="eq-content"><div class="num" id="eqFlights">{fmt_num(flights_pct)}</div><div class="desc">NYC-LA flights</div></div></div>
-  <div class="equiv-card"><div class="emoji">🌳</div><div class="eq-content"><div class="num" id="eqTrees">{fmt_num(trees_needed)}</div><div class="desc">Trees needed (1 year offset)</div></div></div>
-  <div class="equiv-card"><div class="emoji">🚿</div><div class="eq-content"><div class="num" id="eqShowers">{fmt_num(showers)}</div><div class="desc">Showers (water)</div></div></div>
-  <div class="equiv-card"><div class="emoji">📱</div><div class="eq-content"><div class="num" id="eqIphone">{fmt_num(iphone_charges)}</div><div class="desc">iPhone charges</div></div></div>
+  <div class="equiv-card"><div class="emoji">🏠</div><div class="eq-content"><div class="num" id="eqHousehold">{fmt_num(household_months)}</div><div class="desc" id="eqHouseholdDesc">Household-months of CO2 (~900 kg/mo)</div></div></div>
+  <div class="equiv-card"><div class="emoji">🚗</div><div class="eq-content"><div class="num" id="eqCar">{fmt_num(car_miles)}</div><div class="desc" id="eqCarDesc">Miles of CO2 in a gas car (25 mpg)</div></div></div>
+  <div class="equiv-card"><div class="emoji">✈️</div><div class="eq-content"><div class="num" id="eqFlights">{fmt_num(flights_pct)}</div><div class="desc" id="eqFlightsDesc">NYC-LA flights of CO2 (~90 kg each)</div></div></div>
+  <div class="equiv-card"><div class="emoji">🌳</div><div class="eq-content"><div class="num" id="eqTrees">{fmt_num(trees_needed)}</div><div class="desc" id="eqTreesDesc">Trees to offset CO2 (~22 kg/yr each)</div></div></div>
+  <div class="equiv-card"><div class="emoji">🚿</div><div class="eq-content"><div class="num" id="eqShowers">{fmt_num(showers)}</div><div class="desc" id="eqShowersDesc">Showers of water used (~65 L each)</div></div></div>
+  <div class="equiv-card"><div class="emoji">📱</div><div class="eq-content"><div class="num" id="eqIphone">{fmt_num(iphone_charges)}</div><div class="desc" id="eqIphoneDesc">iPhone charges of energy (~12.7 Wh each)</div></div></div>
 </div>
 
 <details class="assumptions">

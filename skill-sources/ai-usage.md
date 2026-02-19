@@ -23,7 +23,7 @@ Track your token usage and costs across all your AI coding tools in one place. S
 
 ## What This Does
 
-1. Runs `scripts/ai-usage-dashboard.py` from the CrossCheck repo
+1. Runs `tokenprint.py` from [TokenPrint](https://github.com/sburl/TokenPrint) (falls back to bundled `scripts/ai-usage-dashboard.py` if TokenPrint is not installed)
 2. Collects token usage and costs from three sources:
    - **Claude Code** via `ccusage daily --json`
    - **Codex CLI** via `npx @ccusage/codex@latest daily --json`
@@ -40,7 +40,8 @@ Track your token usage and costs across all your AI coding tools in one place. S
 | Python 3.9+ | Pre-installed on macOS | Yes |
 | `ccusage` | `npm i -g ccusage` | Yes (for Claude data) |
 | `@ccusage/codex` | Runs via `npx` (no install) | Yes (for Codex data) |
-| Gemini CLI telemetry | `scripts/setup-gemini-telemetry.sh` | No (optional) |
+| [TokenPrint](https://github.com/sburl/TokenPrint) | Installed by bootstrap (or `git clone`) | Recommended (bundled fallback available) |
+| Gemini CLI telemetry | `setup-gemini-telemetry.sh` (in TokenPrint or CrossCheck) | No (optional) |
 
 ## Gemini CLI Setup (Optional)
 
@@ -83,11 +84,21 @@ This adds telemetry config to `~/.gemini/settings.json`. Future Gemini CLI sessi
 
 ## Execution
 
+Find and run the dashboard script. Check these locations in order:
+
+1. **TokenPrint (multi-project):** Look for `TokenPrint/tokenprint.py` as a sibling of the CrossCheck directory (e.g., `~/Documents/Developer/TokenPrint/tokenprint.py`)
+2. **TokenPrint (traditional):** `~/.tokenprint/tokenprint.py`
+3. **Bundled fallback:** `~/.crosscheck/scripts/ai-usage-dashboard.py`
+
+Run whichever is found first:
+
 ```bash
-python3 ~/.crosscheck/scripts/ai-usage-dashboard.py [OPTIONS]
+python3 <resolved-path> [OPTIONS]
 ```
 
 Pass through any arguments the user provided (e.g., `--since`, `--until`, `--no-open`, `--output`).
+
+If none are found, tell the user: `git clone https://github.com/sburl/TokenPrint.git ~/.tokenprint`
 
 If `ccusage` is not installed, inform the user and suggest `npm i -g ccusage`.
 

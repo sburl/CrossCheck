@@ -80,6 +80,27 @@ rm ~/.claude/commands/ai-usage.md
 
 The bootstrap script will skip any skills listed in this file. Lines starting with `#` are ignored.
 
+## TokenPrint (powers /ai-usage)
+
+The `/ai-usage` skill is powered by [TokenPrint](https://github.com/sburl/TokenPrint), which is cloned by the bootstrap script by default. If you skipped it during bootstrap, the skill falls back to a bundled script.
+
+**Install later:**
+```bash
+git clone https://github.com/sburl/TokenPrint.git ~/.tokenprint
+```
+
+**Update:**
+```bash
+cd ~/.tokenprint && git pull
+```
+
+**Remove:**
+```bash
+rm -rf ~/.tokenprint   # or ~/Documents/Developer/TokenPrint for multi-project mode
+```
+
+The `/ai-usage` skill works with or without TokenPrint -- without it, the bundled fallback script is used instead.
+
 ## Maintenance
 
 To update skills from this computer to the repo:

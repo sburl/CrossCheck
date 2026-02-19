@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-AI Usage & Impact Dashboard Generator
+AI Usage & Impact Dashboard Generator (bundled fallback)
+
+NOTE: The upstream source for this script is TokenPrint:
+  https://github.com/sburl/TokenPrint
+The /ai-usage skill prefers TokenPrint's tokenprint.py when available.
+This bundled copy is kept as a fallback for users who opted out of TokenPrint.
 
 Collects token usage data from Claude Code (ccusage), Codex CLI (@ccusage/codex),
 and Gemini CLI (OpenTelemetry logs), then generates an interactive HTML dashboard
 showing usage trends, costs, and estimated environmental impact.
 
 Usage:
-    python3 ai-impact-dashboard.py [--since YYYYMMDD] [--until YYYYMMDD] [--no-open] [--output PATH]
+    python3 ai-usage-dashboard.py [--since YYYYMMDD] [--until YYYYMMDD] [--no-open] [--output PATH]
 """
 
 import argparse

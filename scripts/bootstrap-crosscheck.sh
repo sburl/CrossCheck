@@ -143,8 +143,32 @@ skill_count=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
 echo "   ✅ Installed $skill_count skills to ~/.claude/commands/"
 echo ""
 
-# 6. Install agents (optional)
-echo "📝 Step 6: Install agents..."
+# 6. Install TokenPrint (optional - for /ai-usage skill)
+echo "📊 Step 6: Install TokenPrint (for /ai-usage dashboard)..."
+
+if [ "$INSTALL_MODE" = "multi-project" ]; then
+    TOKENPRINT_DIR="$PROJECTS_DIR/TokenPrint"
+else
+    TOKENPRINT_DIR="$HOME/.tokenprint"
+fi
+
+if [ -d "$TOKENPRINT_DIR" ] && [ -f "$TOKENPRINT_DIR/tokenprint.py" ]; then
+    echo "   ✅ TokenPrint already installed at $TOKENPRINT_DIR"
+else
+    read -p "   Install TokenPrint (AI usage dashboard)? (Y/n) " -n 1 -r < /dev/tty
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        echo "   Cloning TokenPrint..."
+        git clone https://github.com/sburl/TokenPrint.git "$TOKENPRINT_DIR"
+        echo "   ✅ TokenPrint installed at $TOKENPRINT_DIR"
+    else
+        echo "   Skipped TokenPrint (/ai-usage will use bundled fallback)"
+    fi
+fi
+echo ""
+
+# 7. Install agents (optional)
+echo "📝 Step 7: Install agents..."
 if [ -d "$CROSSCHECK_DIR/agents" ]; then
     mkdir -p "$HOME/.claude/agents"
     if cp -r "$CROSSCHECK_DIR/agents/"* "$HOME/.claude/agents/" 2>/dev/null; then
@@ -173,6 +197,9 @@ echo "   • Global settings at ~/.claude/settings.json"
 echo "   • Skills at ~/.claude/commands/"
 echo "   • Git hooks for quality gates (if accepted)"
 echo "   • Codex review hooks (if accepted)"
+if [ -d "$TOKENPRINT_DIR" ] && [ -f "$TOKENPRINT_DIR/tokenprint.py" ]; then
+    echo "   • TokenPrint dashboard at $TOKENPRINT_DIR"
+fi
 echo ""
 echo "🎯 Next steps:"
 echo ""

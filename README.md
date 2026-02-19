@@ -183,6 +183,7 @@ This installs:
 - Skills to `~/.claude/commands/` (available in all projects)
 - Global `CLAUDE.md` in your projects folder (full workflow)
 - Claude Code settings with proper permissions
+- [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
 
 ### 3. Enable CrossCheck for Your Project(s)
 
@@ -326,6 +327,7 @@ git push
 - **[Claude Code CLI](https://code.claude.com)** -- The development agent
 - **Codex access** -- The review agent (or another model from a different lab)
 - **Git + GitHub CLI** (`gh`)
+- **[TokenPrint](https://github.com/sburl/TokenPrint)** -- AI usage dashboard (installed by bootstrap, optional)
 
 The core idea is two AI models from different labs: one writes, one reviews. This repo ships with Claude + Codex, but the architecture works with any pair. Different training data = different blind spots = better coverage.
 

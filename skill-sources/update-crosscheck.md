@@ -131,7 +131,26 @@ if [ -d "$CROSSCHECK_DIR/agents" ]; then
 fi
 ```
 
-## Step 7: Report
+## Step 7: Sync Global CLAUDE.md
+
+Re-copy `CLAUDE.md` to the projects folder so session-start rules and principles
+stay current. CLAUDE.md is managed by CrossCheck — personal overrides go in
+`CLAUDE.local.md` (never touched by this script).
+
+```bash
+PROJECTS_DIR="$(cd "$CROSSCHECK_DIR/.." && pwd)"
+GLOBAL_CLAUDE="$PROJECTS_DIR/CLAUDE.md"
+
+if [ -f "$GLOBAL_CLAUDE" ] || [ -d "$PROJECTS_DIR" ]; then
+    cp "$CROSSCHECK_DIR/CLAUDE.md" "$GLOBAL_CLAUDE"
+    echo "   ✅ Global CLAUDE.md synced"
+else
+    echo "   ⚠️  Projects folder not found at $PROJECTS_DIR — skipping CLAUDE.md sync"
+    echo "      Set CROSSCHECK_DIR if CrossCheck is at a non-standard path"
+fi
+```
+
+## Step 8: Report
 
 ```bash
 echo ""

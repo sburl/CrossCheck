@@ -13,7 +13,7 @@ echo ""
 # Detect installation context
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd || echo "")"
 
-if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/CLAUDE.md" ]; then
+if [ -n "$SCRIPT_DIR" ] && { [ -f "$SCRIPT_DIR/codex/CODEX.md" ] || [ -f "$SCRIPT_DIR/CLAUDE.md" ]; }; then
     # Running from cloned repo - multi-project mode
     INSTALL_MODE="multi-project"
     CROSSCHECK_DIR="$SCRIPT_DIR"
@@ -72,18 +72,13 @@ fi
 
 # 2. Copy full CLAUDE.md to global location (multi-project mode only)
 if [ "$INSTALL_MODE" = "multi-project" ]; then
-    echo "📝 Step 2: Copy CLAUDE.md to global location..."
+    echo "📝 Step 2: Sync CLAUDE.md to global location..."
 
-    # Copy full CLAUDE.md to projects folder
-    if [ ! -f "$PROJECTS_DIR/CLAUDE.md" ]; then
-        cp "$CROSSCHECK_DIR/CLAUDE.md" "$PROJECTS_DIR/CLAUDE.md"
-        echo "   ✅ Copied CLAUDE.md to $PROJECTS_DIR/CLAUDE.md"
-        echo "   📖 Full workflow available globally"
-        echo "   📚 Supporting docs in CrossCheck/ (QUICK-REFERENCE.md, rules/, skill-sources/)"
-    else
-        echo "   ℹ️  Global CLAUDE.md already exists"
-        echo "   💡 To update: cp $CROSSCHECK_DIR/CLAUDE.md $PROJECTS_DIR/CLAUDE.md"
-    fi
+    # Always overwrite — CLAUDE.md is managed by CrossCheck, not hand-edited.
+    # Personal overrides belong in CLAUDE.local.md (never overwritten).
+    cp "$CROSSCHECK_DIR/CLAUDE.md" "$PROJECTS_DIR/CLAUDE.md"
+    echo "   ✅ Synced CLAUDE.md to $PROJECTS_DIR/CLAUDE.md"
+    echo "   💡 Personal overrides → CLAUDE.local.md (never overwritten)"
     echo ""
 fi
 

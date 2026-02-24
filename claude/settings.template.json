@@ -272,7 +272,7 @@
           },
           {
             "type": "command",
-            "command": "bash -c 'REPO=$(git rev-parse --show-toplevel 2>/dev/null || pwd) && cd \"$REPO\" || exit 0; W=; N=$(ls do-work/*.md 2>/dev/null | grep -cv README 2>/dev/null || echo 0); [ \"${N:-0}\" -gt 0 ] 2>/dev/null && W=\"${N} pending do-work tasks. \"; P=$(grep -rlF \"- [ ]\" . --include=\"*plan*.md\" --exclude-dir=.git 2>/dev/null | wc -l | tr -d \" \"); [ \"${P:-0}\" -gt 0 ] 2>/dev/null && W=\"${W}Unchecked plan items.\"; [ -n \"$W\" ] && osascript -e \"display notification \\\"${W}\\\" with title \\\"Claude: Unfinished Work\\\" sound name \\\"Basso\\\"\" 2>/dev/null; true'"
+            "command": "bash -c 'REPO=$(git rev-parse --show-toplevel 2>/dev/null || pwd) && cd \"$REPO\" || exit 0; W=; N=$(ls do-work/*.md 2>/dev/null | grep -cv README 2>/dev/null || echo 0); [ \"${N:-0}\" -gt 0 ] 2>/dev/null && W=\"${N} pending do-work tasks. \"; P=$(grep -rlF -- \"- [ ]\" . --include=\"*plan*.md\" --exclude-dir=.git 2>/dev/null | wc -l | tr -d \" \"); [ \"${P:-0}\" -gt 0 ] 2>/dev/null && W=\"${W}Unchecked plan items.\"; [ -n \"$W\" ] && osascript -e \"display notification \\\"${W}\\\" with title \\\"Claude: Unfinished Work\\\" sound name \\\"Basso\\\"\" 2>/dev/null; true'"
           }
         ]
       }

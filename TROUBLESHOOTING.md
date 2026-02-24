@@ -526,7 +526,7 @@ exit  # or Ctrl+D
 codex  # start new session
 ```
 
-See [CODEX.md](CODEX.md) for context management rules.
+See [CODEX.md](codex/CODEX.md) for context management rules.
 
 ## Worktree Conflicts
 
@@ -556,7 +556,7 @@ git worktree remove path/to/worktree --force
 git worktree add ../different-name branch-name
 ```
 
-See [CODEX.md](CODEX.md) for worktree usage patterns.
+See [CODEX.md](codex/CODEX.md) for worktree usage patterns.
 
 ## CI Checks Always Failing
 
@@ -602,4 +602,4 @@ If troubleshooting doesn't resolve your issue:
 
 - **[README.md](README.md#detailed-setup)** - Setup guide
 - **[ADVANCED.md](ADVANCED.md)** - Advanced customization and verification
-- **[CODEX.md](CODEX.md)** - Workflow reference
+- **[CODEX.md](codex/CODEX.md)** - Workflow reference

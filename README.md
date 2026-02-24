@@ -185,9 +185,9 @@ cd CrossCheck
 ```
 
 This installs:
-- Skills to `~/.codex/commands/` (available in all projects)
-- Global `CODEX.md` in your projects folder (full workflow)
-- Codex settings with proper permissions
+- Skills to `~/.claude/commands/` via symlinks (and `~/.codex/commands/` if present)
+- Global `CLAUDE.md` symlinked in your projects folder (full workflow, updates on `git pull`)
+- Agent settings with proper permissions
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
 
 ### 3. Enable CrossCheck for Your Project(s)
@@ -203,11 +203,11 @@ cd ../MyApp
 ### 4. Start Building
 
 ```bash
-codex "Build user authentication"
-# Codex creates feature branch, writes code + tests, gets reviewer feedback, ships
+claude "Build user authentication"
+# Claude creates feature branch, writes code + tests, gets reviewer feedback, ships
 ```
 
-**That's it!** All 25 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
+**That's it!** All 28 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
 
 ---
 
@@ -219,21 +219,22 @@ CrossCheck uses a **single source of truth** pattern:
 
 ```
 ~/Documents/Developer/          # Your projects folder
-├── CODEX.md                  # Full workflow (copied from CrossCheck)
+├── CLAUDE.md                 # Global workflow (symlink → CrossCheck/CLAUDE.md)
 │
 ├── CrossCheck/                # 🎯 Source repository
-│   ├── CODEX.md             # Source of truth for workflow
-│   ├── QUICK-REFERENCE.md    # Supporting reference (25 skills, tables)
-│   ├── docs/rules/           # Supporting docs (trust-model, git-history)
-│   ├── skill-sources/        # 25 skills (copied to ~/.codex/commands/)
+│   ├── CLAUDE.md            # Source of truth for global workflow
+│   ├── CODEX.md             # Workflow for Codex agent (codex/CODEX.md)
+│   ├── QUICK-REFERENCE.md    # Supporting reference (28 skills, tables)
+│   ├── docs/rules/           # Supporting docs (trust-model, git-history, memory)
+│   ├── skill-sources/        # 28 skills (symlinked to ~/.claude/commands/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
-    ├── CODEX.md (optional)  # Project-specific overrides
+    ├── CLAUDE.md (optional) # Project-specific overrides
     └── .git/hooks/           # Installed per-project
 ```
 
-**Key insight:** Global CODEX.md = full workflow. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Skills install globally (`~/.codex/commands/`), hooks install per-project.
+**Key insight:** Skills and `CLAUDE.md` are symlinked — `git pull` in CrossCheck updates everything instantly everywhere. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Hooks install per-project.
 
 ### GitHub Branch Protection Setup
 
@@ -359,7 +360,7 @@ The core idea is two AI models from different labs: one writes, one reviews. Thi
 ## Documentation
 
 **Core workflow:**
-- **[CODEX.md](CODEX.md)** - What Codex reads (workflow reference)
+- **[CODEX.md](codex/CODEX.md)** - What Codex reads (workflow reference)
 - **[QUICK-REFERENCE.md](QUICK-REFERENCE.md)** - Complete command tables
 - **[CODEX-PROMPTS.md](CODEX-PROMPTS.md)** - How to invoke Codex
 

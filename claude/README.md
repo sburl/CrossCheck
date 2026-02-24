@@ -3,14 +3,9 @@
 **Created:** 2026-01-30-16-27
 **Last Updated:** 2026-02-23-00-00
 
-## Sections
-
-- `claude/` - Claude-focused workflow bundle (`claude/README.md`)
-- `codex/` - Codex-focused workflow bundle (`codex/README.md`, `codex/AGENTS.md`, `codex/skills/*/SKILL.md`)
-
 **Build autonomous loops. Ship production-quality software.**
 
-**[Read the blog post](https://spencerburleigh.com/blog/2026/02/13/crosscheck/)** | Codex writes. Peer model reviews. Hooks enforce. You orchestrate.
+**[Read the blog post](https://spencerburleigh.com/blog/2026/02/13/crosscheck/)** | Claude writes. Peer model reviews. Hooks enforce. You orchestrate.
 
 ---
 
@@ -23,7 +18,7 @@
 ```
 Define task → Agent builds on branch → Hooks enforce quality
     ↑                                        ↓
-    └── Review PR ← Codex reviews ← Tests verify
+    └── Review PR ← Claude reviews ← Tests verify
 ```
 
 **An autonomous loop** is a cycle where the agent works, the system validates, and the output improves -- without human intervention at each step. You define the loop and review the output. Everything in between is automated.
@@ -37,7 +32,7 @@ The key insight: **git hooks make compliance the path of least resistance.** The
 This is the same principle that made aviation the safest form of transport. Every safety layer has holes. No single layer is perfect. But stack enough layers with *uncorrelated* holes and the probability of a failure passing through all of them drops to near zero.
 
 ```
-  Settings Deny List    Git Hooks        Tests         Codex Review    Branch Protection
+  Settings Deny List    Git Hooks        Tests         Claude Review    Branch Protection
   ┌──────────────┐   ┌──────────────┐  ┌──────────┐  ┌──────────────┐  ┌──────────────┐
   │   ██  █      │   │ █   ██       │  │    █  █  │  │ █      ██   │  │      █      █│
   │      █       │ → │       █      │→ │ ██      █│→ │    █        │→ │  ██         █│
@@ -56,7 +51,7 @@ Each layer is a different *type* of check:
 - **Multi-model review** -- Independent assessment by a model from a different lab
 - **Branch protection** -- Identity-based server-side enforcement
 
-The holes in each layer are *uncorrelated* because they use different mechanisms. A bug that slips past tests won't necessarily slip past Codex review. A secret that bypasses a hook won't bypass the settings deny list. **The agent can't bypass any layer.**
+The holes in each layer are *uncorrelated* because they use different mechanisms. A bug that slips past tests won't necessarily slip past Claude review. A secret that bypasses a hook won't bypass the settings deny list. **The agent can't bypass any layer.**
 
 ---
 
@@ -69,7 +64,7 @@ The holes in each layer are *uncorrelated* because they use different mechanisms
 │ Quality Checks  │ /security-review (10 threat categories)
 │                 │ /bug-review (10 failure mode categories)
 ├─────────────────┤
-│ Multi-Model     │ Codex writes, peer model reviews, different blind spots
+│ Multi-Model     │ Claude writes, peer model reviews, different blind spots
 ├─────────────────┤
 │ GitHub Rules    │ Separate-identity approval, squash-only, CODEOWNERS
 └─────────────────┘
@@ -81,21 +76,21 @@ The holes in each layer are *uncorrelated* because they use different mechanisms
 |------|------|---------|
 | **pre-commit** | Before commit | Secrets, debug code, timestamps |
 | **commit-msg** | After message | Enforces conventional commits |
-| **post-commit** | After commit | Logs for Codex review |
+| **post-commit** | After commit | Logs for Claude review |
 | **post-checkout** | Branch switch | Kills orphan processes |
 | **pre-push** | Before every push | Timestamps, markers, conflicts (+ /techdebt + /pre-pr-check on main) |
 | **post-merge** | After merge | Auto-deletes local branch |
 
 ---
 
-## Why Codex?
+## Why Claude?
 
-**I've tested multiple reviewers. Codex is more precise.**
+**I've tested multiple reviewers. Claude is more precise.**
 
 But here's the key: **Use an agent from a different lab than your developer agent.**
 
 ```
-Codex (OpenAI) writes → Claude (Anthropic) reviews
+Claude (OpenAI) writes → Claude (Anthropic) reviews
 └─ Different training → Different blind spots → Better coverage
 ```
 
@@ -127,7 +122,7 @@ Each AI has blind spots. When those blind spots come from different training dat
 
 **4. Feature Branches = Freedom, Main = Fortress** - All work on branches. Main requires separate-identity PR approval. Agent can't commit to main.
 
-**5. Multi-Model Review** - Codex writes, peer model reviews. Different training = different blind spots = better coverage.
+**5. Multi-Model Review** - Claude writes, peer model reviews. Different training = different blind spots = better coverage.
 
 **6. Self-Improving** - Every 3 PRs: repo assessment -> bug review -> security review waterfall. The system audits itself.
 
@@ -139,7 +134,7 @@ Each AI has blind spots. When those blind spots come from different training dat
 - You write, you review, you fix, you ship → **You're the bottleneck**
 
 **After CrossCheck:**
-- Codex writes → Reviewer model reviews → Codex fixes → Auto-validation → **Ship with confidence**
+- Claude writes → Reviewer model reviews → Claude fixes → Auto-validation → **Ship with confidence**
 
 **The difference:**
 - Secrets caught before commit
@@ -152,8 +147,8 @@ Each AI has blind spots. When those blind spots come from different training dat
 ## Quick Start
 
 **Prerequisites:**
-- [Codex CLI](https://developers.openai.com/codex)
-- Codex access (for reviews)
+- [Claude Code CLI](https://code.claude.com)
+- Claude access (for reviews)
 - Git + GitHub CLI (`gh`)
 
 **Installation (5 minutes):**
@@ -185,9 +180,9 @@ cd CrossCheck
 ```
 
 This installs:
-- Skills to `~/.codex/commands/` (available in all projects)
-- Global `CODEX.md` in your projects folder (full workflow)
-- Codex settings with proper permissions
+- Skills to `~/.claude/commands/` (available in all projects)
+- Global `CLAUDE.md` in your projects folder (full workflow)
+- Claude settings with proper permissions
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
 
 ### 3. Enable CrossCheck for Your Project(s)
@@ -203,8 +198,8 @@ cd ../MyApp
 ### 4. Start Building
 
 ```bash
-codex "Build user authentication"
-# Codex creates feature branch, writes code + tests, gets reviewer feedback, ships
+claude "Build user authentication"
+# Claude creates feature branch, writes code + tests, gets reviewer feedback, ships
 ```
 
 **That's it!** All 25 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
@@ -219,21 +214,21 @@ CrossCheck uses a **single source of truth** pattern:
 
 ```
 ~/Documents/Developer/          # Your projects folder
-├── CODEX.md                  # Full workflow (copied from CrossCheck)
+├── CLAUDE.md                  # Full workflow (copied from CrossCheck)
 │
 ├── CrossCheck/                # 🎯 Source repository
-│   ├── CODEX.md             # Source of truth for workflow
+│   ├── CLAUDE.md             # Source of truth for workflow
 │   ├── QUICK-REFERENCE.md    # Supporting reference (25 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history)
-│   ├── skill-sources/        # 25 skills (copied to ~/.codex/commands/)
+│   ├── skill-sources/        # 25 skills (copied to ~/.claude/commands/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
-    ├── CODEX.md (optional)  # Project-specific overrides
+    ├── CLAUDE.md (optional)  # Project-specific overrides
     └── .git/hooks/           # Installed per-project
 ```
 
-**Key insight:** Global CODEX.md = full workflow. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Skills install globally (`~/.codex/commands/`), hooks install per-project.
+**Key insight:** Global CLAUDE.md = full workflow. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Skills install globally (`~/.claude/commands/`), hooks install per-project.
 
 ### GitHub Branch Protection Setup
 
@@ -303,15 +298,15 @@ git reset HEAD test.txt && rm test.txt
 
 ```bash
 # Check skills installed
-ls ~/.codex/commands/ | wc -l
+ls ~/.claude/commands/ | wc -l
 # Should show: 25 skills
 
-# Start Codex
-codex
+# Start Claude
+claude
 
 # Try a skill
 User: "Plan a new feature"
-# Codex should invoke /plan skill
+# Claude should invoke /plan skill
 ```
 
 #### Test 3: Pre-Push Check Works
@@ -329,22 +324,22 @@ git push
 
 ## Requirements
 
-- **[Codex CLI](https://developers.openai.com/codex)** -- The development agent
-- **Codex access** -- The review agent (or another model from a different lab)
+- **[Claude Code CLI](https://code.claude.com)** -- The development agent
+- **Claude access** -- The review agent (or another model from a different lab)
 - **Git + GitHub CLI** (`gh`)
 - **[TokenPrint](https://github.com/sburl/TokenPrint)** -- AI usage dashboard (installed by bootstrap, optional)
 
-The core idea is two AI models from different labs: one writes, one reviews. This repo ships with Codex + Claude, but the architecture works with any pair. Different training data = different blind spots = better coverage.
+The core idea is two AI models from different labs: one writes, one reviews. This repo ships with Claude + Claude, but the architecture works with any pair. Different training data = different blind spots = better coverage.
 
 ---
 
 ## Next Steps / What We're Thinking About
 
-**Persistent memory:** CODEX.md is static -- it doesn't know what the agent did last session, what's blocked, or what patterns have been learned. The missing piece is dynamic state that persists across sessions: task graphs, dependency tracking, learned patterns. Something like [Beads](https://github.com/steveyegge/beads) for dependency-aware task graphs, or a lightweight session log the agent can query on startup.
+**Persistent memory:** CLAUDE.md is static -- it doesn't know what the agent did last session, what's blocked, or what patterns have been learned. The missing piece is dynamic state that persists across sessions: task graphs, dependency tracking, learned patterns. Something like [Beads](https://github.com/steveyegge/beads) for dependency-aware task graphs, or a lightweight session log the agent can query on startup.
 
 **Multi-channel agents:** [OpenClaw](https://openclaw.ai) as a gateway layer -- message tasks from your phone, agent works in a worktree, sends PR notification when done.
 
-**Third model at merge gate:** Currently Codex writes and a second model reviews, but merge-to-main only has branch protection. Adding a third model (Gemini, Kimi, or another lab) as a final reviewer at the merge step would add another uncorrelated layer to the swiss cheese model -- a completely independent assessment of the full changeset before it hits production. The open question: does a third model add meaningful coverage, or are we into diminishing returns?
+**Third model at merge gate:** Currently Claude writes and a second model reviews, but merge-to-main only has branch protection. Adding a third model (Gemini, Kimi, or another lab) as a final reviewer at the merge step would add another uncorrelated layer to the swiss cheese model -- a completely independent assessment of the full changeset before it hits production. The open question: does a third model add meaningful coverage, or are we into diminishing returns?
 
 **Safer CLI access:** CLIs (Railway, Vercel, `gh`, databases) are what keep loops autonomous -- the agent deploys without a human clicking a dashboard. But giving agents CLI access to production infrastructure is an unsolved trust problem. There's no granular permission layer between "full access" and "no access." Scoped tokens, dry-run defaults, approval gates for destructive operations. Necessary for truly autonomous deployment loops.
 
@@ -359,9 +354,9 @@ The core idea is two AI models from different labs: one writes, one reviews. Thi
 ## Documentation
 
 **Core workflow:**
-- **[CODEX.md](CODEX.md)** - What Codex reads (workflow reference)
+- **[CLAUDE.md](CLAUDE.md)** - What Claude reads (workflow reference)
 - **[QUICK-REFERENCE.md](QUICK-REFERENCE.md)** - Complete command tables
-- **[CODEX-PROMPTS.md](CODEX-PROMPTS.md)** - How to invoke Codex
+- **[CLAUDE-PROMPTS.md](CLAUDE-PROMPTS.md)** - How to invoke Claude
 
 **When things break:**
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Debug hooks, CI, permissions

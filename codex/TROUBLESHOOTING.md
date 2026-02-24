@@ -473,17 +473,17 @@ Skills aren't installed. Install them:
 
 ```bash
 # Copy skills from CrossCheck repo
-cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.codex/commands/
+cp -R ~/Documents/Developer/CrossCheck/codex/skills/* ~/.codex/skills/
 
 # Verify installation
-ls ~/.codex/commands/ | wc -l
-# Should show 26 files (25 skills + INSTALL.md)
+find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
+# Should show 25 skills
 
 # Restart Codex
 # Skills should now be available
 ```
 
-See [skill-sources/INSTALL.md](skill-sources/INSTALL.md) for detailed skill installation.
+See [skills/INSTALL.md](skills/INSTALL.md) for detailed skill installation.
 
 ## Tests Failing After Setup
 

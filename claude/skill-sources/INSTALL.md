@@ -1,11 +1,11 @@
-# Installing Codex Skills
+# Installing Claude Skills
 
 **Created:** 2026-02-09-00-00
 **Last Updated:** 2026-02-23-00-00
 
-This directory contains all custom skill sources for Codex.
+This directory contains all custom skill sources for Claude.
 
-**Note:** This folder is named `skill-sources/` (not `commands/`) so that Codex doesn't load these as project-level commands when working inside the CrossCheck repo. The bootstrap script copies them to `~/.codex/commands/` where Codex picks them up globally.
+**Note:** This folder is named `skill-sources/` (not `commands/`) so that Claude doesn't load these as project-level commands when working inside the CrossCheck repo. The bootstrap script copies them to `~/.claude/commands/` where Claude picks them up globally.
 
 ## Installation
 
@@ -15,10 +15,9 @@ This directory contains all custom skill sources for Codex.
 # 1. Clone the CrossCheck repo to ~/.crosscheck
 git clone https://github.com/sburl/CrossCheck.git ~/.crosscheck
 
-# 2. Copy skills to both Claude Code and Codex
-mkdir -p ~/.claude/commands ~/.codex/commands
+# 2. Copy skills to ~/.claude/commands/
+mkdir -p ~/.claude/commands
 cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
-cp ~/.crosscheck/skill-sources/*.md ~/.codex/commands/
 
 # 3. Verify installation
 ls ~/.claude/commands/
@@ -27,10 +26,8 @@ ls ~/.claude/commands/
 ### Quick install script:
 
 ```bash
-# Run this one-liner (installs to both Claude Code and Codex):
-mkdir -p ~/.claude/commands ~/.codex/commands && \
-  cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/ && \
-  cp ~/.crosscheck/skill-sources/*.md ~/.codex/commands/
+# Run this one-liner:
+mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
 ```
 
 ## Available Skills (25 total)
@@ -43,10 +40,10 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
 - `/bug-review` - Systematic failure mode audit (AI patterns, concurrency, memory, etc.)
 
 ### Agent Delegation (5)
-- `/codex-delegate` - Delegate task to Codex agent
+- `/claude-delegate` - Delegate task to Claude agent
 - `/gemini-delegate` - Delegate task to Gemini agent
-- `/ensemble-opinion` - Get multi-model opinions (Codex + Gemini + Critic)
-- `/pr-review` - Initiate autonomous PR review with Codex
+- `/ensemble-opinion` - Get multi-model opinions (Claude + Gemini + Critic)
+- `/pr-review` - Initiate autonomous PR review with Claude
 - `/repo-assessment` - Run comprehensive repo assessment (every 3 PRs)
 
 ### Git Cleanup (6)
@@ -63,15 +60,12 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
 - `/commit-smart` - Atomic Git Commit
 - `/doc-timestamp` - Add/update timestamps in docs
 
-### Knowledge Capture (1)
-- `/capture-skill` - Distill session discoveries into reusable skills (auto-installs to Claude + Codex)
-
 ### Analytics (1)
-- `/ai-usage` - Track token usage, costs, and environmental impact across Codex/Codex/Gemini
+- `/ai-usage` - Track token usage, costs, and environmental impact across Claude/Claude/Gemini
 
 ### Setup (3)
 - `/setup-automation` - Install all automation for new repo
-- `/setup-statusline` - Customize Codex statusline
+- `/setup-statusline` - Customize Claude statusline
 - `/garbage-collect` - Manage /garbage folder
 
 ## Opting Out of Skills
@@ -83,7 +77,7 @@ Don't want a specific skill? Add its name to `~/.crosscheck/skip-skills` (one pe
 echo "ai-usage" >> ~/.crosscheck/skip-skills
 
 # Remove it locally if already installed
-rm ~/.codex/commands/ai-usage.md
+rm ~/.claude/commands/ai-usage.md
 ```
 
 The bootstrap script will skip any skills listed in this file. Lines starting with `#` are ignored.
@@ -114,7 +108,7 @@ Without TokenPrint installed, `/ai-usage` will prompt you to install it.
 To update skills from this computer to the repo:
 
 ```bash
-# Copy changes back to repo (use ~/.claude/commands/ as the source of truth)
+# Copy changes back to repo
 cp ~/.claude/commands/*.md ~/Documents/Developer/CrossCheck/skill-sources/
 
 # Commit and push
@@ -128,27 +122,22 @@ git push
 
 ```
 ~/.claude/
-├── commands/              ← Active skills for Claude Code
-│   └── *.md              ← 25 skill files
-
-~/.codex/
-├── commands/              ← Active skills for Codex
+├── commands/              ← Active skills (copied from CrossCheck/skill-sources/)
 │   └── *.md              ← 25 skill files
 └── settings.json         ← Global permissions
 
 ~/.crosscheck/                 ← Git repo (source of truth, traditional install)
-├── skill-sources/         ← Source for skills (not scanned by Codex)
-├── CODEX.md             ← Workflow rules
-└── CODEX-PROMPTS.md      ← Codex templates
+├── skill-sources/         ← Source for skills (not scanned by Claude)
+├── CLAUDE.md             ← Workflow rules
+└── CLAUDE-PROMPTS.md      ← Claude templates
 ```
 
-**Why multiple locations?**
+**Why two locations?**
 - `~/.crosscheck/skill-sources/` - Version controlled source (traditional install)
 - `~/Documents/Developer/CrossCheck/skill-sources/` - Version controlled source (multi-project install)
-- `~/.claude/commands/` - Active skills Claude Code loads
-- `~/.codex/commands/` - Active skills Codex loads
+- `~/.claude/commands/` - Active skills Claude loads
 
-The repo is the source of truth. Copy to both `~/.claude/commands/` and `~/.codex/commands/` to activate.
+The repo is the source of truth. Copy to `~/.claude/commands/` to activate.
 
-**Important:** The CrossCheck repo must NOT be inside `~/.codex/`. Codex scans
-`~/.codex/` for commands, which would cause duplicate skill registrations.
+**Important:** The CrossCheck repo must NOT be inside `~/.claude/`. Claude scans
+`~/.claude/` for commands, which would cause duplicate skill registrations.

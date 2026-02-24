@@ -9,7 +9,7 @@ When automation fails, debug it here.
 
 ## Hook Error Reference
 
-Exact error messages from each hook, what triggers them, and how to resolve them. Use this to understand what Codex sees when hooks block and to debug issues where hooks aren't followed correctly.
+Exact error messages from each hook, what triggers them, and how to resolve them. Use this to understand what Claude sees when hooks block and to debug issues where hooks aren't followed correctly.
 
 ### Pre-Commit: Secrets Detected
 
@@ -91,52 +91,52 @@ Note: --no-verify is blocked by permissions (policy enforcement)
 
 ---
 
-### Commit-Msg: Codex Approval Required (CRITICAL)
+### Commit-Msg: Claude Approval Required (CRITICAL)
 
-**Trigger:** Committing feat/fix/refactor to main without "Codex Approved"
+**Trigger:** Committing feat/fix/refactor to main without "Claude Approved"
 
 **Exact error message:**
 ```
-⛔ BLOCKED: Codex approval required for feat commits to main
+⛔ BLOCKED: Claude approval required for feat commits to main
 
-🤖 Codex: Follow this workflow (DO NOT skip steps):
+🤖 Claude: Follow this workflow (DO NOT skip steps):
 
    Step 1: Get review prompt
-   ~/.crosscheck/scripts/codex-approve-commit.sh
+   ~/.crosscheck/scripts/claude-approve-commit.sh
 
-   Step 2: Send prompt to Codex via terminal
-   Copy the output and paste to Codex in your terminal session
+   Step 2: Send prompt to Claude via terminal
+   Copy the output and paste to Claude in your terminal session
 
-   Step 3: Review Codex feedback
-   - If Codex says APPROVED: Proceed to Step 4
-   - If Codex requests changes: Fix issues and restart from Step 1
-   - Keep iterating with Codex until you get APPROVED
+   Step 3: Review Claude feedback
+   - If Claude says APPROVED: Proceed to Step 4
+   - If Claude requests changes: Fix issues and restart from Step 1
+   - Keep iterating with Claude until you get APPROVED
 
-   Step 4: ONLY after Codex approves, add to commit message:
+   Step 4: ONLY after Claude approves, add to commit message:
    git commit -m "feat: add user authentication
 
-   Codex Approved"
+   Claude Approved"
 
-   ⚠️  CRITICAL: Do NOT add 'Codex Approved' without actual Codex approval!
-   ⚠️  You must see Codex explicitly say 'APPROVED' or 'LGTM'
+   ⚠️  CRITICAL: Do NOT add 'Claude Approved' without actual Claude approval!
+   ⚠️  You must see Claude explicitly say 'APPROVED' or 'LGTM'
 
 👤 If you're human:
-   Same process - get actual Codex approval before adding to message
+   Same process - get actual Claude approval before adding to message
 
 Note: --no-verify is blocked by permissions (policy enforcement)
 ```
 
 **Resolution:**
-1. Run `~/.crosscheck/scripts/codex-approve-commit.sh`
-2. Send output to Codex in terminal
-3. Wait for Codex response
-4. If Codex says changes needed: fix the issues, go back to step 1
-5. ONLY if Codex says "APPROVED": retry commit with "Codex Approved" in message
+1. Run `~/.crosscheck/scripts/claude-approve-commit.sh`
+2. Send output to Claude in terminal
+3. Wait for Claude response
+4. If Claude says changes needed: fix the issues, go back to step 1
+5. ONLY if Claude says "APPROVED": retry commit with "Claude Approved" in message
 
 **Common mistakes:**
-- Adding "Codex Approved" without running the script
-- Adding "Codex Approved" without sending to Codex
-- Adding "Codex Approved" when Codex said "changes needed"
+- Adding "Claude Approved" without running the script
+- Adding "Claude Approved" without sending to Claude
+- Adding "Claude Approved" when Claude said "changes needed"
 
 ---
 
@@ -148,7 +148,7 @@ Note: --no-verify is blocked by permissions (policy enforcement)
 ```
 ⛔ BLOCKED: Pre-push quality checks required before pushing to main
 
-🤖 Codex: Run these commands:
+🤖 Claude: Run these commands:
 
    # Note: Hook will show actual path with hash and branch values
    /techdebt && /pre-pr-check && touch ~/.cache/CrossCheck/prechecks-$REPO_HASH-$BRANCH && git push
@@ -244,7 +244,7 @@ When hooks block, run these exact commands:
 
 | Hook | Scenario | Command |
 |------|----------|---------|
-| commit-msg | Codex approval needed | `~/.crosscheck/scripts/codex-approve-commit.sh` then send to Codex, wait for APPROVED, add to commit |
+| commit-msg | Claude approval needed | `~/.crosscheck/scripts/claude-approve-commit.sh` then send to Claude, wait for APPROVED, add to commit |
 | pre-push | Pre-checks needed | `/techdebt && /pre-pr-check && touch $MARKER && git push` |
 | pre-commit | Secrets detected | Remove secrets, use env vars, re-commit |
 | pre-commit | Debug code | Remove debug statements, re-commit |
@@ -253,59 +253,59 @@ When hooks block, run these exact commands:
 
 ---
 
-### Debugging: When Codex Doesn't Follow Hook Instructions
+### Debugging: When Claude Doesn't Follow Hook Instructions
 
-**If Codex adds "Codex Approved" without getting approval:**
+**If Claude adds "Claude Approved" without getting approval:**
 
 Check:
-1. Did Codex run the approval script?
-2. Did Codex send output to Codex?
-3. Did Codex wait for Codex response?
-4. Did Codex actually say "APPROVED"?
+1. Did Claude run the approval script?
+2. Did Claude send output to Claude?
+3. Did Claude wait for Claude response?
+4. Did Claude actually say "APPROVED"?
 
 Fix: Make commit-msg message more explicit about required steps.
 
-**If Codex bypasses pre-push checks:**
+**If Claude bypasses pre-push checks:**
 
 Check:
-1. Did Codex run /techdebt?
-2. Did Codex run /pre-pr-check?
-3. Did Codex create marker file?
+1. Did Claude run /techdebt?
+2. Did Claude run /pre-pr-check?
+3. Did Claude create marker file?
 
 Fix: Make pre-push message show single chained command.
 
-**If Codex commits secrets:**
+**If Claude commits secrets:**
 
 Check:
 1. Is pre-commit hook installed?
 2. Is pre-commit hook executable?
-3. Did Codex use --no-verify?
+3. Did Claude use --no-verify?
 
-Fix: Ensure hooks installed and Codex knows not to use --no-verify.
+Fix: Ensure hooks installed and Claude knows not to use --no-verify.
 
 ---
 
 ### Testing Hook Messages
 
-To test what Codex sees when hooks fire:
+To test what Claude sees when hooks fire:
 
 ```bash
-# Test commit-msg (Codex approval)
+# Test commit-msg (Claude approval)
 git checkout main
 echo "test" > test.txt
 git add test.txt
 git commit -m "feat: test without approval"
-# See exact message Codex would see
+# See exact message Claude would see
 
 # Test pre-push (pre-checks)
 git push
-# See exact message Codex would see
+# See exact message Claude would see
 
 # Test pre-commit (secrets)
 echo 'API_KEY="sk_test_123456789"' > config.py
 git add config.py
 git commit -m "test: add config"
-# See exact message Codex would see
+# See exact message Claude would see
 ```
 
 ---
@@ -314,29 +314,29 @@ git commit -m "test: add config"
 
 ```bash
 # Check hook is executable
-ls -la ~/.codex/git-hooks/pre-commit
+ls -la ~/.claude/git-hooks/pre-commit
 # Should see: -rwxr-xr-x (x = executable)
 
 # Make executable if needed
-chmod +x ~/.codex/git-hooks/*
+chmod +x ~/.claude/git-hooks/*
 
 # Check global hooks path
 git config --global core.hooksPath
-# Should see: ~/.codex/git-hooks
+# Should see: ~/.claude/git-hooks
 ```
 
-## Codex Review Not Logging
+## Claude Review Not Logging
 
 ```bash
 # Check log file exists and is writable
-ls -la ~/.codex/codex-commit-reviews.log
+ls -la ~/.claude/claude-commit-reviews.log
 
 # Create if missing
-touch ~/.codex/codex-commit-reviews.log
+touch ~/.claude/claude-commit-reviews.log
 
 # Test manually
-echo "test" >> ~/.codex/codex-commit-reviews.log
-cat ~/.codex/codex-commit-reviews.log
+echo "test" >> ~/.claude/claude-commit-reviews.log
+cat ~/.claude/claude-commit-reviews.log
 ```
 
 ## Pre-Push Keeps Blocking
@@ -371,7 +371,7 @@ git push
 
 ```bash
 # Check post-merge hook is installed
-ls -la ~/.codex/git-hooks/post-merge
+ls -la ~/.claude/git-hooks/post-merge
 # Should see executable hook
 
 # Manually delete local branch
@@ -461,7 +461,7 @@ This is intentional. The command is blocked by your permissions settings.
 **If you really need the command:**
 1. Review why it's blocked (usually for safety)
 2. Consider safer alternative
-3. If absolutely necessary, update `~/.codex/settings.json` permissions
+3. If absolutely necessary, update `~/.claude/settings.json` permissions
 
 **Never remove from deny list without understanding why it's there.**
 
@@ -473,13 +473,13 @@ Skills aren't installed. Install them:
 
 ```bash
 # Copy skills from CrossCheck repo
-cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.codex/commands/
+cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.claude/commands/
 
 # Verify installation
-ls ~/.codex/commands/ | wc -l
+ls ~/.claude/commands/ | wc -l
 # Should show 26 files (25 skills + INSTALL.md)
 
-# Restart Codex
+# Restart Claude
 # Skills should now be available
 ```
 
@@ -521,12 +521,12 @@ pytest
 # Compact conversation to free context
 /compact
 
-# Restart Codex session for fresh context
+# Restart Claude session for fresh context
 exit  # or Ctrl+D
-codex  # start new session
+claude  # start new session
 ```
 
-See [CODEX.md](CODEX.md) for context management rules.
+See [CLAUDE.md](CLAUDE.md) for context management rules.
 
 ## Worktree Conflicts
 
@@ -556,7 +556,7 @@ git worktree remove path/to/worktree --force
 git worktree add ../different-name branch-name
 ```
 
-See [CODEX.md](CODEX.md) for worktree usage patterns.
+See [CLAUDE.md](CLAUDE.md) for worktree usage patterns.
 
 ## CI Checks Always Failing
 
@@ -602,4 +602,4 @@ If troubleshooting doesn't resolve your issue:
 
 - **[README.md](README.md#detailed-setup)** - Setup guide
 - **[ADVANCED.md](ADVANCED.md)** - Advanced customization and verification
-- **[CODEX.md](CODEX.md)** - Workflow reference
+- **[CLAUDE.md](CLAUDE.md)** - Workflow reference

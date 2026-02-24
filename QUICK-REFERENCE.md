@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-12-12-00
+**Last Updated:** 2026-02-23-00-00
 
 Complete reference tables for daily workflow.
 
@@ -26,6 +26,8 @@ When user requests these tasks, invoke the corresponding skill:
 | "show worktrees" | `/list-worktrees` | List active worktrees |
 | "cleanup worktrees" | `/cleanup-worktrees` | Remove merged worktrees |
 | "delete branches" | `/cleanup-branches` | Safe batch deletion |
+| "cleanup stashes", "review stashes" | `/cleanup-stashes` | Review and drop orphaned/stale stashes |
+| "full cleanup", "cleanup everything" | `/cleanup-all` | Worktrees + branches + stashes in sequence |
 | Modified .md file | `/doc-timestamp` | Update timestamps |
 | "setup automation" | `/setup-automation` | Install hooks + CI |
 | "customize statusline" | `/setup-statusline` | Configure status bar |
@@ -46,7 +48,7 @@ When user requests these tasks, invoke the corresponding skill:
 | **Code "looks right"** | Don't trust - verify with tests |
 | **Claim "X works"** | Show passing test results as proof |
 | **Bug fix** | (1) Test reproduces (2) Verify fails (3) Fix (4) Pass (5) Commit |
-| **User corrects** | Add specific rule to CLAUDE.md NOW |
+| **User corrects** | Add specific rule to CODEX.md NOW |
 | **Unfamiliar tech** | ASK before "fixing" (post-Jan 2025?) |
 | **Post-cutoff working code** | Don't change - add `# WARNING: post-cutoff - VALID` |
 | **User wants commit** | INVOKE `/commit-smart` (NEVER git commit directly) |
@@ -185,7 +187,7 @@ pytest test_auth.py
 
 # Start fresh if needed:
 exit  # Ctrl+D
-claude  # New session
+codex  # New session
 ```
 
 ---
@@ -233,9 +235,9 @@ mv old-file.js garbage/
 
 | Skill | When to Use | What It Does |
 |-------|-------------|--------------|
-| `/codex-delegate` | User says "have Codex X" | Injects CLAUDE.md context, runs Codex autonomously |
-| `/gemini-delegate` | User says "have Gemini X" | Injects CLAUDE.md context, runs Gemini autonomously |
-| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Claude + Codex + Gemini |
+| `/codex-delegate` | User says "have Codex X" | Injects CODEX.md context, runs Codex autonomously |
+| `/gemini-delegate` | User says "have Gemini X" | Injects CODEX.md context, runs Gemini autonomously |
+| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Codex + Claude + Gemini |
 | `/pr-review` | Manual PR review needed | Standard Codex review handoff workflow |
 | `/repo-assessment` | Every 3 PRs | Comprehensive Codex analysis of repo state |
 | `/security-review` | Every 3 PRs (waterfall) or on demand | Dependency audit, secrets scan, trust model check |
@@ -249,6 +251,8 @@ mv old-file.js garbage/
 | `/list-worktrees` | Check active worktrees | Shows all worktrees with status |
 | `/cleanup-worktrees` | Remove old worktrees | Deletes merged/abandoned worktrees |
 | `/cleanup-branches` | Delete old branches | Generates batch script for safe branch deletion |
+| `/cleanup-stashes` | Review stashes | Flags orphaned/superseded/stale stashes, generates drop script |
+| `/cleanup-all` | Full git cleanup | Chains worktrees → branches → stashes with combined summary |
 | `/commit-smart` | User wants commit | Creates good commit message, reviews changes |
 
 ### Development
@@ -263,14 +267,14 @@ mv old-file.js garbage/
 
 | Skill | When to Use | What It Does |
 |-------|-------------|--------------|
-| `/ai-usage` | Track AI token usage and costs | Dashboard: daily/cumulative tokens, costs, energy, CO2 across Claude/Codex/Gemini |
+| `/ai-usage` | Track AI token usage and costs | Dashboard: daily/cumulative tokens, costs, energy, CO2 across Codex/Codex/Gemini |
 
 ### Setup
 
 | Skill | When to Use | What It Does |
 |-------|-------------|--------------|
 | `/setup-automation` | New repo setup | Installs git hooks + GitHub Actions |
-| `/setup-statusline` | Customize status bar | Configures Claude Code statusline |
+| `/setup-statusline` | Customize status bar | Configures Codex statusline |
 | `/garbage-collect` | Review deleted files | Shows garbage/ folder contents for cleanup |
 
 ---
@@ -340,7 +344,7 @@ These cannot be bypassed - enforced by GitHub regardless of local hooks.
 
 ## Related Documentation
 
-- **[CLAUDE.md](CLAUDE.md)** - Core workflow (condensed version)
+- **[CODEX.md](CODEX.md)** - Core workflow (condensed version)
 - **[README.md](README.md)** - Project overview
 - **[README.md](README.md#detailed-setup)** - Setup guide
 - **[ADVANCED.md](ADVANCED.md)** - Customization and multi-agent workflows

@@ -3,12 +3,11 @@
 **Created:** 2026-01-30-16-27
 **Last Updated:** 2026-02-23-00-00
 
-## Sections
-
-- `claude/` - Claude-focused workflow bundle (`claude/README.md`)
-- `codex/` - Codex-focused workflow bundle (`codex/README.md`, `codex/AGENTS.md`, `codex/skills/*/SKILL.md`)
-
 **Build autonomous loops. Ship production-quality software.**
+
+Codex-native layout in this section:
+- `AGENTS.md` for repo instructions
+- `skills/<name>/SKILL.md` for reusable skills
 
 **[Read the blog post](https://spencerburleigh.com/blog/2026/02/13/crosscheck/)** | Codex writes. Peer model reviews. Hooks enforce. You orchestrate.
 
@@ -185,7 +184,7 @@ cd CrossCheck
 ```
 
 This installs:
-- Skills to `~/.codex/commands/` (available in all projects)
+- Skills to `~/.codex/skills/` (available in all projects)
 - Global `CODEX.md` in your projects folder (full workflow)
 - Codex settings with proper permissions
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
@@ -225,7 +224,7 @@ CrossCheck uses a **single source of truth** pattern:
 │   ├── CODEX.md             # Source of truth for workflow
 │   ├── QUICK-REFERENCE.md    # Supporting reference (25 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history)
-│   ├── skill-sources/        # 25 skills (copied to ~/.codex/commands/)
+│   ├── skills/        # 25 skills (copied to ~/.codex/skills/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
@@ -233,7 +232,7 @@ CrossCheck uses a **single source of truth** pattern:
     └── .git/hooks/           # Installed per-project
 ```
 
-**Key insight:** Global CODEX.md = full workflow. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Skills install globally (`~/.codex/commands/`), hooks install per-project.
+**Key insight:** Global CODEX.md = full workflow. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Skills install globally (`~/.codex/skills/`), hooks install per-project.
 
 ### GitHub Branch Protection Setup
 
@@ -303,7 +302,7 @@ git reset HEAD test.txt && rm test.txt
 
 ```bash
 # Check skills installed
-ls ~/.codex/commands/ | wc -l
+ls ~/.codex/skills/ | wc -l
 # Should show: 25 skills
 
 # Start Codex

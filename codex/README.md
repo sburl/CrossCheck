@@ -3,12 +3,11 @@
 **Created:** 2026-01-30-16-27
 **Last Updated:** 2026-02-23-00-00
 
-## Sections
-
-- `claude/` - Claude-focused workflow bundle (`claude/README.md`)
-- `codex/` - Codex-focused workflow bundle (`codex/README.md`, `codex/AGENTS.md`, `codex/skills/*/SKILL.md`)
-
 **Build autonomous loops. Ship production-quality software.**
+
+Codex-native layout in this section:
+- `AGENTS.md` for repo instructions
+- `skills/<name>/SKILL.md` for reusable skills
 
 **[Read the blog post](https://spencerburleigh.com/blog/2026/02/13/crosscheck/)** | Codex writes. Peer model reviews. Hooks enforce. You orchestrate.
 
@@ -185,9 +184,9 @@ cd CrossCheck
 ```
 
 This installs:
-- Skills to `~/.claude/commands/` via symlinks (and `~/.codex/commands/` if present)
-- Global `CLAUDE.md` symlinked in your projects folder (full workflow, updates on `git pull`)
-- Agent settings with proper permissions
+- Skills to `~/.codex/skills/` (available in all projects)
+- Global `CODEX.md` in your projects folder (full workflow)
+- Codex settings with proper permissions
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
 
 ### 3. Enable CrossCheck for Your Project(s)
@@ -203,11 +202,11 @@ cd ../MyApp
 ### 4. Start Building
 
 ```bash
-claude "Build user authentication"
-# Claude creates feature branch, writes code + tests, gets reviewer feedback, ships
+codex "Build user authentication"
+# Codex creates feature branch, writes code + tests, gets reviewer feedback, ships
 ```
 
-**That's it!** All 28 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
+**That's it!** All 25 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
 
 ---
 
@@ -219,22 +218,21 @@ CrossCheck uses a **single source of truth** pattern:
 
 ```
 ~/Documents/Developer/          # Your projects folder
-├── CLAUDE.md                 # Global workflow (symlink → CrossCheck/CLAUDE.md)
+├── CODEX.md                  # Full workflow (copied from CrossCheck)
 │
 ├── CrossCheck/                # 🎯 Source repository
-│   ├── CLAUDE.md            # Source of truth for global workflow
-│   ├── CODEX.md             # Workflow for Codex agent (codex/CODEX.md)
-│   ├── QUICK-REFERENCE.md    # Supporting reference (28 skills, tables)
-│   ├── docs/rules/           # Supporting docs (trust-model, git-history, memory)
-│   ├── skill-sources/        # 28 skills (symlinked to ~/.claude/commands/)
+│   ├── CODEX.md             # Source of truth for workflow
+│   ├── QUICK-REFERENCE.md    # Supporting reference (25 skills, tables)
+│   ├── docs/rules/           # Supporting docs (trust-model, git-history)
+│   ├── skills/        # 25 skills (copied to ~/.codex/skills/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
-    ├── CLAUDE.md (optional) # Project-specific overrides
+    ├── CODEX.md (optional)  # Project-specific overrides
     └── .git/hooks/           # Installed per-project
 ```
 
-**Key insight:** Skills and `CLAUDE.md` are symlinked — `git pull` in CrossCheck updates everything instantly everywhere. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Hooks install per-project.
+**Key insight:** Global CODEX.md = full workflow. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Skills install globally (`~/.codex/skills/`), hooks install per-project.
 
 ### GitHub Branch Protection Setup
 
@@ -304,7 +302,7 @@ git reset HEAD test.txt && rm test.txt
 
 ```bash
 # Check skills installed
-ls ~/.codex/commands/ | wc -l
+ls ~/.codex/skills/ | wc -l
 # Should show: 25 skills
 
 # Start Codex
@@ -360,17 +358,17 @@ The core idea is two AI models from different labs: one writes, one reviews. Thi
 ## Documentation
 
 **Core workflow:**
-- **[CODEX.md](codex/CODEX.md)** - What Codex reads (workflow reference)
+- **[CODEX.md](CODEX.md)** - What Codex reads (workflow reference)
 - **[QUICK-REFERENCE.md](QUICK-REFERENCE.md)** - Complete command tables
-- **[CODEX-PROMPTS.md](CODEX-PROMPTS.md)** - How to invoke Codex
+- **[CODEX-PROMPTS.md](../CODEX-PROMPTS.md)** - How to invoke Codex
 
 **When things break:**
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Debug hooks, CI, permissions
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md#hook-error-reference)** - Hook-specific debugging
 
 **Deep dives:**
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design, data flow
-- **[ADVANCED.md](ADVANCED.md)** - Customization, multi-agent workflows
+- **[ARCHITECTURE.md](../ARCHITECTURE.md)** - System design, data flow
+- **[ADVANCED.md](../ADVANCED.md)** - Customization, multi-agent workflows
 - **[The Full Story](https://spencerburleigh.com/blog/crosscheck)** - Philosophy and story behind CrossCheck
 
 ---

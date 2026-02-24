@@ -1,7 +1,7 @@
 # CrossCheck Troubleshooting Guide
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-24-13-46
+**Last Updated:** 2026-02-23-00-00
 
 When automation fails, debug it here.
 
@@ -260,7 +260,7 @@ When hooks block, run these exact commands:
 Check:
 1. Did Codex run the approval script?
 2. Did the agent send output to the reviewer?
-3. Did the agent wait for the reviewer response?
+3. Did Codex wait for Codex response?
 4. Did Codex actually say "APPROVED"?
 
 Fix: Make commit-msg message more explicit about required steps.
@@ -314,29 +314,29 @@ git commit -m "test: add config"
 
 ```bash
 # Check hook is executable
-ls -la ~/.claude/git-hooks/pre-commit
+ls -la ~/.codex/git-hooks/pre-commit
 # Should see: -rwxr-xr-x (x = executable)
 
 # Make executable if needed
-chmod +x ~/.claude/git-hooks/*
+chmod +x ~/.codex/git-hooks/*
 
 # Check global hooks path
 git config --global core.hooksPath
-# Should see: ~/.claude/git-hooks
+# Should see: ~/.codex/git-hooks
 ```
 
 ## Codex Review Not Logging
 
 ```bash
 # Check log file exists and is writable
-ls -la ~/.claude/codex-commit-reviews.log
+ls -la ~/.codex/codex-commit-reviews.log
 
 # Create if missing
-touch ~/.claude/codex-commit-reviews.log
+touch ~/.codex/codex-commit-reviews.log
 
 # Test manually
-echo "test" >> ~/.claude/codex-commit-reviews.log
-cat ~/.claude/codex-commit-reviews.log
+echo "test" >> ~/.codex/codex-commit-reviews.log
+cat ~/.codex/codex-commit-reviews.log
 ```
 
 ## Pre-Push Keeps Blocking
@@ -371,7 +371,7 @@ git push
 
 ```bash
 # Check post-merge hook is installed
-ls -la ~/.claude/git-hooks/post-merge
+ls -la ~/.codex/git-hooks/post-merge
 # Should see executable hook
 
 # Manually delete local branch
@@ -473,17 +473,17 @@ Skills aren't installed. Install them:
 
 ```bash
 # Copy skills from CrossCheck repo
-cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.claude/commands/
+cp -R ~/Documents/Developer/CrossCheck/codex/skills/* ~/.codex/skills/
 
 # Verify installation
-ls ~/.claude/commands/ | wc -l
-# Should show 27 files (26 skills + INSTALL.md)
+find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
+# Should show 25 skills
 
-# Restart Claude Code
+# Restart Codex
 # Skills should now be available
 ```
 
-See [skill-sources/INSTALL.md](skill-sources/INSTALL.md) for detailed skill installation.
+See [skill-sources/INSTALL.md](../skill-sources/INSTALL.md) for detailed skill installation.
 
 ## Tests Failing After Setup
 
@@ -526,7 +526,7 @@ exit  # or Ctrl+D
 codex  # start new session
 ```
 
-See [CODEX.md](codex/CODEX.md) for context management rules.
+See [CODEX.md](CODEX.md) for context management rules.
 
 ## Worktree Conflicts
 
@@ -556,7 +556,7 @@ git worktree remove path/to/worktree --force
 git worktree add ../different-name branch-name
 ```
 
-See [CODEX.md](codex/CODEX.md) for worktree usage patterns.
+See [CODEX.md](CODEX.md) for worktree usage patterns.
 
 ## CI Checks Always Failing
 
@@ -601,5 +601,5 @@ If troubleshooting doesn't resolve your issue:
 ## Related Documentation
 
 - **[README.md](README.md#detailed-setup)** - Setup guide
-- **[ADVANCED.md](ADVANCED.md)** - Advanced customization and verification
-- **[CODEX.md](codex/CODEX.md)** - Workflow reference
+- **[ADVANCED.md](../ADVANCED.md)** - Advanced customization and verification
+- **[CODEX.md](CODEX.md)** - Workflow reference

@@ -360,15 +360,15 @@ The core idea is two AI models from different labs: one writes, one reviews. Thi
 **Core workflow:**
 - **[CODEX.md](CODEX.md)** - What Codex reads (workflow reference)
 - **[QUICK-REFERENCE.md](QUICK-REFERENCE.md)** - Complete command tables
-- **[CODEX-PROMPTS.md](CODEX-PROMPTS.md)** - How to invoke Codex
+- **[CODEX-PROMPTS.md](../CODEX-PROMPTS.md)** - How to invoke Codex
 
 **When things break:**
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Debug hooks, CI, permissions
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md#hook-error-reference)** - Hook-specific debugging
 
 **Deep dives:**
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System design, data flow
-- **[ADVANCED.md](ADVANCED.md)** - Customization, multi-agent workflows
+- **[ARCHITECTURE.md](../ARCHITECTURE.md)** - System design, data flow
+- **[ADVANCED.md](../ADVANCED.md)** - Customization, multi-agent workflows
 - **[The Full Story](https://spencerburleigh.com/blog/crosscheck)** - Philosophy and story behind CrossCheck
 
 ---

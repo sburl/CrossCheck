@@ -483,7 +483,7 @@ find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
 # Skills should now be available
 ```
 
-See [skills/INSTALL.md](skills/INSTALL.md) for detailed skill installation.
+See [skill-sources/INSTALL.md](../skill-sources/INSTALL.md) for detailed skill installation.
 
 ## Tests Failing After Setup
 
@@ -601,5 +601,5 @@ If troubleshooting doesn't resolve your issue:
 ## Related Documentation
 
 - **[README.md](README.md#detailed-setup)** - Setup guide
-- **[ADVANCED.md](ADVANCED.md)** - Advanced customization and verification
+- **[ADVANCED.md](../ADVANCED.md)** - Advanced customization and verification
 - **[CODEX.md](CODEX.md)** - Workflow reference

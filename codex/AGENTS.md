@@ -10,12 +10,15 @@ Use this section as a Codex-native workspace.
 - Prompt patterns: `codex/CODEX-PROMPTS.md`
 - Skill catalog: `codex/skills/`
 
-## Skills (Codex Format)
+## Skills (Codex Format) — 27 total
 Each skill is a folder with `SKILL.md`.
 
 - `codex/skills/ai-usage/SKILL.md`
 - `codex/skills/bug-review/SKILL.md`
+- `codex/skills/capture-skill/SKILL.md`
+- `codex/skills/cleanup-all/SKILL.md`
 - `codex/skills/cleanup-branches/SKILL.md`
+- `codex/skills/cleanup-stashes/SKILL.md`
 - `codex/skills/cleanup-worktrees/SKILL.md`
 - `codex/skills/codex-delegate/SKILL.md`
 - `codex/skills/commit-smart/SKILL.md`
@@ -26,6 +29,7 @@ Each skill is a folder with `SKILL.md`.
 - `codex/skills/garbage-collect/SKILL.md`
 - `codex/skills/gemini-delegate/SKILL.md`
 - `codex/skills/list-worktrees/SKILL.md`
+- `codex/skills/napkin/SKILL.md`
 - `codex/skills/plan/SKILL.md`
 - `codex/skills/pr-review/SKILL.md`
 - `codex/skills/pre-pr-check/SKILL.md`
@@ -35,6 +39,7 @@ Each skill is a folder with `SKILL.md`.
 - `codex/skills/setup-statusline/SKILL.md`
 - `codex/skills/submit-pr/SKILL.md`
 - `codex/skills/techdebt/SKILL.md`
+- `codex/skills/update-crosscheck/SKILL.md`
 
 ## Skill Usage Rules
 - If a task clearly matches a skill, use that skill.

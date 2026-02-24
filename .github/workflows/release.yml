@@ -36,9 +36,9 @@ jobs:
           fi
 
           if [ -n "$LAST_TAG" ]; then
-            LOG=$(git log "${LAST_TAG}..HEAD" --oneline --no-merges | head -30)
+            LOG=$(git log "${LAST_TAG}..HEAD" --oneline --no-merges --max-count=30)
           else
-            LOG=$(git log --oneline --no-merges | head -30)
+            LOG=$(git log --oneline --no-merges --max-count=30)
           fi
 
           # Write notes to file — avoids shell injection from commit message content

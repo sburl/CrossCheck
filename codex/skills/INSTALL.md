@@ -1,5 +1,8 @@
 # Installing Codex Skills
 
+**Created:** 2026-02-24-14-56
+**Last Updated:** 2026-02-24-14-56
+
 Install all skills from this repo into your Codex home.
 
 ## Install

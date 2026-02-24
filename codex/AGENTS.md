@@ -1,5 +1,8 @@
 # AGENTS.md for `codex/`
 
+**Created:** 2026-02-24-15-00
+**Last Updated:** 2026-02-24-15-00
+
 Use this section as a Codex-native workspace.
 
 ## Core Files

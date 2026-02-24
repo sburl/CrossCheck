@@ -305,7 +305,7 @@ git reset HEAD test.txt && rm test.txt
 ```bash
 # Check skills installed
 ls ~/.codex/commands/ | wc -l
-# Should show: 25 skills
+# Should show: 28 skills
 
 # Start Codex
 codex

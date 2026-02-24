@@ -1,12 +1,12 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-02-24-12-53
 
 ## Sections
 
 - `claude/` - Claude-focused workflow bundle (`claude/README.md`)
-- `codex/` - Codex-focused workflow bundle (`codex/README.md`, `codex/AGENTS.md`, `codex/skills/*/SKILL.md`)
+- `codex/` - Codex-focused workflow bundle (`codex/README.md`, `codex/CODEX.md`, `codex/skills/*/SKILL.md`)
 
 **Build autonomous loops. Ship production-quality software.**
 

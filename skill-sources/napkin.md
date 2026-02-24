@@ -10,8 +10,8 @@ date: 2026-02-24
 source: adapted from https://github.com/blader/napkin by @blader (MIT)
 ---
 
-**Created:** 2026-02-24
-**Last Updated:** 2026-02-24-01-31
+**Created:** 2026-02-24-01-31
+**Last Updated:** 2026-02-24-12-53
 
 # Napkin
 
@@ -38,7 +38,7 @@ Inspired by [napkin](https://github.com/blader/napkin) by [@blader](https://gith
 | Scope | This repo only | Cross-project, user-level |
 | Location | Inside the repo | In `~/.claude/projects/` |
 | Committable | Yes — share with contributors | No — personal |
-| Content | Behavioral corrections ("do X not Y") | Stable patterns, architecturaldecisions |
+| Content | Behavioral corrections ("do X not Y") | Stable patterns, architectural decisions |
 | Format | Categorized, 10-item cap | Semantic topics, 10-item cap |
 
 ---

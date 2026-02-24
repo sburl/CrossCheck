@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-02-24-12-53
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -90,7 +90,7 @@ The holes in each layer are *uncorrelated* because they use different mechanisms
 But here's the key: **Use an agent from a different lab than your developer agent.**
 
 ```
-Claude (OpenAI) writes → Claude (Anthropic) reviews
+Codex (OpenAI) writes → Claude (Anthropic) reviews
 └─ Different training → Different blind spots → Better coverage
 ```
 

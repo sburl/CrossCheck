@@ -1,7 +1,7 @@
 # Claude Code Workflow (Global)
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-24-01-31
+**Last Updated:** 2026-02-24-12-53
 
 *This file is managed by CrossCheck. Do not edit directly — changes will be overwritten
 on the next `/update-crosscheck`. Put personal overrides in `CLAUDE.local.md` instead.*
@@ -29,7 +29,7 @@ Apply it silently — don't announce it, just let it inform your behavior. See `
 
 ## Detailed Workflow
 
-- **Primary workflow:** `CrossCheck/CODEX.md`
+- **Primary workflow:** `CrossCheck/codex/CODEX.md`
 - **Skills reference:** `CrossCheck/QUICK-REFERENCE.md`
 - **Rules:** `CrossCheck/docs/rules/` (trust-model.md, git-history.md, autonomous-sessions.md, memory.md)
 
@@ -61,7 +61,7 @@ These supplement (not replace) this global workflow.
 
 | Situation | Action |
 |-----------|--------|
-| **Detailed workflow** | Read `CrossCheck/CODEX.md` |
+| **Detailed workflow** | Read `CrossCheck/codex/CODEX.md` |
 | **Skill details** | Read `CrossCheck/QUICK-REFERENCE.md` |
 | **Trust model** | Read `CrossCheck/docs/rules/trust-model.md` |
 | **Git history rules** | Read `CrossCheck/docs/rules/git-history.md` |

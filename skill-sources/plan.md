@@ -473,5 +473,6 @@ When you run `/plan`:
 6. Get user approval
 7. `ExitPlanMode` when ready
 8. Proceed with 1-shot implementation
+9. **Verify against intent** — ≥80% match to Success Criteria → `/submit-pr`; <80% → document weaknesses, re-enter `/plan`, trash work, re-implement
 
 **Result:** Higher quality, fewer iterations, clearer thinking.

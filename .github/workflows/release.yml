@@ -22,49 +22,56 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
 
-      - name: Generate changelog
-        id: changelog
+      - name: Generate release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
+          TAG="v${VERSION}"
+
+          # Find the tag to diff from.
+          # If this tag already exists (idempotent re-run), use its parent tag.
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ "$LAST_TAG" = "$TAG" ]; then
+            LAST_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+          fi
+
           if [ -n "$LAST_TAG" ]; then
             LOG=$(git log "${LAST_TAG}..HEAD" --oneline --no-merges | head -30)
           else
             LOG=$(git log --oneline --no-merges | head -30)
           fi
-          {
-            echo "log<<EOF"
-            echo "$LOG"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
 
-      - name: Create release
+          # Write notes to file — avoids shell injection from commit message content
+          {
+            echo "## What's new"
+            echo ""
+            echo "$LOG"
+            echo ""
+            echo "## Update"
+            echo ""
+            echo "If you already have CrossCheck installed:"
+            echo '```'
+            echo '/update-crosscheck'
+            echo '```'
+            echo ""
+            echo "## Fresh install"
+            echo ""
+            echo '```bash'
+            echo 'curl -fsSL https://raw.githubusercontent.com/sburl/CrossCheck/main/scripts/bootstrap-crosscheck.sh | bash'
+            echo '```'
+          } > /tmp/release-notes.md
+
+      - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           TAG="v${VERSION}"
 
-          NOTES="## What's new
-
-          ${{ steps.changelog.outputs.log }}
-
-          ## Update
-
-          If you already have CrossCheck installed:
-          \`\`\`
-          /update-crosscheck
-          \`\`\`
-
-          ## Fresh install
-
-          \`\`\`bash
-          curl -fsSL https://raw.githubusercontent.com/sburl/CrossCheck/main/scripts/bootstrap-crosscheck.sh | bash
-          \`\`\`"
-
           if gh release view "$TAG" &>/dev/null; then
-            gh release edit "$TAG" --title "CrossCheck ${VERSION}" --notes "$NOTES"
+            gh release edit "$TAG" --title "CrossCheck ${VERSION}" --notes-file /tmp/release-notes.md
             echo "Updated existing release $TAG"
           else
-            gh release create "$TAG" --title "CrossCheck ${VERSION}" --notes "$NOTES"
+            gh release create "$TAG" --title "CrossCheck ${VERSION}" --notes-file /tmp/release-notes.md
             echo "Created release $TAG"
           fi

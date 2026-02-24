@@ -14,21 +14,29 @@ templates to their installed locations.
 ## Step 1: Find CrossCheck Installation
 
 ```bash
-CROSSCHECK_DIR=""
-for dir in \
-    "$HOME/.crosscheck" \
-    "$HOME/Developer/CrossCheck" \
-    "$HOME/Documents/Developer/CrossCheck" \
-    "$HOME/Projects/CrossCheck"; do
-    if [ -d "$dir" ] && [ -f "$dir/VERSION" ]; then
-        CROSSCHECK_DIR="$dir"
-        break
-    fi
-done
+# Allow override for non-standard install locations
+if [ -n "${CROSSCHECK_DIR:-}" ] && [ -d "$CROSSCHECK_DIR" ] && [ -f "$CROSSCHECK_DIR/VERSION" ]; then
+    echo "📍 Using CROSSCHECK_DIR from environment: $CROSSCHECK_DIR"
+else
+    CROSSCHECK_DIR=""
+    for dir in \
+        "$HOME/.crosscheck" \
+        "$HOME/Developer/CrossCheck" \
+        "$HOME/Documents/Developer/CrossCheck" \
+        "$HOME/Projects/CrossCheck"; do
+        if [ -d "$dir" ] && [ -f "$dir/VERSION" ]; then
+            CROSSCHECK_DIR="$dir"
+            break
+        fi
+    done
+fi
 
 if [ -z "$CROSSCHECK_DIR" ]; then
     echo "❌ CrossCheck installation not found."
     echo "   Checked: ~/.crosscheck, ~/Developer/CrossCheck, ~/Documents/Developer/CrossCheck"
+    echo ""
+    echo "   If CrossCheck is at a custom path, set the env var and retry:"
+    echo "   export CROSSCHECK_DIR=/path/to/CrossCheck"
     echo ""
     echo "   To install from scratch:"
     echo "   curl -fsSL https://raw.githubusercontent.com/sburl/CrossCheck/main/scripts/bootstrap-crosscheck.sh | bash"
@@ -50,6 +58,14 @@ echo "   Current version: $CURRENT"
 ```bash
 cd "$CROSSCHECK_DIR"
 git fetch origin main --quiet
+
+# Ensure we're on main before pulling — avoids merging into a feature branch
+CURRENT_BRANCH=$(git branch --show-current)
+if [ "$CURRENT_BRANCH" != "main" ]; then
+    echo "   Switching to main branch (was on: $CURRENT_BRANCH)..."
+    git checkout main --quiet
+fi
+
 BEHIND=$(git rev-list HEAD..origin/main --count 2>/dev/null || echo "0")
 
 if [ "$BEHIND" = "0" ]; then

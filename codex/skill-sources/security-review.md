@@ -133,7 +133,7 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
 
 7. **Secrets in AI agent logs (CRITICAL -- often overlooked)**
 
-   Users paste secrets into Codex/Codex conversations. Agents read `.env` files into context. These get persisted in plaintext log files on disk.
+   Users paste secrets into Codex/Claude conversations. Agents read `.env` files into context. These get persisted in plaintext log files on disk.
 
    **Codex conversation logs:**
    ```bash
@@ -616,7 +616,7 @@ scripts/scan-secrets.sh --history
 scripts/scan-secrets.sh --all
 ```
 
-This script uses exact regex patterns for all major providers (OpenAI, Anthropic, Google, AWS, GitHub, Stripe, Slack, etc.) and scans Codex/Codex log files at `~/.codex/projects/`. No false negatives for known key formats.
+This script uses exact regex patterns for all major providers (OpenAI, Anthropic, Google, AWS, GitHub, Stripe, Slack, etc.) and scans Codex/Claude log files at `~/.codex/projects/`. No false negatives for known key formats.
 
 The pre-push hook runs a lightweight version of this on every push. The full script runs as part of the periodic security review.
 

@@ -1,8 +1,8 @@
 #!/bin/bash
-# Helper script: Prepare commit for Claude approval
-# Usage: ./claude-approve-commit.sh
+# Helper script: Prepare commit for Codex approval
+# Usage: ./codex-approve-commit.sh
 
-echo "🔍 Preparing commit summary for Claude review..."
+echo "🔍 Preparing commit summary for Codex review..."
 echo ""
 
 # Get current branch
@@ -30,29 +30,29 @@ Please review for:
 3. Test coverage adequacy
 4. Breaking changes not documented
 
-If approved, respond with 'APPROVED' and I'll commit with 'Claude Approved' in the message.
+If approved, respond with 'APPROVED' and I'll commit with 'Codex Approved' in the message.
 If changes needed, specify what to fix."
 
 # Save to temp file (no .txt suffix — macOS mktemp only randomizes trailing X's)
-temp_file=$(mktemp "${TMPDIR:-/tmp}/claude-review-XXXXXXXX")
+temp_file=$(mktemp "${TMPDIR:-/tmp}/codex-review-XXXXXXXX")
 echo "$prompt" > "$temp_file"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "📋 Claude Review Prompt (copied to clipboard):"
+echo "📋 Codex Review Prompt (copied to clipboard):"
 echo ""
 echo "$prompt"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "Next steps:"
-echo "  1. Paste this prompt to Claude (via your Claude terminal session)"
-echo "  2. Wait for Claude approval"
+echo "  1. Paste this prompt to Codex (via Claude Code terminal)"
+echo "  2. Wait for Codex approval"
 echo "  3. If approved, commit with:"
 echo ""
 echo "     git commit -m \"feat: your description"
 echo ""
-echo "     Claude Approved\""
+echo "     Codex Approved\""
 echo ""
 echo "Prompt saved to: $temp_file"
 echo ""

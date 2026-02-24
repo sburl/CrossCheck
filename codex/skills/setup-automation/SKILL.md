@@ -10,7 +10,7 @@ description: Install all automation for a new repo (git hooks + GitHub Actions)
 
 Installs all automation tools for autonomous operation in the current repo.
 
-## EXECUTION INSTRUCTIONS FOR CLAUDE
+## EXECUTION INSTRUCTIONS FOR CODEX
 
 When this skill is invoked, do the following:
 

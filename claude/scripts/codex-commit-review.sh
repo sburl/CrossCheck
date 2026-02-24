@@ -1,5 +1,5 @@
 #!/bin/bash
-# Claude Post-Commit Review Hook
+# Codex Post-Commit Review Hook
 # Provides quick feedback after each commit
 
 # Allow skipping via environment variable
@@ -26,7 +26,7 @@ if ! echo "$COMMIT_SUBJECT" | grep -qE "^(feat|fix|refactor|test)(\(.*\))?!?:"; 
     exit 0
 fi
 
-# Create prompt for Claude
+# Create prompt for Codex
 PROMPT="Quick commit review - this is a git post-commit hook so keep feedback brief.
 
 Commit: $COMMIT_HASH
@@ -44,8 +44,8 @@ Keep it brief - just flag critical issues. Respond with 'LGTM' if no issues foun
 
 Severity: CRITICAL/HIGH only (skip medium/low for commit hooks)."
 
-# Log review prompt for later (manual Claude review via Claude)
-LOG_FILE="$HOME/.claude/claude-commit-reviews.log"
+# Log review prompt for later (manual Codex review via Claude Code)
+LOG_FILE="$HOME/.claude/codex-commit-reviews.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 # Restrict log permissions — commit messages may inadvertently reference secrets
 # Apply unconditionally to fix existing installs with prior 0644 permissions
@@ -60,8 +60,8 @@ LOG_ENTRY="$(cat <<ENTRY
 === Commit Review Needed: $(date +"%Y-%m-%d %H:%M:%S") ===
 $PROMPT
 
-To review: Copy above prompt and send to Claude via your Claude terminal session
-Or run: tail -F ~/.claude/claude-commit-reviews.log
+To review: Copy above prompt and send to Codex via Claude Code terminal
+Or run: tail -F ~/.claude/codex-commit-reviews.log
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ENTRY
 )"
@@ -71,7 +71,7 @@ ENTRY
 # in POSIX shell. The lock is trap-EXIT protected so only SIGKILL during the
 # <1 second critical section could leave a stale lock. If that happens, the
 # consequence is skipped log entries (not data loss) until the user removes
-# the lock file manually: rm ~/.claude/claude-commit-reviews.log.lock
+# the lock file manually: rm ~/.claude/codex-commit-reviews.log.lock
 acquired=false
 for _try in 1 2 3 4 5; do
     if (set -o noclobber; echo $$ > "$LOCK_FILE") 2>/dev/null; then
@@ -94,11 +94,11 @@ if [ "$acquired" = true ]; then
 else
     # Could not acquire lock after 5 retries — skip this entry to avoid racing
     # with an active rotator (unlocked append can write to stale inode)
-    echo "⚠️  Claude review log busy, entry skipped (will appear in next commit)" >&2
+    echo "⚠️  Codex review log busy, entry skipped (will appear in next commit)" >&2
 fi
 
 if [ "$acquired" = true ]; then
-    echo "📝 Commit logged for Claude review: $LOG_FILE" >&2
+    echo "📝 Commit logged for Codex review: $LOG_FILE" >&2
 fi
 
 exit 0

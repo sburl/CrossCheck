@@ -235,7 +235,7 @@ mv old-file.js garbage/
 |-------|-------------|--------------|
 | `/claude-delegate` | User says "have Claude X" | Injects CLAUDE.md context, runs Claude autonomously |
 | `/gemini-delegate` | User says "have Gemini X" | Injects CLAUDE.md context, runs Gemini autonomously |
-| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Claude + Claude + Gemini |
+| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Claude + Codex + Gemini |
 | `/pr-review` | Manual PR review needed | Standard Claude review handoff workflow |
 | `/repo-assessment` | Every 3 PRs | Comprehensive Claude analysis of repo state |
 | `/security-review` | Every 3 PRs (waterfall) or on demand | Dependency audit, secrets scan, trust model check |
@@ -263,7 +263,7 @@ mv old-file.js garbage/
 
 | Skill | When to Use | What It Does |
 |-------|-------------|--------------|
-| `/ai-usage` | Track AI token usage and costs | Dashboard: daily/cumulative tokens, costs, energy, CO2 across Claude/Claude/Gemini |
+| `/ai-usage` | Track AI token usage and costs | Dashboard: daily/cumulative tokens, costs, energy, CO2 across Claude/Codex/Gemini |
 
 ### Setup
 

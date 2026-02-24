@@ -288,7 +288,7 @@ codex
 # CODEX.md auto-loaded
 # "Build user preferences UI"
 
-# All three Claudes work in parallel
+# All three Codex instances work in parallel
 # Submit 3 PRs by end of day
 # Main branch never touched
 ```

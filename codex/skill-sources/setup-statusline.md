@@ -218,7 +218,7 @@ Tab 4: Bug Fix        | Statusline: 38% | bugfix-login
 **Quick glance tells you:**
 - Which worktree/branch you're in
 - Which sessions need context management
-- Easy to juggle 3-5 Claudes
+- Easy to juggle 3-5 Codex sessions
 
 ### With Color-Coded Terminals
 
@@ -428,4 +428,4 @@ Then integrate with terminal prompt or tmux.
 # Bug Fix
 ```
 
-**Start juggling Claudes like a pro!** 🎯
+**Start juggling Codex sessions like a pro!** 🎯

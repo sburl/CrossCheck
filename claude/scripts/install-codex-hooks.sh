@@ -1,5 +1,5 @@
 #!/bin/bash
-# Simple one-command Claude hooks installer
+# Simple one-command Codex hooks installer
 
 set -e
 
@@ -30,7 +30,7 @@ confirm() {
     fi
 }
 
-echo "🔧 Installing Claude git hooks..."
+echo "🔧 Installing Codex git hooks..."
 
 # Verify CrossCheck source exists
 if [ ! -d "$CROSSCHECK_DIR/git-hooks" ] || [ ! -d "$CROSSCHECK_DIR/scripts" ]; then
@@ -57,7 +57,7 @@ if [ "$INSTALL_MODE" = "global" ]; then
         # Existing hook doesn't have dispatcher logic
         echo "  ⚠️  WARNING: Existing post-commit hook found without .d/ support"
         echo "     Your hook: ~/.claude/git-hooks/post-commit"
-        echo "     Claude review won't run unless you manually integrate it."
+        echo "     Codex review won't run unless you manually integrate it."
         echo ""
         echo "  Options:"
         echo "    1. Backup and replace: mv ~/.claude/git-hooks/post-commit{,.backup}"
@@ -70,26 +70,26 @@ if [ "$INSTALL_MODE" = "global" ]; then
             chmod +x ~/.claude/git-hooks/post-commit
             echo "  ✅ Dispatcher installed (old hook backed up)"
         else
-            echo "  ⚠️  Skipping dispatcher install - Claude review may not work"
+            echo "  ⚠️  Skipping dispatcher install - Codex review may not work"
             echo "     Manual integration required"
         fi
     else
         echo "  ℹ️  Dispatcher already exists: ~/.claude/git-hooks/post-commit"
     fi
 
-    # Copy Claude review hook into post-commit.d/
-    cp "$CROSSCHECK_DIR/scripts/claude-commit-review.sh" ~/.claude/git-hooks/post-commit.d/claude-review
-    chmod +x ~/.claude/git-hooks/post-commit.d/claude-review
+    # Copy Codex review hook into post-commit.d/
+    cp "$CROSSCHECK_DIR/scripts/codex-commit-review.sh" ~/.claude/git-hooks/post-commit.d/codex-review
+    chmod +x ~/.claude/git-hooks/post-commit.d/codex-review
 
     # Set git to use global hooks (if not already set)
     if [ "$(git config --global core.hooksPath)" != "$HOME/.claude/git-hooks" ]; then
         git config --global core.hooksPath ~/.claude/git-hooks
     fi
 
-    echo "✅ Installed globally! All repos will now use Claude hooks."
+    echo "✅ Installed globally! All repos will now use Codex hooks."
     echo "   Dispatcher: ~/.claude/git-hooks/post-commit"
-    echo "   Claude hook: ~/.claude/git-hooks/post-commit.d/claude-review"
-    echo "   To disable: rm ~/.claude/git-hooks/post-commit.d/claude-review"
+    echo "   Codex hook: ~/.claude/git-hooks/post-commit.d/codex-review"
+    echo "   To disable: rm ~/.claude/git-hooks/post-commit.d/codex-review"
 
 elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "📦 Installing for current repo only..."
@@ -128,7 +128,7 @@ elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         # Existing hook doesn't have dispatcher logic
         echo "  ⚠️  WARNING: Existing post-commit hook found without .d/ support"
         echo "     Your hook: $HOOKS_DIR/post-commit"
-        echo "     Claude review won't run unless you manually integrate it."
+        echo "     Codex review won't run unless you manually integrate it."
         echo ""
         echo "  Options:"
         echo "    1. Backup and replace: mv $HOOKS_DIR/post-commit $HOOKS_DIR/post-commit.backup"
@@ -144,34 +144,34 @@ elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
             chmod +x "$HOOKS_DIR/post-commit"
             echo "  ✅ Dispatcher installed (old hook backed up)"
         else
-            echo "  ⚠️  Skipping dispatcher install - Claude review may not work"
+            echo "  ⚠️  Skipping dispatcher install - Codex review may not work"
             echo "     Manual integration required"
         fi
     else
         echo "  ℹ️  Dispatcher already exists: $HOOKS_DIR/post-commit"
     fi
 
-    # Copy Claude review hook into post-commit.d/
-    cp "$CROSSCHECK_DIR/scripts/claude-commit-review.sh" "$HOOKS_DIR/post-commit.d/claude-review"
-    chmod +x "$HOOKS_DIR/post-commit.d/claude-review"
+    # Copy Codex review hook into post-commit.d/
+    cp "$CROSSCHECK_DIR/scripts/codex-commit-review.sh" "$HOOKS_DIR/post-commit.d/codex-review"
+    chmod +x "$HOOKS_DIR/post-commit.d/codex-review"
 
     echo "✅ Installed in $(basename "$(pwd)")!"
     echo "   Dispatcher: $HOOKS_DIR/post-commit"
-    echo "   Claude hook: $HOOKS_DIR/post-commit.d/claude-review"
-    echo "   To disable: rm $HOOKS_DIR/post-commit.d/claude-review"
+    echo "   Codex hook: $HOOKS_DIR/post-commit.d/codex-review"
+    echo "   To disable: rm $HOOKS_DIR/post-commit.d/codex-review"
 
 else
     echo "❌ Error: Not in a git repository and --global flag not provided"
     echo ""
     echo "Usage:"
     echo "  # Install in current repo:"
-    echo "  ~/.crosscheck/scripts/install-claude-hooks.sh"
+    echo "  ~/.crosscheck/scripts/install-codex-hooks.sh"
     echo ""
     echo "  # Install globally for all repos:"
-    echo "  ~/.crosscheck/scripts/install-claude-hooks.sh --global"
+    echo "  ~/.crosscheck/scripts/install-codex-hooks.sh --global"
     exit 1
 fi
 
 echo ""
-echo "📝 View Claude reviews: tail -f ~/.claude/claude-commit-reviews.log"
+echo "📝 View Codex reviews: tail -f ~/.claude/codex-commit-reviews.log"
 echo "🔇 Skip hook once: SKIP_CODEX_REVIEW=1 git commit -m \"message\""

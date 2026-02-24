@@ -236,8 +236,8 @@ mv old-file.js garbage/
 
 | Skill | When to Use | What It Does |
 |-------|-------------|--------------|
-| `/codex-delegate` | User says "have Codex X" | Injects CODEX.md context, runs Codex autonomously |
-| `/gemini-delegate` | User says "have Gemini X" | Injects CODEX.md context, runs Gemini autonomously |
+| `/codex-delegate` | User says "have Codex X" | Injects CLAUDE.md context, runs Codex autonomously |
+| `/gemini-delegate` | User says "have Gemini X" | Injects CLAUDE.md context, runs Gemini autonomously |
 | `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Codex + Claude + Gemini |
 | `/pr-review` | Manual PR review needed | Standard Codex review handoff workflow |
 | `/repo-assessment` | Every 3 PRs | Comprehensive Codex analysis of repo state |

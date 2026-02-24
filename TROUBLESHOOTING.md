@@ -1,7 +1,7 @@
 # CrossCheck Troubleshooting Guide
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-02-24-13-46
 
 When automation fails, debug it here.
 
@@ -260,7 +260,7 @@ When hooks block, run these exact commands:
 Check:
 1. Did Codex run the approval script?
 2. Did the agent send output to the reviewer?
-3. Did Codex wait for Codex response?
+3. Did the agent wait for the reviewer response?
 4. Did Codex actually say "APPROVED"?
 
 Fix: Make commit-msg message more explicit about required steps.
@@ -314,29 +314,29 @@ git commit -m "test: add config"
 
 ```bash
 # Check hook is executable
-ls -la ~/.codex/git-hooks/pre-commit
+ls -la ~/.claude/git-hooks/pre-commit
 # Should see: -rwxr-xr-x (x = executable)
 
 # Make executable if needed
-chmod +x ~/.codex/git-hooks/*
+chmod +x ~/.claude/git-hooks/*
 
 # Check global hooks path
 git config --global core.hooksPath
-# Should see: ~/.codex/git-hooks
+# Should see: ~/.claude/git-hooks
 ```
 
 ## Codex Review Not Logging
 
 ```bash
 # Check log file exists and is writable
-ls -la ~/.codex/codex-commit-reviews.log
+ls -la ~/.claude/codex-commit-reviews.log
 
 # Create if missing
-touch ~/.codex/codex-commit-reviews.log
+touch ~/.claude/codex-commit-reviews.log
 
 # Test manually
-echo "test" >> ~/.codex/codex-commit-reviews.log
-cat ~/.codex/codex-commit-reviews.log
+echo "test" >> ~/.claude/codex-commit-reviews.log
+cat ~/.claude/codex-commit-reviews.log
 ```
 
 ## Pre-Push Keeps Blocking
@@ -371,7 +371,7 @@ git push
 
 ```bash
 # Check post-merge hook is installed
-ls -la ~/.codex/git-hooks/post-merge
+ls -la ~/.claude/git-hooks/post-merge
 # Should see executable hook
 
 # Manually delete local branch
@@ -473,13 +473,13 @@ Skills aren't installed. Install them:
 
 ```bash
 # Copy skills from CrossCheck repo
-cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.codex/commands/
+cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.claude/commands/
 
 # Verify installation
-ls ~/.codex/commands/ | wc -l
-# Should show 26 files (25 skills + INSTALL.md)
+ls ~/.claude/commands/ | wc -l
+# Should show 27 files (26 skills + INSTALL.md)
 
-# Restart Codex
+# Restart Claude Code
 # Skills should now be available
 ```
 

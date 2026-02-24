@@ -1,0 +1,70 @@
+#!/bin/bash
+# Post-commit hook: Checkpoint tracking, long session detection, extensions
+
+# 1. Update PROGRESS.md checkpoint (for autonomous work sessions)
+if [ -f "PROGRESS.md" ]; then
+    if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+        file_count=$(git diff --name-only HEAD~1 HEAD | wc -l)
+    else
+        file_count=$(git diff-tree --no-commit-id --name-only -r HEAD | wc -l)
+    fi
+
+    {
+        echo ""
+        echo "## Checkpoint: $(date '+%Y-%m-%d %H:%M')"
+        echo "**Last commit:** $(git log -1 --oneline)"
+        echo "**Files changed:** $file_count"
+        echo ""
+    } >> PROGRESS.md
+fi
+
+# 2. Long session detection -- remind agent about autonomous session rules
+COUNTER_FILE="$(git rev-parse --git-common-dir)/hooks-session-counter"
+if [ ! -f "$COUNTER_FILE" ]; then
+    echo "0" > "$COUNTER_FILE"
+fi
+
+# Reset counter if last commit was >2 hours ago (new session)
+if [ -f "$COUNTER_FILE" ]; then
+    counter_age=$(($(date +%s) - $(stat -c %Y "$COUNTER_FILE" 2>/dev/null || stat -f %m "$COUNTER_FILE" 2>/dev/null || echo 0)))
+    if [ "$counter_age" -gt 7200 ]; then
+        echo "0" > "$COUNTER_FILE"
+    fi
+fi
+
+session_commits=$(< "$COUNTER_FILE")
+case "$session_commits" in ''|*[!0-9]*) session_commits=0 ;; esac
+session_commits=$((session_commits + 1))
+echo "$session_commits" > "$COUNTER_FILE"
+
+if [ "$session_commits" -eq 5 ]; then
+    echo ""
+    echo "📋 Long session detected (5+ commits). Key rules from docs/rules/autonomous-sessions.md:"
+    echo "   • Update TODO.md every 15 min (status, done, next, blockers)"
+    echo "   • If blocked >10 min: try different approach, then move to next task"
+    echo "   • NEVER spin on same error >3 attempts"
+    echo ""
+fi
+
+# 3. Run additional post-commit hooks from post-commit.d/
+# This allows Claude review and other extensions to plug in without conflicts
+HOOK_DIR="$(dirname "$0")/post-commit.d"
+if [ -d "$HOOK_DIR" ]; then
+    for hook in "$HOOK_DIR"/*; do
+        if [ -x "$hook" ] && [ -f "$hook" ]; then
+            "$hook" || echo "  ⚠️  post-commit extension $(basename "$hook") failed" >&2
+        fi
+    done
+fi
+
+# Legacy: Direct call to claude-commit-review.sh (kept for backwards compatibility)
+# New installs should use post-commit.d/ directory instead
+codex_review=""
+for candidate in \
+    "$HOME/.crosscheck/scripts/claude-commit-review.sh" \
+    "$HOME/.claude/CrossCheck/scripts/claude-commit-review.sh"; do
+    [ -f "$candidate" ] && { codex_review="$candidate"; break; }
+done
+if [ -n "$codex_review" ] && [ ! -d "$HOOK_DIR" ]; then
+    "$codex_review" || true
+fi

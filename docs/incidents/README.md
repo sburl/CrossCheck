@@ -1,5 +1,5 @@
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-02-24-12-53
 
 # Incident Memos
 
@@ -31,8 +31,9 @@ Examples:
 
 ## How it integrates
 
-`/repo-assessment` automatically scans this folder for memos written since the last
-assessment and includes their findings in the Codex analysis prompt. No manual step needed.
+During `/repo-assessment` Step 2, you list memos written since the last assessment,
+read them, and paste relevant content into the Codex prompt. The skill guides you through
+this — it is a manual read step, not automatic.
 
 ## Template
 

@@ -8,7 +8,7 @@ description: |
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-02-24-12-53
 
 # Git Stash Cleanup
 
@@ -136,14 +136,17 @@ descending index order so earlier indices remain valid.
 echo "Stashes to be dropped:"
 echo ""
 
-# === ORPHANED (branch no longer exists) ===
-echo "Orphaned stashes (branch gone):"
-git stash drop stash@{2}   # feat-old-experiment, 43 days ago
+# Drop in DESCENDING index order — indices shift after each drop,
+# so highest N must go first to keep lower indices valid.
 
 # === SUPERSEDED (branch merged to main) ===
-echo ""
 echo "Superseded stashes (branch merged):"
 git stash drop stash@{4}   # feat-auth, 22 days ago
+
+# === ORPHANED (branch no longer exists) ===
+echo ""
+echo "Orphaned stashes (branch gone):"
+git stash drop stash@{2}   # feat-old-experiment, 43 days ago
 
 # === STALE (>14 days) ===
 echo ""

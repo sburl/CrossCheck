@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version — pulls from main, re-syn
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-02-24-12-53
 
 # Update CrossCheck
 
@@ -63,7 +63,11 @@ git fetch origin main --quiet
 CURRENT_BRANCH=$(git branch --show-current)
 if [ "$CURRENT_BRANCH" != "main" ]; then
     echo "   Switching to main branch (was on: $CURRENT_BRANCH)..."
-    git checkout main --quiet
+    git checkout main --quiet || {
+        echo "❌ Failed to switch to main (dirty working tree or conflicts)."
+        echo "   Resolve the issue and retry."
+        exit 1
+    }
 fi
 
 BEHIND=$(git rev-list HEAD..origin/main --count 2>/dev/null || echo "0")

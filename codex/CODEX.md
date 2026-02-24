@@ -56,6 +56,9 @@ If a skill exists for what you're doing, use it. Skills save context and ensure 
 **Setup:**
 `/setup-automation` | `/setup-statusline` | `/garbage-collect`
 
+**Memory:**
+`/napkin` (per-repo behavioral corrections in `.claude/napkin.md`)
+
 **Details on each:** @QUICK-REFERENCE.md
 
 ---
@@ -133,10 +136,13 @@ Each worktree is fully autonomous: own branch, own context, own PR counter. No c
 
 ## Reference
 
+**Session start:** if `.claude/napkin.md` exists in the current repo, read it before doing anything else. Apply it silently.
+
 **On-demand rules (hooks auto-remind, but read proactively when relevant):**
 - **Freedom on branches, main locked down** `docs/rules/trust-model.md` (trust boundaries, zero-trust, two-account model)
 - **Rebasing/squashing history:** `docs/rules/git-history.md` (what to keep vs clean)
 - **Long sessions or Codex review:** `docs/rules/autonomous-sessions.md` (15-min updates, blocked protocol)
+- **Memory curation:** `docs/rules/memory.md` (10-item cap, MEMORY.md vs napkin)
 
 **Assessment waterfall (every 3 PRs):** `/repo-assessment` -> `/bug-review` -> `/security-review`. Run in order. Fix findings from each before starting the next. Triggered by post-merge hook. Lightweight secret + dependency scan on every push.
 

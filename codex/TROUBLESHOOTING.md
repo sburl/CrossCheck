@@ -259,7 +259,7 @@ When hooks block, run these exact commands:
 
 Check:
 1. Did Codex run the approval script?
-2. Did Codex send output to Codex?
+2. Did the agent send output to the reviewer?
 3. Did Codex wait for Codex response?
 4. Did Codex actually say "APPROVED"?
 

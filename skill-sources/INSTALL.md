@@ -67,7 +67,7 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
 - `/capture-skill` - Distill session discoveries into reusable skills (auto-installs to Claude + Codex)
 
 ### Analytics (1)
-- `/ai-usage` - Track token usage, costs, and environmental impact across Codex/Codex/Gemini
+- `/ai-usage` - Track token usage, costs, and environmental impact across Claude/Codex/Gemini
 
 ### Setup (3)
 - `/setup-automation` - Install all automation for new repo

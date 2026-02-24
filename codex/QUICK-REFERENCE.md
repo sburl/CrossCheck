@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-23-01-00
+**Last Updated:** 2026-02-12-12-00
 
 Complete reference tables for daily workflow.
 
@@ -26,15 +26,12 @@ When user requests these tasks, invoke the corresponding skill:
 | "show worktrees" | `/list-worktrees` | List active worktrees |
 | "cleanup worktrees" | `/cleanup-worktrees` | Remove merged worktrees |
 | "delete branches" | `/cleanup-branches` | Safe batch deletion |
-| "cleanup stashes", "review stashes" | `/cleanup-stashes` | Review and drop orphaned/stale stashes |
-| "full cleanup", "cleanup everything" | `/cleanup-all` | Worktrees + branches + stashes in sequence |
 | Modified .md file | `/doc-timestamp` | Update timestamps |
 | "setup automation" | `/setup-automation` | Install hooks + CI |
 | "customize statusline" | `/setup-statusline` | Configure status bar |
 | "do the work", "process tasks" | `/do-work` | Process task queue from do-work/ folder |
 | "cleanup garbage" | `/garbage-collect` | Review /garbage folder |
 | "usage", "tokens", "how much AI", "spending" | `/ai-usage` | Token usage, cost, and impact dashboard |
-| "update crosscheck", "update skills" | `/update-crosscheck` | Pull latest from main, sync skills and agents |
 
 ---
 
@@ -252,8 +249,6 @@ mv old-file.js garbage/
 | `/list-worktrees` | Check active worktrees | Shows all worktrees with status |
 | `/cleanup-worktrees` | Remove old worktrees | Deletes merged/abandoned worktrees |
 | `/cleanup-branches` | Delete old branches | Generates batch script for safe branch deletion |
-| `/cleanup-stashes` | Review stashes | Flags orphaned/superseded/stale stashes, generates drop script |
-| `/cleanup-all` | Full git cleanup | Chains worktrees → branches → stashes with combined summary |
 | `/commit-smart` | User wants commit | Creates good commit message, reviews changes |
 
 ### Development

@@ -1,5 +1,5 @@
-**Created:** YYYY-MM-DD-HH-MM
-**Last Updated:** YYYY-MM-DD-HH-MM
+**Created:** 2026-02-23-00-00
+**Last Updated:** 2026-02-23-00-00
 
 # Incident: [Short Description]
 

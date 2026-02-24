@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            LOG=$(git log "${LAST_TAG}..HEAD" --oneline --no-merges | head -30)
+          else
+            LOG=$(git log --oneline --no-merges | head -30)
+          fi
+          {
+            echo "log<<EOF"
+            echo "$LOG"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+
+          NOTES="## What's new
+
+          ${{ steps.changelog.outputs.log }}
+
+          ## Update
+
+          If you already have CrossCheck installed:
+          \`\`\`
+          /update-crosscheck
+          \`\`\`
+
+          ## Fresh install
+
+          \`\`\`bash
+          curl -fsSL https://raw.githubusercontent.com/sburl/CrossCheck/main/scripts/bootstrap-crosscheck.sh | bash
+          \`\`\`"
+
+          if gh release view "$TAG" &>/dev/null; then
+            gh release edit "$TAG" --title "CrossCheck ${VERSION}" --notes "$NOTES"
+            echo "Updated existing release $TAG"
+          else
+            gh release create "$TAG" --title "CrossCheck ${VERSION}" --notes "$NOTES"
+            echo "Created release $TAG"
+          fi

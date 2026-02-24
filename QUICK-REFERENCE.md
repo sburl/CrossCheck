@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-02-23-01-00
 
 Complete reference tables for daily workflow.
 
@@ -34,6 +34,7 @@ When user requests these tasks, invoke the corresponding skill:
 | "do the work", "process tasks" | `/do-work` | Process task queue from do-work/ folder |
 | "cleanup garbage" | `/garbage-collect` | Review /garbage folder |
 | "usage", "tokens", "how much AI", "spending" | `/ai-usage` | Token usage, cost, and impact dashboard |
+| "update crosscheck", "update skills" | `/update-crosscheck` | Pull latest from main, sync skills and agents |
 
 ---
 

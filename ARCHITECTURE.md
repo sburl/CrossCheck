@@ -1,7 +1,7 @@
 # CrossCheck System Architecture
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-16-00-00
+**Last Updated:** 2026-02-23-00-00
 
 Deep dive into how the multi-agent development system works.
 
@@ -16,13 +16,13 @@ Multi-agent collaboration with continuous quality validation.
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  Phase 1: PLAN                                           │
-│  User + Claude + Coach → Architecture spec               │
+│  User + Codex + Coach → Architecture spec               │
 └────────────────┬─────────────────────────────────────────┘
                  │
                  ▼
 ┌──────────────────────────────────────────────────────────┐
 │  Phase 2: BUILD (Feature Branch)                         │
-│  Claude writes code + tests                              │
+│  Codex writes code + tests                              │
 │  ├─ Commits frequently (no review friction)              │
 │  ├─ Git hooks enforce quality (secrets, timestamps)      │
 │  └─ Tests written alongside code (not after)             │
@@ -51,7 +51,7 @@ Multi-agent collaboration with continuous quality validation.
 │            └─┬───────────────────┬───┘                    │
 │              │ YES               │ NO                      │
 │              ▼                   ▼                         │
-│         Claude Fixes      Codex Approves                  │
+│         Codex Fixes      Codex Approves                  │
 │         (loop back)       "LGTM - merge"                  │
 └──────────────┬──────────────────────────────────────────┘
                │
@@ -79,7 +79,7 @@ Multi-agent collaboration with continuous quality validation.
 ### 1. Separation of Concerns
 
 ```
-Claude (Builder) → Writes code, makes decisions, ships features
+Codex (Builder) → Writes code, makes decisions, ships features
 Codex (Reviewer) → Validates quality, catches bugs, gates merges
 Automation (Enforcer) → Prevents mistakes, enforces standards
 You (Orchestrator) → Set direction, make strategic decisions
@@ -197,14 +197,14 @@ Attempted push to main → GitHub checks:
 ### Skills System
 
 ```
-User request → Claude pattern matches:
+User request → Codex pattern matches:
     ├─ "create PR" → /submit-pr
     ├─ "commit" → /commit-smart
     ├─ "have Codex X" → /codex-delegate
     └─ Complex task → /plan
          ↓
     Skill executes:
-    ├─ Injects context (CLAUDE.md)
+    ├─ Injects context (CODEX.md)
     ├─ Runs pre-checks
     ├─ Performs workflow
     └─ Reports results
@@ -219,17 +219,17 @@ User request → Claude pattern matches:
 ### Feature Development Flow
 
 ```
-1. User → Claude: "Add authentication"
+1. User → Codex: "Add authentication"
          ↓
-2. Claude → /plan skill → Architecture spec
+2. Codex → /plan skill → Architecture spec
          ↓
-3. Claude → Creates feature branch
+3. Codex → Creates feature branch
          ↓
-4. Claude → Writes code + tests (frequent commits)
+4. Codex → Writes code + tests (frequent commits)
          ↓
 5. Pre-commit hook → Validates each commit
          ↓
-6. Claude → /submit-pr skill
+6. Codex → /submit-pr skill
          ↓
 7. /submit-pr → Runs /techdebt, /pre-pr-check
          ↓
@@ -237,7 +237,7 @@ User request → Claude pattern matches:
          ↓
 9. Codex → Reviews PR, provides feedback
          ↓
-10. Claude → Fixes issues, pushes updates
+10. Codex → Fixes issues, pushes updates
          ↓
 11. Loop 9-10 until Codex approves
          ↓
@@ -255,7 +255,7 @@ Post-merge hook → Increments counter
          ↓
 Counter >= 3? → Yes
          ↓
-Claude → /repo-assessment
+Codex → /repo-assessment
          ↓
 Codex → Analyzes last 3 PRs:
     ├─ Common issues
@@ -330,7 +330,7 @@ Before loops:
 ### Horizontal: Multiple Repos
 
 ```
-~/.claude/
+~/.codex/
   ├─ commands/ (skills, loaded at startup)
   ├─ settings.json (global, shared)
   └─ git-hooks/ (global, shared)
@@ -338,7 +338,7 @@ Before loops:
 ~/.crosscheck/ (source of truth, traditional install)
 
 Each repo gets:
-  ├─ CLAUDE.md (repo-specific workflow)
+  ├─ CODEX.md (repo-specific workflow)
   ├─ .github/workflows/ (repo-specific CI)
   └─ Inherits global hooks + settings
 ```
@@ -347,17 +347,17 @@ Each repo gets:
 
 ```
 Solo developer:
-  ├─ One Claude session
+  ├─ One Codex session
   ├─ Codex reviews via terminal
   └─ Manual merge on GitHub
 
 Small team (2-5):
-  ├─ Shared CLAUDE.md
+  ├─ Shared CODEX.md
   ├─ Separate accounts (builder ≠ reviewer)
   └─ Codex reviews via prompt handoff
 
 Larger team (6+):
-  ├─ Repo-specific CLAUDE.md
+  ├─ Repo-specific CODEX.md
   ├─ Dedicated reviewer accounts
   ├─ CI + Bots + Codex (multi-layer)
   └─ Scheduled /repo-assessment
@@ -395,13 +395,13 @@ Larger team (6+):
 
 **1. Multi-Agent PR Review**
 ```
-Claude writes → Commit reviews (Codex)
+Codex writes → Commit reviews (Codex)
               ↓
          PR review layer 1 (Codex)
               ↓
          PR review layer 2 (Gemini)
               ↓
-         PR review layer 3 (Claude Opus)
+         PR review layer 3 (Codex Opus)
               ↓
          Consensus required → Merge
 ```
@@ -410,7 +410,7 @@ Claude writes → Commit reviews (Codex)
 ```
 Codex finds issue → Suggests fix
                   ↓
-             Claude attempts fix
+             Codex attempts fix
                   ↓
              Tests pass? → Auto-commit
                        ↓
@@ -430,10 +430,15 @@ Analyze past PRs → Identify patterns
 
 ---
 
-## Related Documentation
+## Inspirations
 
-- **[README.md](README.md)** - High-level overview
-- **[README.md](README.md#detailed-setup)** - Setup guide
-- **[CLAUDE.md](CLAUDE.md)** - Workflow reference
-- **[ADVANCED.md](ADVANCED.md)** - Customization and multi-agent workflows
-- **[CODEX-PROMPTS.md](CODEX-PROMPTS.md)** - Codex integration
+Projects and ideas that shaped this system:
+
+**[randallb/AAR & Intent Template](https://gist.github.com/randallb/ac0fd027276665c846cf1b13c0218604)**
+A military-style After Action Review framework applied to software projects. Introduced the idea of capturing intent at decision time (not hindsight), and separating decision quality from outcome quality. Influenced: the Intent/Success Criteria/Key Assumptions fields in `/plan` output, and the `docs/incidents/` convention for post-incident retrospectives.
+
+**[randallb — Build Less, Ship More: The Three Pillars](https://randallb.com/p/build-less-ship-more-the-three-pillars)**
+A full "product command" workflow: collaboratively build an INTENT.md, hand it to the agent for autonomous execution, then run an AAR to improve the intent for next time. Introduced two ideas not in the AAR gist: the 80% threshold (≥80% match to intent → ship; <80% → trash the work, fix the intent, re-run), and "weaknesses in intent" as a distinct AAR section separate from factual assumptions. Influenced: Step 6 (Verify Against Intent) in the `/plan` skill, and the "Weaknesses in Intent" section in `docs/incidents/TEMPLATE.md`.
+
+**[blader/taskmaster](https://github.com/blader/taskmaster)**
+A completion enforcement layer for AI coding agents built on the insight that "progress is not completion" — agents have a failure mode where they make partial progress, write a convincing summary, and stop without finishing. Influenced: the "Progress ≠ Completion" principle (#3 in Core Principles in both CODEX.md and CLAUDE.md), and the stop hook that warns about pending do-work tasks and unchecked plan items when a session ends.

@@ -1,0 +1,234 @@
+#!/bin/bash
+# Pre-push hook: Final verification before pushing to remote
+# Addresses: Documentation standards, development markers
+
+set -e
+
+echo "🚀 Running pre-push checks..."
+
+# Get the current branch
+current_branch=$(git branch --show-current)
+
+# Get remote branch name (if it exists)
+# shellcheck disable=SC2016,SC1083  # @{u} is git syntax, not shell variable
+remote_branch=$(git rev-parse --abbrev-ref @{u} 2>/dev/null || echo "origin/$current_branch")
+
+# Check if remote branch actually exists
+if ! git rev-parse --verify "$remote_branch" >/dev/null 2>&1; then
+    # No upstream exists - this is first push
+    echo "ℹ️  No upstream branch found - this appears to be first push"
+    echo "   Using origin/main as diff base for first push"
+    # Fall back to main/master for diff-based checks so first push isn't exempt
+    remote_branch=""
+fi
+
+# Compute a diff base: prefer remote_branch, fall back to main/master for first push
+diff_base="$remote_branch"
+if [ -z "$diff_base" ]; then
+    if git rev-parse --verify origin/main >/dev/null 2>&1; then
+        diff_base="origin/main"
+    elif git rev-parse --verify origin/master >/dev/null 2>&1; then
+        diff_base="origin/master"
+    elif git rev-parse --verify main >/dev/null 2>&1; then
+        diff_base="main"
+    else
+        echo "  ℹ️  No diff base found; skipping diff-based checks"
+    fi
+fi
+
+# 1. Verify ALL tracked markdown files have timestamp metadata
+# This checks existence of Created/Last Updated fields, not freshness.
+# Freshness (date is today) is only checked for edited files in pre-commit.
+# Uses committed content (git show HEAD:file) so unstaged local edits don't cause false blocks.
+echo "  📝 Verifying doc timestamps (all tracked .md files)..."
+missing_timestamps=()
+while IFS= read -r -d '' file; do
+    # Skip symlinks and files not present on disk (sparse checkout)
+    [ -L "$file" ] && continue
+    [ -f "$file" ] || continue
+    committed_content=$(git show "HEAD:$file" 2>/dev/null) || continue
+    if ! echo "$committed_content" | grep -q '^\*\*Last Updated:\*\*' || \
+       ! echo "$committed_content" | grep -q '^\*\*Created:\*\*'; then
+        missing_timestamps+=("$file")
+    fi
+done < <(git ls-files -z -- '*.md')
+
+if [ "${#missing_timestamps[@]}" -gt 0 ]; then
+    echo ""
+    echo "  ❌ Markdown files missing timestamp metadata:"
+    for file in "${missing_timestamps[@]}"; do
+        echo "     - $file"
+    done
+    echo ""
+    echo "  All .md files require **Created:** and **Last Updated:** fields."
+    echo "  The fix script will add timestamps using git history (falls back to"
+    echo "  current date only for files with no git history)."
+    echo ""
+    # Resolve fix script: repo-local first, then CrossCheck well-known paths
+    fix_script=""
+    repo_root=$(git rev-parse --show-toplevel)
+    for candidate in \
+        "$repo_root/scripts/fix-timestamps.sh" \
+        "${CROSSCHECK_DIR:-}/scripts/fix-timestamps.sh" \
+        "$HOME/.crosscheck/scripts/fix-timestamps.sh" \
+        "$HOME/.claude/CrossCheck/scripts/fix-timestamps.sh" \
+        "$HOME/Documents/Developer/CrossCheck/scripts/fix-timestamps.sh"; do
+        if [ -f "$candidate" ]; then
+            fix_script="$candidate"
+            break
+        fi
+    done
+
+    echo "  🤖 Claude: Run this to auto-fix:"
+    echo ""
+    if [ -n "$fix_script" ]; then
+        echo "     bash \"$fix_script\""
+    else
+        echo "     bash \"\$(git rev-parse --show-toplevel)/scripts/fix-timestamps.sh\""
+        echo "     (If not found, check CROSSCHECK_DIR or ~/.crosscheck/)"
+    fi
+    echo ""
+    echo "     Then commit the changes and push again."
+    echo ""
+    echo "  👤 Human: Same command, or manually add to each file:"
+    echo "     **Created:** YYYY-MM-DD-HH-MM"
+    echo "     **Last Updated:** YYYY-MM-DD-HH-MM"
+    echo ""
+    exit 1
+fi
+
+# 2. Check for TODO/FIXME/WIP in committed code (only added content lines, not diff headers)
+if [ -n "$diff_base" ]; then
+    echo "  🔍 Checking for development markers..."
+    # Use ^\+[^+] to exclude diff metadata lines (+++ b/file)
+    # Exception: TODO.md is Claude's session scratchpad filename - allow references to it
+    # Exception: exclude lines that define the pattern we're searching for (meta)
+    marked_lines=$(git diff "${diff_base}..HEAD" 2>/dev/null | grep -E '^\+[^+]' | grep -E '\b(TODO|FIXME|WIP|XXX|HACK)\b' | grep -v 'TODO\.md' | grep -v '(TODO|FIXME' || true)
+    if [ -n "$marked_lines" ]; then
+        echo "  ⚠️  Development markers found (TODO/FIXME/WIP/XXX/HACK)"
+        echo "     Consider removing or documenting these before push"
+        if [ -t 0 ]; then
+            read -p "     Push anyway? (y/N) " -n 1 -r < /dev/tty
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                exit 1
+            fi
+        else
+            echo "     Non-interactive: allowing push (run in terminal to confirm)"
+        fi
+    fi
+fi
+
+# 3. Verify no merge conflicts markers
+if [ -n "$diff_base" ]; then
+    echo "  🔀 Checking for merge conflict markers..."
+    # Match conflict markers at the start of added lines only (right after diff's + prefix)
+    # This avoids false positives on decorative separators like # ============================
+    if git diff "${diff_base}..HEAD" 2>/dev/null | grep -qE '^\+(<{7} |={7}$|>{7} )'; then
+        echo "  ❌ Merge conflict markers found in committed code"
+        echo "     Resolve conflicts before pushing"
+        exit 1
+    fi
+fi
+
+# 4. Pre-PR quality checks (integrates with Claude workflow)
+# Check if pre-checks were run recently (within last hour)
+# Cross-platform hash (md5sum on Linux, md5 on macOS)
+if command -v md5sum >/dev/null 2>&1; then
+    REPO_HASH=$(git rev-parse --show-toplevel | md5sum | cut -d' ' -f1)
+elif command -v md5 >/dev/null 2>&1; then
+    REPO_HASH=$(git rev-parse --show-toplevel | md5 -q)
+else
+    # Fallback: use base64 encoding of path (full hash to avoid collisions)
+    REPO_HASH=$(git rev-parse --show-toplevel | base64 | tr -d '=\n/')
+fi
+CACHE_DIR="$HOME/.cache/CrossCheck"
+mkdir -p "$CACHE_DIR" 2>/dev/null
+PRE_CHECK_MARKER="${CACHE_DIR}/prechecks-${REPO_HASH}-${current_branch}"
+
+echo "  🔍 Checking for pre-PR quality checks..."
+
+# Skip if marker exists and is fresh (within 1 hour)
+if [ -f "$PRE_CHECK_MARKER" ]; then
+    # Try Linux first (stat -c), then macOS (stat -f), then fallback to 0
+    marker_age=$(($(date +%s) - $(stat -c %Y "$PRE_CHECK_MARKER" 2>/dev/null || stat -f %m "$PRE_CHECK_MARKER" 2>/dev/null || echo 0)))
+    if [ "$marker_age" -lt 3600 ]; then
+        echo "  ✅ Pre-checks ran recently (${marker_age}s ago)"
+    else
+        rm -f "$PRE_CHECK_MARKER"
+    fi
+fi
+
+# DESIGN: Only enforce pre-checks when pushing to main/master
+# Feature branches are intentionally free - iterate without friction
+# Quality gates apply at PR merge time, not during feature development
+if [ ! -f "$PRE_CHECK_MARKER" ] && ([ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]); then
+    echo ""
+    echo "  ⛔ BLOCKED: Pre-push quality checks required before pushing to $current_branch"
+    echo ""
+    echo "  🤖 Claude: Run these commands:"
+    echo ""
+    echo "     /techdebt && /pre-pr-check && touch $PRE_CHECK_MARKER && git push"
+    echo ""
+    echo "  📋 What this does:"
+    echo "     1. /techdebt      - Find and eliminate technical debt"
+    echo "     2. /pre-pr-check  - Comprehensive pre-PR checklist"
+    echo "     3. touch marker   - Record that checks passed (valid 1 hour)"
+    echo "     4. git push       - Retry push (will succeed with marker present)"
+    echo ""
+    echo "  👤 If you're human:"
+    echo "     Run checks manually, then: touch $PRE_CHECK_MARKER && git push"
+    echo ""
+    echo "  Note: --no-verify is blocked by permissions (policy enforcement)"
+    echo ""
+    exit 1
+fi
+
+# 5. Lightweight security scan (runs every push)
+echo "  🔒 Running security checks..."
+
+# Dependency audit (npm)
+if [ -f "package-lock.json" ] && command -v npm >/dev/null 2>&1; then
+    audit_output=$(npm audit --audit-level=high --json 2>/dev/null || true)
+    if command -v jq >/dev/null 2>&1; then
+        high_vulns=$(echo "$audit_output" | jq '.metadata.vulnerabilities.high // 0' 2>/dev/null || echo "0")
+        crit_vulns=$(echo "$audit_output" | jq '.metadata.vulnerabilities.critical // 0' 2>/dev/null || echo "0")
+    else
+        high_vulns=$(echo "$audit_output" | grep -o '"high":[0-9]*' | grep -o '[0-9]*' || echo "0")
+        crit_vulns=$(echo "$audit_output" | grep -o '"critical":[0-9]*' | grep -o '[0-9]*' || echo "0")
+    fi
+    if [ "$high_vulns" != "0" ] || [ "$crit_vulns" != "0" ]; then
+        echo "  ⚠️  npm audit: $high_vulns high, $crit_vulns critical vulnerabilities"
+        echo "     Run: npm audit fix"
+    fi
+fi
+
+# Dependency audit (pip)
+if [ -f "requirements.txt" ] && command -v pip-audit >/dev/null 2>&1; then
+    if ! pip-audit --strict --desc 2>/dev/null; then
+        echo "  ⚠️  pip-audit found vulnerabilities. Run: pip-audit --fix"
+    fi
+fi
+
+# Re-scan for secrets in all changes since diff base
+if [ -n "$diff_base" ]; then
+    if git diff "$diff_base"..HEAD | grep -E '^\+[^+]' | grep -qiE '(api_key|apikey|password|secret|token)(\s*[=:]\s*)["\x27]?(sk-|pk-|[a-zA-Z0-9_-]{20,})["\x27]?'; then
+        echo "  ❌ Possible secret detected in changes being pushed"
+        echo "     Review carefully before pushing"
+        exit 1
+    fi
+fi
+
+# 6. Git history reminder (detect rebased or amended commits)
+if [ -n "$diff_base" ]; then
+    # Check if local history diverged from remote (sign of rebase/amend)
+    diverged_commits=$(git log "$diff_base"..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$diverged_commits" -gt 0 ]; then
+        echo "  📝 Pushing $diverged_commits commit(s). Git history rules (docs/rules/git-history.md):"
+        echo "     • Main: NEVER rebase, amend, or force-push"
+        echo "     • Feature branches: keep messy commits (shows real work)"
+        echo "     • Only clean up genuine noise (wip, temp, typos)"
+    fi
+fi
+
+echo "✅ Pre-push checks passed"

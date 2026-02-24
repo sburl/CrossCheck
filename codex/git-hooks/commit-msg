@@ -1,0 +1,102 @@
+#!/bin/bash
+# Commit-msg hook: Enforce conventional commit format
+# Addresses: Consistent commit message format across workflow
+
+commit_msg=$(< "$1")
+
+# Allow merge commits
+if echo "$commit_msg" | head -1 | grep -q "^Merge"; then
+    exit 0
+fi
+
+# Allow revert commits
+if echo "$commit_msg" | head -1 | grep -q "^Revert"; then
+    exit 0
+fi
+
+# Check conventional commit format
+# Format: type(scope)!: description
+if ! echo "$commit_msg" | head -1 | grep -qE '^(feat|fix|refactor|test|docs|chore|style|perf|ci|build|revert)(\([a-zA-Z0-9_-]+\))?!?: .{10,}'; then
+    echo "❌ Commit message must follow conventional commits format"
+    echo ""
+    echo "Format: <type>[(scope)][!]: <description>"
+    echo ""
+    echo "Types: feat, fix, refactor, test, docs, chore, style, perf, ci, build, revert"
+    echo "Scope: optional (ui, api, db, etc.)"
+    echo "!: optional (breaking change marker)"
+    echo "Description: at least 10 characters"
+    echo ""
+    echo "Examples:"
+    echo "  feat: add user authentication"
+    echo "  fix(api): handle null response"
+    echo "  feat!: remove deprecated endpoints"
+    echo "  refactor(core): simplify error handling"
+    echo ""
+    echo "Your message:"
+    printf '  %s\n' "$commit_msg"
+    echo ""
+    echo "Note: --no-verify is blocked by permissions (policy enforcement)"
+    exit 1
+fi
+
+# Warn about breaking changes
+if echo "$commit_msg" | head -1 | grep -q "!:"; then
+    echo "⚠️  Breaking change detected (marked with !)"
+    echo "   Ensure this is documented in commit body"
+fi
+
+# Check for Codex approval when committing code changes to main
+current_branch=$(git branch --show-current 2>/dev/null)
+commit_type=$(echo "$commit_msg" | grep -oE '^[a-z]+' | head -1)
+
+# Require Codex approval for feat/fix/refactor commits to main
+if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
+    if echo "$commit_type" | grep -qE '^(feat|fix|refactor)$'; then
+        if ! echo "$commit_msg" | grep -qi "Codex Approved"; then
+            echo ""
+            echo "⛔ BLOCKED: Codex approval required for $commit_type commits to $current_branch"
+            echo ""
+            echo "🤖 Codex: Follow this workflow (DO NOT skip steps):"
+            echo ""
+            # Resolve CrossCheck path dynamically
+            codex_script=""
+            repo_root=$(git rev-parse --show-toplevel 2>/dev/null)
+            for candidate in \
+                "${repo_root:+$repo_root/scripts/codex-approve-commit.sh}" \
+                "${CROSSCHECK_DIR:-}/scripts/codex-approve-commit.sh" \
+                "$HOME/.crosscheck/scripts/codex-approve-commit.sh" \
+                "$HOME/.claude/CrossCheck/scripts/codex-approve-commit.sh" \
+                "$HOME/Documents/Developer/CrossCheck/scripts/codex-approve-commit.sh"; do
+                [ -n "$candidate" ] && [ -f "$candidate" ] && { codex_script="$candidate"; break; }
+            done
+            echo "   Step 1: Get review prompt"
+            echo "   ${codex_script:-\$(find ~/.crosscheck ~/.claude ~/Documents/Developer -path '*/CrossCheck/scripts/codex-approve-commit.sh' 2>/dev/null | head -1)}"
+            echo ""
+            echo "   Step 2: Send prompt to Codex via terminal"
+            echo "   Copy the output and paste to Codex in your terminal session"
+            echo ""
+            echo "   Step 3: Review Codex feedback"
+            echo "   - If Codex says APPROVED: Proceed to Step 4"
+            echo "   - If Codex requests changes: Fix issues and restart from Step 1"
+            echo "   - Keep iterating with Codex until you get APPROVED"
+            echo ""
+            echo "   Step 4: ONLY after Codex approves, add to commit message:"
+            printf '   git commit -m "%s\n' "$commit_msg"
+            echo ""
+            echo "   Codex Approved\""
+            echo ""
+            echo "   ⚠️  CRITICAL: Do NOT add 'Codex Approved' without actual Codex approval!"
+            echo "   ⚠️  You must see Codex explicitly say 'APPROVED' or 'LGTM'"
+            echo ""
+            echo "👤 If you're human:"
+            echo "   Same process - get actual Codex approval before adding to message"
+            echo ""
+            echo "Note: --no-verify is blocked by permissions (policy enforcement)"
+            exit 1
+        else
+            echo "✅ Codex approval confirmed"
+        fi
+    fi
+fi
+
+echo "✅ Commit message format valid"

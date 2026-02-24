@@ -1,0 +1,98 @@
+#!/bin/bash
+# Post-checkout hook: Clean environment after branch switch
+
+# shellcheck disable=SC2034  # prev_head, new_head used by git hook protocol
+prev_head=$1
+new_head=$2
+branch_checkout=$3
+
+# Only run on branch checkout (not file checkout)
+if [ "$branch_checkout" = "1" ]; then
+    echo "🔄 Branch switched: cleaning up environment"
+
+    # 1. Kill background processes from previous branch
+    # ONLY kill processes running in THIS repo (not globally)
+    repo_path=$(git rev-parse --show-toplevel)
+    echo "  🧹 Killing orphan background processes in $repo_path..."
+
+    # Use lsof to find processes with files open in this repo, then kill them
+    # This ensures we only kill processes for THIS repo, not other repos
+    # Note: lsof +D can be slow on large repos, so we use a timeout
+    if command -v lsof &> /dev/null; then
+        # Find PIDs of test/watch processes with files open in this repo
+        # Use awk to filter by COMMAND column (field 1) to avoid matching file paths
+        # Match common test runners: pytest*, jest*, vitest*, npm, node, python* running tests
+        # Timeout after 5 seconds to avoid blocking checkout on large repos
+        # POSIX-compatible: run lsof in background, kill if it takes too long
+        lsof_out=$(mktemp)
+        lsof +D "$repo_path" > "$lsof_out" 2>/dev/null &
+        lsof_pid=$!
+        # Timer: kill lsof if it takes >5 seconds. If lsof finishes first,
+        # we kill this timer; sleep may briefly orphan but exits on its own.
+        ( sleep 5 && kill "$lsof_pid" 2>/dev/null ) &
+        timer_pid=$!
+        wait "$lsof_pid" 2>/dev/null || true
+        kill "$timer_pid" 2>/dev/null || true
+        wait "$timer_pid" 2>/dev/null || true
+        pids=$(awk 'NR>1 && ($1 ~ /^(pytest|jest|vitest|npm|node|python)/) {print $2}' "$lsof_out" | sort -u || true)
+        rm -f "$lsof_out"
+        if [ -n "$pids" ]; then
+            echo "$pids" | xargs kill 2>/dev/null || true
+            echo "  ✅ Killed repo-specific background processes"
+        fi
+    else
+        # Fallback: Use pkill with full path (less precise but better than global)
+        pkill -f "$repo_path.*pytest" 2>/dev/null || true
+        pkill -f "$repo_path.*jest" 2>/dev/null || true
+        pkill -f "$repo_path.*vitest" 2>/dev/null || true
+        pkill -f "$repo_path.*npm.*test" 2>/dev/null || true
+    fi
+
+    # 2. Clean up tmp files
+    if [ -d ".tmp" ]; then
+        echo "  🗑️  Cleaning .tmp directory..."
+        rm -rf .tmp/* 2>/dev/null || true
+    fi
+
+    # 3. Update TODO.md context (replace header, don't prepend)
+    # Use a lockfile to prevent concurrent worktree checkouts from corrupting TODO.md
+    if [ -f "TODO.md" ]; then
+        current_branch=$(git branch --show-current)
+        echo "  📝 Updating TODO.md branch context..."
+        lockfile="$(git rev-parse --git-common-dir)/todo-md.lock"
+        # No stale lock cleanup — every check-then-delete approach has TOCTOU
+        # races in POSIX shell. The lock is trap-EXIT protected so only SIGKILL
+        # during the <1s critical section could leave a stale lock (manual rm to fix).
+        # Acquire lock (timeout after 5s to avoid blocking checkout)
+        lock_acquired=false
+        for _i in 1 2 3 4 5; do
+            if (set -C; echo $$ > "$lockfile") 2>/dev/null; then
+                lock_acquired=true
+                break
+            fi
+            sleep 1
+        done
+        if [ "$lock_acquired" = true ]; then
+            # Ensure lock is cleaned up on interrupt/crash
+            trap 'rm -f "$lockfile" TODO.md.bak' EXIT INT TERM
+            # Strip any existing branch header lines, then prepend fresh one
+            sed -i.bak '/^## Current Branch:/d; /^[*]*Last switched:[*]*/d' TODO.md
+            # Remove leading blank lines left by stripping
+            sed -i.bak '/./,$!d' TODO.md
+            {
+                echo "## Current Branch: $current_branch"
+                echo "**Last switched:** $(date '+%Y-%m-%d %H:%M')"
+                echo ""
+                cat TODO.md
+            } > TODO.md.tmp
+            mv TODO.md.tmp TODO.md
+            rm -f TODO.md.bak
+            rm -f "$lockfile"
+            trap - EXIT INT TERM
+        else
+            echo "  ⚠️  Skipped TODO.md update (locked by another worktree)"
+        fi
+    fi
+
+    echo "✅ Environment cleaned for new branch"
+fi

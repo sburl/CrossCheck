@@ -74,11 +74,13 @@ fi
 if [ "$INSTALL_MODE" = "multi-project" ]; then
     echo "📝 Step 2: Sync CLAUDE.md to global location..."
 
-    # Always overwrite — CLAUDE.md is managed by CrossCheck, not hand-edited.
-    # Personal overrides belong in CLAUDE.local.md (never overwritten).
-    cp "$CROSSCHECK_DIR/CLAUDE.md" "$PROJECTS_DIR/CLAUDE.md"
-    echo "   ✅ Synced CLAUDE.md to $PROJECTS_DIR/CLAUDE.md"
-    echo "   💡 Personal overrides → CLAUDE.local.md (never overwritten)"
+    # Symlink global CLAUDE.md to CrossCheck source — updates instantly on git pull.
+    # Personal overrides belong in CLAUDE.local.md (never touched by CrossCheck).
+    [ -e "$PROJECTS_DIR/CLAUDE.md" ] || [ -L "$PROJECTS_DIR/CLAUDE.md" ] && rm "$PROJECTS_DIR/CLAUDE.md"
+    ln -sf "$CROSSCHECK_DIR/CLAUDE.md" "$PROJECTS_DIR/CLAUDE.md"
+    echo "   ✅ Symlinked CLAUDE.md → CrossCheck/CLAUDE.md"
+    echo "   💡 Updates instantly on git pull in CrossCheck"
+    echo "   💡 Personal overrides → CLAUDE.local.md"
     echo ""
 fi
 
@@ -114,27 +116,31 @@ else
     echo "   Skipped Codex review hooks"
 fi
 
-# 5. Install skills (commands)
+# 5. Install skills (commands) via symlinks
 echo "📝 Step 5: Install skills..."
 mkdir -p "$HOME/.claude/commands"
-# Load skip list (one skill name per line, e.g. "ai-usage")
 SKIP_FILE="$HOME/.crosscheck/skip-skills"
 if [ -f "$SKIP_FILE" ]; then
-    # Strip comments and blank lines for display
     SKIP_DISPLAY=$(sed 's/#.*//' "$SKIP_FILE" | xargs)
     [ -n "$SKIP_DISPLAY" ] && echo "   Skipping (per ~/.crosscheck/skip-skills): $SKIP_DISPLAY"
 fi
-# Copy skills but exclude INSTALL.md (meta-doc, not a skill) and any in skip list
+LINKED=0
 for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
     skill_name="$(basename "$skill_file" .md)"
     [ "$skill_name" = "INSTALL" ] && continue
     if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
         continue
     fi
-    cp "$skill_file" "$HOME/.claude/commands/"
+    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands"; do
+        [ -d "$TARGET_DIR" ] || continue
+        target="$TARGET_DIR/$skill_name.md"
+        [ -e "$target" ] || [ -L "$target" ] && rm "$target"
+        ln -sf "$skill_file" "$target"
+        LINKED=$((LINKED + 1))
+    done
 done
-skill_count=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
-echo "   ✅ Installed $skill_count skills to ~/.claude/commands/"
+echo "   ✅ Linked $LINKED skill(s) via symlinks"
+echo "   💡 Skills update instantly on git pull in CrossCheck — no re-run needed"
 echo ""
 
 # 6. Install TokenPrint (optional - for /ai-usage skill)
@@ -170,16 +176,22 @@ else
 fi
 echo ""
 
-# 7. Install agents (optional)
+# 7. Install agents via symlinks
 echo "📝 Step 7: Install agents..."
 if [ -d "$CROSSCHECK_DIR/agents" ]; then
-    mkdir -p "$HOME/.claude/agents"
-    if cp -r "$CROSSCHECK_DIR/agents/"* "$HOME/.claude/agents/" 2>/dev/null; then
-        agent_count=$(ls "$HOME/.claude/agents/" 2>/dev/null | wc -l | tr -d ' ')
-        echo "   ✅ Installed $agent_count agents to ~/.claude/agents/"
-    else
-        echo "   ⚠️  Failed to copy agents (check permissions)"
-    fi
+    AGENT_LINKED=0
+    for TARGET_DIR in "$HOME/.claude/agents" "$HOME/.codex/agents"; do
+        mkdir -p "$TARGET_DIR" 2>/dev/null || continue
+        for agent_path in "$CROSSCHECK_DIR/agents/"*; do
+            [ -e "$agent_path" ] || continue
+            agent_name="$(basename "$agent_path")"
+            target="$TARGET_DIR/$agent_name"
+            rm -rf "$target"
+            ln -sf "$agent_path" "$target"
+            AGENT_LINKED=$((AGENT_LINKED + 1))
+        done
+    done
+    echo "   ✅ Linked $AGENT_LINKED agent(s) via symlinks"
 else
     echo "   ⚠️  No agents directory found in $CROSSCHECK_DIR"
 fi
@@ -197,7 +209,7 @@ else
     echo "   • CrossCheck workflow at ~/.crosscheck/"
 fi
 echo "   • Global settings at ~/.claude/settings.json"
-echo "   • Skills at ~/.claude/commands/"
+echo "   • Skills symlinked at ~/.claude/commands/ (live from CrossCheck)"
 echo "   • Git hooks for quality gates (if accepted)"
 echo "   • Codex review hooks (if accepted)"
 if [ -d "$TOKENPRINT_DIR" ] && [ -f "$TOKENPRINT_DIR/tokenprint.py" ]; then

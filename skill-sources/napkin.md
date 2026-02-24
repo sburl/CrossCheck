@@ -6,12 +6,12 @@ description: |
   and surprising gotchas that recur across sessions. Read silently at session start
   if the file exists. Write during work. Curate aggressively. Complement to MEMORY.md
   (which is cross-project and user-scoped); napkin is repo-scoped and committable.
-date: 2026-02-23
+date: 2026-02-24
 source: adapted from https://github.com/blader/napkin by @blader (MIT)
 ---
 
-**Created:** 2026-02-23
-**Last Updated:** 2026-02-23
+**Created:** 2026-02-24
+**Last Updated:** 2026-02-24-01-31
 
 # Napkin
 

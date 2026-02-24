@@ -1,7 +1,7 @@
 # Memory Curation Rules
 
-**Created:** 2026-02-23
-**Last Updated:** 2026-02-23
+**Created:** 2026-02-24
+**Last Updated:** 2026-02-24-01-31
 
 Two memory systems operate in parallel. This file defines the curation rules for both.
 

@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-02-24-13-46
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -90,7 +90,7 @@ The holes in each layer are *uncorrelated* because they use different mechanisms
 But here's the key: **Use an agent from a different lab than your developer agent.**
 
 ```
-Claude (OpenAI) writes → Claude (Anthropic) reviews
+Codex (OpenAI) writes → Claude (Anthropic) reviews
 └─ Different training → Different blind spots → Better coverage
 ```
 
@@ -329,7 +329,7 @@ git push
 - **Git + GitHub CLI** (`gh`)
 - **[TokenPrint](https://github.com/sburl/TokenPrint)** -- AI usage dashboard (installed by bootstrap, optional)
 
-The core idea is two AI models from different labs: one writes, one reviews. This repo ships with Claude + Claude, but the architecture works with any pair. Different training data = different blind spots = better coverage.
+The core idea is two AI models from different labs: one writes, one reviews. This repo ships with Claude + Codex, but the architecture works with any pair. Different training data = different blind spots = better coverage.
 
 ---
 

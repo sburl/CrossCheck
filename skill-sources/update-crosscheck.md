@@ -1,10 +1,10 @@
 ---
 name: update-crosscheck
-description: Update CrossCheck to the latest version — pulls from main, re-syncs skills and agents
+description: Update CrossCheck to the latest version — pulls from main. Skills and agents update instantly via symlinks; new ones get linked automatically.
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-02-24-12-53
+**Last Updated:** 2026-02-24-13-46
 
 # Update CrossCheck
 
@@ -94,44 +94,55 @@ else
 fi
 ```
 
-## Step 5: Sync Skills
+## Step 5: Wire Any New Skills and Agents
 
-Re-copy all skills to agent command directories. Respects the skip list
-at `~/.crosscheck/skip-skills` if present.
+Skills and agents are symlinked to CrossCheck — the git pull already updated
+them in place. This step only needs to create symlinks for files that were
+*added* since the last bootstrap (new symlinks aren't created by git pull).
 
 ```bash
 SKIP_FILE="$HOME/.crosscheck/skip-skills"
-SYNCED=0
+NEW_LINKED=0
 
-for TARGET_DIR in "$HOME/.codex/commands" "$HOME/.claude/commands"; do
-    [ -d "$TARGET_DIR" ] || continue
-    for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
-        skill_name="$(basename "$skill_file" .md)"
-        [ "$skill_name" = "INSTALL" ] && continue
-        if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
-            continue
+# New skills
+for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
+    skill_name="$(basename "$skill_file" .md)"
+    [ "$skill_name" = "INSTALL" ] && continue
+    if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
+        continue
+    fi
+    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands"; do
+        [ -d "$TARGET_DIR" ] || continue
+        target="$TARGET_DIR/$skill_name.md"
+        if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+            ln -sf "$skill_file" "$target"
+            echo "   + New skill linked: $skill_name"
+            NEW_LINKED=$((NEW_LINKED + 1))
         fi
-        cp "$skill_file" "$TARGET_DIR/"
-        SYNCED=$((SYNCED + 1))
     done
 done
 
-[ "$SYNCED" -gt 0 ] && echo "   ✅ Skills synced ($SYNCED files)" || echo "   ⚠️  No skill directories found (~/.codex/commands or ~/.claude/commands)"
-```
-
-## Step 6: Sync Agents
-
-```bash
-if [ -d "$CROSSCHECK_DIR/agents" ]; then
-    for TARGET_DIR in "$HOME/.codex/agents" "$HOME/.claude/agents"; do
+# New agents
+for agent_path in "$CROSSCHECK_DIR/agents/"*; do
+    [ -e "$agent_path" ] || continue
+    agent_name="$(basename "$agent_path")"
+    for TARGET_DIR in "$HOME/.claude/agents" "$HOME/.codex/agents"; do
         [ -d "$TARGET_DIR" ] || continue
-        cp -r "$CROSSCHECK_DIR/agents/"* "$TARGET_DIR/" 2>/dev/null
-        echo "   ✅ Agents synced to $TARGET_DIR"
+        target="$TARGET_DIR/$agent_name"
+        if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+            ln -sf "$agent_path" "$target"
+            echo "   + New agent linked: $agent_name"
+            NEW_LINKED=$((NEW_LINKED + 1))
+        fi
     done
-fi
+done
+
+[ "$NEW_LINKED" -eq 0 ] \
+    && echo "   ✅ All symlinks up to date" \
+    || echo "   ✅ $NEW_LINKED new symlink(s) created"
 ```
 
-## Step 7: Report
+## Step 6: Report
 
 ```bash
 echo ""
@@ -147,10 +158,14 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 ## Notes
 
+- **Skills and agents update instantly** — they're symlinked to CrossCheck, so
+  `git pull` is the update. No re-run needed for existing files; new files get
+  symlinked by Step 5.
+- **CLAUDE.md updates instantly** — symlinked in multi-project mode; git pull
+  propagates changes to all sessions automatically.
 - **Settings are not overwritten.** `~/.codex/settings.json` and `~/.claude/settings.json`
-  are your personal configs. Re-run bootstrap if you want to pick up settings template
-  changes manually.
+  are your personal configs. Re-run bootstrap to pick up settings template changes.
 - **Git hooks are not updated.** If CrossCheck ships hook changes, re-run
   `/setup-automation` in affected repos.
-- **Check the release notes** at `github.com/sburl/CrossCheck/releases` to see if any
-  manual migration steps are needed for breaking changes.
+- **Check the release notes** at `github.com/sburl/CrossCheck/releases` for any
+  manual migration steps needed for breaking changes.

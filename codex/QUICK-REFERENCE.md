@@ -343,5 +343,5 @@ These cannot be bypassed - enforced by GitHub regardless of local hooks.
 - **[CODEX.md](CODEX.md)** - Core workflow (condensed version)
 - **[README.md](README.md)** - Project overview
 - **[README.md](README.md#detailed-setup)** - Setup guide
-- **[ADVANCED.md](ADVANCED.md)** - Customization and multi-agent workflows
+- **[ADVANCED.md](../ADVANCED.md)** - Customization and multi-agent workflows
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - When things break

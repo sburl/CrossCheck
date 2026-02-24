@@ -601,5 +601,5 @@ If troubleshooting doesn't resolve your issue:
 ## Related Documentation
 
 - **[README.md](README.md#detailed-setup)** - Setup guide
-- **[ADVANCED.md](ADVANCED.md)** - Advanced customization and verification
+- **[ADVANCED.md](../ADVANCED.md)** - Advanced customization and verification
 - **[CLAUDE.md](CLAUDE.md)** - Workflow reference

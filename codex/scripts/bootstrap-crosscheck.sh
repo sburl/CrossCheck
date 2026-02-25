@@ -176,7 +176,7 @@ else
     fi
     if prompt_yes_default "   Install TokenPrint (AI usage dashboard)? (Y/n) "; then
         echo "   Cloning TokenPrint..."
-        if git clone https://github.com/sburl/TokenPrint.git "$TOKENPRINT_DIR"; then
+        if git clone --branch main --single-branch https://github.com/sburl/TokenPrint.git "$TOKENPRINT_DIR"; then
             echo "   ✅ TokenPrint installed at $TOKENPRINT_DIR"
         else
             echo "   ⚠️  TokenPrint clone failed (network issue?). /ai-usage requires TokenPrint."

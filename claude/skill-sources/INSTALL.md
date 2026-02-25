@@ -30,7 +30,7 @@ ls ~/.claude/commands/
 mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
 ```
 
-## Available Skills (25 total)
+## Available Skills (27 total)
 
 ### PR Workflow (5)
 - `/submit-pr` - Automated PR submission with checks
@@ -60,13 +60,18 @@ mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/com
 - `/commit-smart` - Atomic Git Commit
 - `/doc-timestamp` - Add/update timestamps in docs
 
-### Analytics (1)
-- `/ai-usage` - Track token usage, costs, and environmental impact across Claude/Claude/Gemini
+### Memory (2)
+- `/napkin` - Per-repo behavioral memory in `.claude/napkin.md` (corrections, gotchas)
+- `/capture-skill` - Extract a non-obvious discovery from this session as a reusable skill
 
-### Setup (3)
+### Analytics (1)
+- `/ai-usage` - Track token usage, costs, and environmental impact across Claude/Codex/Gemini
+
+### Setup (4)
 - `/setup-automation` - Install all automation for new repo
 - `/setup-statusline` - Customize Claude statusline
 - `/garbage-collect` - Manage /garbage folder
+- `/update-crosscheck` - Update CrossCheck to the latest version
 
 ## Opting Out of Skills
 
@@ -123,7 +128,7 @@ git push
 ```
 ~/.claude/
 ├── commands/              ← Active skills (copied from CrossCheck/skill-sources/)
-│   └── *.md              ← 25 skill files
+│   └── *.md              ← 27 skill files
 └── settings.json         ← Global permissions
 
 ~/.crosscheck/                 ← Git repo (source of truth, traditional install)

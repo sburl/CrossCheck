@@ -202,7 +202,7 @@ claude "Build user authentication"
 # Claude creates feature branch, writes code + tests, gets reviewer feedback, ships
 ```
 
-**That's it!** All 25 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
+**That's it!** All 27 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
 
 ---
 
@@ -218,9 +218,9 @@ CrossCheck uses a **single source of truth** pattern:
 │
 ├── CrossCheck/                # 🎯 Source repository
 │   ├── CLAUDE.md             # Source of truth for workflow
-│   ├── QUICK-REFERENCE.md    # Supporting reference (25 skills, tables)
+│   ├── QUICK-REFERENCE.md    # Supporting reference (27 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history)
-│   ├── skill-sources/        # 25 skills (copied to ~/.claude/commands/)
+│   ├── skill-sources/        # 27 skills (symlinked to ~/.claude/commands/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
@@ -299,7 +299,7 @@ git reset HEAD test.txt && rm test.txt
 ```bash
 # Check skills installed
 ls ~/.claude/commands/ | wc -l
-# Should show: 25 skills
+# Should show: 27 skills
 
 # Start Claude
 claude

@@ -37,7 +37,7 @@ The user decides *what* to build and reviews PRs. You do *everything else*. Don'
 
 ---
 
-## Skills (25)
+## Skills (27)
 
 If a skill exists for what you're doing, use it. Skills save context and ensure correctness.
 

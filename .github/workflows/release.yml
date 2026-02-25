@@ -6,16 +6,17 @@ on:
     paths:
       - VERSION
 
-permissions:
-  contents: write
-
 jobs:
   quality-gates:
     name: Quality Gates
+    permissions:
+      contents: read
     uses: ./.github/workflows/quality-gates.yml
 
   release:
     name: Create GitHub Release
+    permissions:
+      contents: write
     needs: quality-gates
     runs-on: ubuntu-latest
     steps:

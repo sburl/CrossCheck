@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-12-12-00
+**Last Updated:** 2026-02-25-00-00
 
 Complete reference tables for daily workflow.
 
@@ -32,6 +32,7 @@ When user requests these tasks, invoke the corresponding skill:
 | "do the work", "process tasks" | `/do-work` | Process task queue from do-work/ folder |
 | "cleanup garbage" | `/garbage-collect` | Review /garbage folder |
 | "usage", "tokens", "how much AI", "spending" | `/ai-usage` | Token usage, cost, and impact dashboard |
+| "setup plugins", "install plugins" | `/setup-plugins` | Opinionated plugin selection with CrossCheck overlap awareness |
 
 ---
 
@@ -271,6 +272,7 @@ mv old-file.js garbage/
 |-------|-------------|--------------|
 | `/setup-automation` | New repo setup | Installs git hooks + GitHub Actions |
 | `/setup-statusline` | Customize status bar | Configures Claude statusline |
+| `/setup-plugins` | Install Claude Code plugins | Registers marketplaces, recommends plugins by tier, detects stack, warns about overlaps |
 | `/garbage-collect` | Review deleted files | Shows garbage/ folder contents for cleanup |
 
 ---

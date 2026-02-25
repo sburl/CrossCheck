@@ -1,6 +1,6 @@
 ---
 name: setup-plugins
-description: Install and configure Codex plugins alongside CrossCheck skills
+description: Install and configure Claude Code plugins alongside CrossCheck skills
 ---
 
 **Created:** 2026-02-25-00-00
@@ -8,7 +8,9 @@ description: Install and configure Codex plugins alongside CrossCheck skills
 
 # Setup Plugins for Codex Workflow
 
-Install Codex plugins from Anthropic marketplaces, with opinionated recommendations that complement CrossCheck skills.
+Install Claude Code plugins from Anthropic marketplaces, with opinionated recommendations that complement CrossCheck skills.
+
+**Note:** Plugins are managed via the `claude` CLI (Claude Code feature). This skill uses `claude plugin` commands regardless of which agent runs it.
 
 ## EXECUTION INSTRUCTIONS FOR CODEX
 
@@ -17,19 +19,19 @@ When this skill is invoked, do the following:
 ### Step 1: Check Marketplace Registration
 
 ```bash
-# Check if marketplaces are already registered
-codex plugin list 2>/dev/null | head -5
+# Check if marketplaces are already registered (uses claude CLI)
+claude plugin list 2>/dev/null | head -5
 ```
 
 If the `plugin` subcommand isn't available or no marketplaces are registered:
 
 ```bash
 # Register the two Anthropic marketplaces
-codex plugin add-marketplace https://marketplace.anthropic.com/plugins
-codex plugin add-marketplace https://marketplace.anthropic.com/community-plugins
+claude plugin marketplace add https://marketplace.anthropic.com/plugins
+claude plugin marketplace add https://marketplace.anthropic.com/community-plugins
 ```
 
-If registration fails, tell the user their Codex version may not support plugins yet and stop.
+If registration fails, tell the user their Claude Code version may not support plugins yet and stop.
 
 ### Step 2: Detect Project Stack
 
@@ -109,7 +111,7 @@ Ask the user: "Install recommended plugins? You can deselect any tier or individ
 For each selected plugin:
 
 ```bash
-codex plugin install <plugin-name>
+claude plugin install <plugin-name>
 ```
 
 Install them one at a time. If any fail, note the failure and continue with the rest.
@@ -118,7 +120,7 @@ Install them one at a time. If any fail, note the failure and continue with the 
 
 ```bash
 # List installed plugins
-codex plugin list
+claude plugin list
 ```
 
 **Tell the user:**
@@ -130,14 +132,14 @@ Installed: [list installed plugins]
 Skipped:   [list skipped plugins with reasons]
 Failed:    [list any failures]
 
-IMPORTANT: Restart Codex for plugins to take effect:
+IMPORTANT: Restart Claude Code for plugins to take effect:
   1. Exit: exit
-  2. Restart: codex
+  2. Restart: claude
 
 Manage plugins anytime:
-  codex plugin list          — See installed plugins
-  codex plugin install <name> — Add a plugin
-  codex plugin remove <name>  — Remove a plugin
+  claude plugin list          — See installed plugins
+  claude plugin install <name> — Add a plugin
+  claude plugin remove <name>  — Remove a plugin
   /setup-plugins              — Re-run this skill
 ```
 
@@ -179,16 +181,16 @@ They complement each other:
 
 ```bash
 # List installed plugins
-codex plugin list
+claude plugin list
 
 # Install a specific plugin
-codex plugin install <plugin-name>
+claude plugin install <plugin-name>
 
 # Remove a plugin
-codex plugin remove <plugin-name>
+claude plugin remove <plugin-name>
 
 # List available marketplaces
-codex plugin list-marketplaces
+claude plugin marketplace list
 
 # Re-run this skill for guided setup
 /setup-plugins

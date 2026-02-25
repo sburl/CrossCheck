@@ -25,8 +25,8 @@ If the `plugin` subcommand isn't available or no marketplaces are registered:
 
 ```bash
 # Register the two Anthropic marketplaces
-claude plugin add-marketplace https://marketplace.anthropic.com/plugins
-claude plugin add-marketplace https://marketplace.anthropic.com/community-plugins
+claude plugin marketplace add https://marketplace.anthropic.com/plugins
+claude plugin marketplace add https://marketplace.anthropic.com/community-plugins
 ```
 
 If registration fails, tell the user their Claude Code version may not support plugins yet and stop.
@@ -189,7 +189,7 @@ claude plugin install <plugin-name>
 claude plugin remove <plugin-name>
 
 # List available marketplaces
-claude plugin list-marketplaces
+claude plugin marketplace list
 
 # Re-run this skill for guided setup
 /setup-plugins

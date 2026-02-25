@@ -272,7 +272,7 @@ mv old-file.js garbage/
 |-------|-------------|--------------|
 | `/setup-automation` | New repo setup | Installs git hooks + GitHub Actions |
 | `/setup-statusline` | Customize status bar | Configures Claude Code statusline |
-| `/setup-plugins` | Install Codex plugins | Registers marketplaces, recommends plugins by tier, detects stack, warns about overlaps |
+| `/setup-plugins` | Install Claude Code plugins | Registers marketplaces, recommends plugins by tier, detects stack, warns about overlaps |
 | `/garbage-collect` | Review deleted files | Shows garbage/ folder contents for cleanup |
 
 ---

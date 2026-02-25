@@ -1,6 +1,7 @@
 {
   "model": "gpt-5-codex",
   "alwaysThinkingEnabled": true,
+  "cleanupPeriodDays": 99999,
 
   "env": {
     "CODEX_EXPERIMENTAL_AGENT_TEAMS": "1"

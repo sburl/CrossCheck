@@ -1,7 +1,7 @@
 # Installing Codex Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-02-25-00-00
 
 This directory contains all custom skill sources for Codex.
 
@@ -33,7 +33,7 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
   cp ~/.crosscheck/skill-sources/*.md ~/.codex/commands/
 ```
 
-## Available Skills (25 total)
+## Available Skills (26 total)
 
 ### PR Workflow (5)
 - `/submit-pr` - Automated PR submission with checks
@@ -69,8 +69,9 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
 ### Analytics (1)
 - `/ai-usage` - Track token usage, costs, and environmental impact across Claude/Codex/Gemini
 
-### Setup (3)
+### Setup (4)
 - `/setup-automation` - Install all automation for new repo
+- `/setup-plugins` - Install Claude Code plugins alongside CrossCheck
 - `/setup-statusline` - Customize Codex statusline
 - `/garbage-collect` - Manage /garbage folder
 
@@ -129,11 +130,11 @@ git push
 ```
 ~/.claude/
 ├── commands/              ← Active skills for Claude Code
-│   └── *.md              ← 25 skill files
+│   └── *.md              ← 26 skill files
 
 ~/.codex/
 ├── commands/              ← Active skills for Codex
-│   └── *.md              ← 25 skill files
+│   └── *.md              ← 26 skill files
 └── settings.json         ← Global permissions
 
 ~/.crosscheck/                 ← Git repo (source of truth, traditional install)

@@ -5,6 +5,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_call:
 
 permissions:
   contents: read
@@ -171,3 +172,51 @@ jobs:
           done
 
           echo "✅ All markdown files have proper timestamps"
+
+  mirror-drift:
+    name: Mirror Drift Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify skill-sources mirror counts match
+        run: |
+          ROOT_COUNT=$(ls skill-sources/*.md 2>/dev/null | grep -cv INSTALL || echo 0)
+          CLAUDE_COUNT=$(ls claude/skill-sources/*.md 2>/dev/null | grep -cv INSTALL || echo 0)
+          CODEX_COUNT=$(ls codex/skill-sources/*.md 2>/dev/null | grep -cv INSTALL || echo 0)
+          CODEX_SKILLS_COUNT=$(find codex/skills -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+
+          echo "Root skill-sources: $ROOT_COUNT"
+          echo "Claude skill-sources: $CLAUDE_COUNT"
+          echo "Codex skill-sources: $CODEX_COUNT"
+          echo "Codex skills dirs: $CODEX_SKILLS_COUNT"
+
+          FAIL=0
+          if [ "$ROOT_COUNT" != "$CLAUDE_COUNT" ]; then
+            echo "❌ FAIL: Root ($ROOT_COUNT) != Claude ($CLAUDE_COUNT) skill-sources count"
+            diff <(ls skill-sources/*.md | xargs -n1 basename | sort) \
+                 <(ls claude/skill-sources/*.md | xargs -n1 basename | sort) || true
+            FAIL=1
+          fi
+          if [ "$ROOT_COUNT" != "$CODEX_COUNT" ]; then
+            echo "❌ FAIL: Root ($ROOT_COUNT) != Codex ($CODEX_COUNT) skill-sources count"
+            diff <(ls skill-sources/*.md | xargs -n1 basename | sort) \
+                 <(ls codex/skill-sources/*.md | xargs -n1 basename | sort) || true
+            FAIL=1
+          fi
+          if [ "$ROOT_COUNT" != "$CODEX_SKILLS_COUNT" ]; then
+            echo "❌ FAIL: Root ($ROOT_COUNT) != Codex skills dirs ($CODEX_SKILLS_COUNT)"
+            diff <(ls skill-sources/*.md | xargs -n1 basename | sed 's/\.md$//' | sort) \
+                 <(find codex/skills -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort) || true
+            FAIL=1
+          fi
+
+          if [ "$FAIL" = "1" ]; then
+            echo ""
+            echo "Mirror directories are out of sync. When adding skills,"
+            echo "update all three: skill-sources/, claude/skill-sources/, codex/skill-sources/"
+            echo "and create codex/skills/<name>/SKILL.md"
+            exit 1
+          fi
+
+          echo "✅ All mirror directories have matching skill counts ($ROOT_COUNT)"

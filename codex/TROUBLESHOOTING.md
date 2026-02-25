@@ -477,7 +477,7 @@ cp -R ~/Documents/Developer/CrossCheck/codex/skills/* ~/.codex/skills/
 
 # Verify installation
 find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
-# Should show 25 skills
+# Should show 27 skills
 
 # Restart Codex
 # Skills should now be available

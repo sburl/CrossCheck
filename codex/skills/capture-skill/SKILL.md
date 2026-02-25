@@ -132,23 +132,23 @@ this skill is relevant. Be specific — these are what enable future retrieval.>
 
 ## Step 4: Install the Skill
 
-Write the file and install it to both Claude and Codex command directories:
+Write the file and install it to both Codex and Claude command directories:
 
 ```bash
 SLUG="<slug>"
-FILE_PATH="$HOME/.claude/commands/${SLUG}.md"
+FILE_PATH="$HOME/.codex/commands/${SLUG}.md"
 
 # Write the skill file (use the content from Step 3)
-# Then install to Codex commands if present
-if [ -d "$HOME/.codex/commands" ]; then
-  cp "$FILE_PATH" "$HOME/.codex/commands/${SLUG}.md"
-  echo "Installed to ~/.codex/commands/${SLUG}.md"
+# Then install to Claude commands if present
+if [ -d "$HOME/.claude/commands" ]; then
+  cp "$FILE_PATH" "$HOME/.claude/commands/${SLUG}.md"
+  echo "Installed to ~/.claude/commands/${SLUG}.md"
 fi
 
-echo "Installed to ~/.claude/commands/${SLUG}.md"
+echo "Installed to ~/.codex/commands/${SLUG}.md"
 echo ""
 echo "The skill will auto-load in future sessions when trigger conditions match."
-echo "To add it to CrossCheck: cp ~/.claude/commands/${SLUG}.md ~/Documents/Developer/CrossCheck/skill-sources/"
+echo "To add it to CrossCheck: cp ~/.codex/commands/${SLUG}.md ~/Documents/Developer/CrossCheck/skill-sources/"
 ```
 
 If `--dry-run` was passed, print the full file content and the install commands but do not

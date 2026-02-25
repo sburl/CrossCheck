@@ -9,7 +9,7 @@ Two memory systems operate in parallel. This file defines the curation rules for
 
 ## System 1: Auto-memory (`MEMORY.md`)
 
-**Location:** `~/.claude/projects/[project]/memory/MEMORY.md`
+**Location:** `~/.codex/memory/MEMORY.md` (Claude Code equivalent: `~/.claude/projects/[project]/memory/MEMORY.md`)
 **Scope:** User-level, cross-project patterns
 **Auto-loaded:** Yes — always injected into session context (truncated at 200 lines)
 
@@ -36,9 +36,9 @@ and consolidate categories.
 
 ---
 
-## System 2: Per-repo Napkin (`.claude/napkin.md`)
+## System 2: Per-repo Napkin (`.codex/napkin.md`)
 
-**Location:** `.claude/napkin.md` inside the repo
+**Location:** `.codex/napkin.md` inside the repo (also checks `.claude/napkin.md` for cross-agent compatibility)
 **Scope:** This repo only — repo-specific behavioral corrections
 **Committable:** Yes. Commit to share with contributors; add to `.gitignore` to keep personal.
 

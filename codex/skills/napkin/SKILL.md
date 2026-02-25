@@ -1,7 +1,7 @@
 ---
 name: napkin
 description: |
-  Per-repo behavioral memory stored in .claude/napkin.md. Use to initialize or
+  Per-repo behavioral memory stored in .codex/napkin.md. Use to initialize or
   update the napkin for any project. Tracks repo-specific mistakes, user corrections,
   and surprising gotchas that recur across sessions. Read silently at session start
   if the file exists. Write during work. Curate aggressively. Complement to MEMORY.md
@@ -107,11 +107,11 @@ Last curated: YYYY-MM-DD
 
 ## Initialization
 
-If `.claude/napkin.md` does not exist, create it:
+If `.codex/napkin.md` does not exist, create it:
 
 ```bash
-mkdir -p .claude
-cat > .claude/napkin.md << 'EOF'
+mkdir -p .codex
+cat > .codex/napkin.md << 'EOF'
 # Napkin — [REPO NAME]
 
 Last curated: YYYY-MM-DD

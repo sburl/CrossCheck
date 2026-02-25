@@ -37,7 +37,7 @@ case "$session_commits" in ''|*[!0-9]*) session_commits=0 ;; esac
 session_commits=$((session_commits + 1))
 echo "$session_commits" > "$COUNTER_FILE"
 
-if [ "$session_commits" -eq 5 ]; then
+if [ "$session_commits" -ge 5 ] && [ "$(( session_commits % 5 ))" -eq 0 ]; then
     echo ""
     echo "📋 Long session detected (5+ commits). Key rules from docs/rules/autonomous-sessions.md:"
     echo "   • Update TODO.md every 15 min (status, done, next, blockers)"

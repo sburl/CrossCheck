@@ -37,7 +37,9 @@ if [ "$branch_checkout" = "1" ]; then
         pids=$(awk 'NR>1 && ($1 ~ /^(pytest|jest|vitest|npm|node|python)/) {print $2}' "$lsof_out" | sort -u || true)
         rm -f "$lsof_out"
         if [ -n "$pids" ]; then
-            echo "$pids" | xargs kill 2>/dev/null || true
+            while IFS= read -r pid; do
+                kill "$pid" 2>/dev/null || true
+            done <<< "$pids"
             echo "  ✅ Killed repo-specific background processes"
         fi
     else
@@ -75,10 +77,12 @@ if [ "$branch_checkout" = "1" ]; then
         if [ "$lock_acquired" = true ]; then
             # Ensure lock is cleaned up on interrupt/crash
             trap 'rm -f "$lockfile" TODO.md.bak' EXIT INT TERM
-            # Strip any existing branch header lines, then prepend fresh one
-            sed -i.bak '/^## Current Branch:/d; /^[*]*Last switched:[*]*/d' TODO.md
-            # Remove leading blank lines left by stripping
-            sed -i.bak '/./,$!d' TODO.md
+            # Strip header lines and leading blank lines in one atomic sed pass
+            sed -i.bak \
+                -e '/^## Current Branch:/d' \
+                -e '/^[*]*Last switched:[*]*/d' \
+                -e '/./,$!d' \
+                TODO.md
             {
                 echo "## Current Branch: $current_branch"
                 echo "**Last switched:** $(date '+%Y-%m-%d %H:%M')"

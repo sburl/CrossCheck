@@ -179,12 +179,19 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Verify skill-sources mirror counts match
+      - name: Verify skill-sources mirrors match by file name
         run: |
-          ROOT_COUNT=$(ls skill-sources/*.md 2>/dev/null | grep -cv INSTALL || echo 0)
-          CLAUDE_COUNT=$(ls claude/skill-sources/*.md 2>/dev/null | grep -cv INSTALL || echo 0)
-          CODEX_COUNT=$(ls codex/skill-sources/*.md 2>/dev/null | grep -cv INSTALL || echo 0)
-          CODEX_SKILLS_COUNT=$(find codex/skills -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+          # Build sorted name lists (exclude INSTALL.md meta-doc)
+          ROOT_LIST=$(find skill-sources -maxdepth 1 -name '*.md' ! -name 'INSTALL.md' -exec basename {} \; 2>/dev/null | sort)
+          CLAUDE_LIST=$(find claude/skill-sources -maxdepth 1 -name '*.md' ! -name 'INSTALL.md' -exec basename {} \; 2>/dev/null | sort)
+          CODEX_LIST=$(find codex/skill-sources -maxdepth 1 -name '*.md' ! -name 'INSTALL.md' -exec basename {} \; 2>/dev/null | sort)
+          CODEX_SKILLS_LIST=$(find codex/skills -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | sort)
+
+          # Derive counts from the lists (handles empty dirs correctly)
+          ROOT_COUNT=$(echo "$ROOT_LIST" | grep -c . || true)
+          CLAUDE_COUNT=$(echo "$CLAUDE_LIST" | grep -c . || true)
+          CODEX_COUNT=$(echo "$CODEX_LIST" | grep -c . || true)
+          CODEX_SKILLS_COUNT=$(echo "$CODEX_SKILLS_LIST" | grep -c . || true)
 
           echo "Root skill-sources: $ROOT_COUNT"
           echo "Claude skill-sources: $CLAUDE_COUNT"
@@ -192,22 +199,26 @@ jobs:
           echo "Codex skills dirs: $CODEX_SKILLS_COUNT"
 
           FAIL=0
-          if [ "$ROOT_COUNT" != "$CLAUDE_COUNT" ]; then
-            echo "❌ FAIL: Root ($ROOT_COUNT) != Claude ($CLAUDE_COUNT) skill-sources count"
-            diff <(ls skill-sources/*.md | xargs -n1 basename | sort) \
-                 <(ls claude/skill-sources/*.md | xargs -n1 basename | sort) || true
+
+          # Compare file names (not just counts) between root and claude
+          if ! diff -q <(echo "$ROOT_LIST") <(echo "$CLAUDE_LIST") >/dev/null 2>&1; then
+            echo "❌ FAIL: Root and Claude skill-sources differ:"
+            diff <(echo "$ROOT_LIST") <(echo "$CLAUDE_LIST") || true
             FAIL=1
           fi
-          if [ "$ROOT_COUNT" != "$CODEX_COUNT" ]; then
-            echo "❌ FAIL: Root ($ROOT_COUNT) != Codex ($CODEX_COUNT) skill-sources count"
-            diff <(ls skill-sources/*.md | xargs -n1 basename | sort) \
-                 <(ls codex/skill-sources/*.md | xargs -n1 basename | sort) || true
+
+          # Compare file names between root and codex
+          if ! diff -q <(echo "$ROOT_LIST") <(echo "$CODEX_LIST") >/dev/null 2>&1; then
+            echo "❌ FAIL: Root and Codex skill-sources differ:"
+            diff <(echo "$ROOT_LIST") <(echo "$CODEX_LIST") || true
             FAIL=1
           fi
-          if [ "$ROOT_COUNT" != "$CODEX_SKILLS_COUNT" ]; then
-            echo "❌ FAIL: Root ($ROOT_COUNT) != Codex skills dirs ($CODEX_SKILLS_COUNT)"
-            diff <(ls skill-sources/*.md | xargs -n1 basename | sed 's/\.md$//' | sort) \
-                 <(find codex/skills -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort) || true
+
+          # Compare skill names between root .md files and codex/skills/ dirs
+          ROOT_NAMES=$(echo "$ROOT_LIST" | sed 's/\.md$//')
+          if ! diff -q <(echo "$ROOT_NAMES") <(echo "$CODEX_SKILLS_LIST") >/dev/null 2>&1; then
+            echo "❌ FAIL: Root skill-sources and Codex skills dirs differ:"
+            diff <(echo "$ROOT_NAMES") <(echo "$CODEX_SKILLS_LIST") || true
             FAIL=1
           fi
 
@@ -219,4 +230,4 @@ jobs:
             exit 1
           fi
 
-          echo "✅ All mirror directories have matching skill counts ($ROOT_COUNT)"
+          echo "✅ All mirror directories match ($ROOT_COUNT skills)"

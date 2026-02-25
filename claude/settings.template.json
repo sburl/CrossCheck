@@ -1,6 +1,7 @@
 {
   "model": "sonnet",
   "alwaysThinkingEnabled": true,
+  "cleanupPeriodDays": 99999,
 
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"

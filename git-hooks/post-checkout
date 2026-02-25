@@ -76,7 +76,7 @@ if [ "$branch_checkout" = "1" ]; then
         done
         if [ "$lock_acquired" = true ]; then
             # Ensure lock is cleaned up on interrupt/crash
-            trap 'rm -f "$lockfile" TODO.md.bak' EXIT INT TERM
+            trap 'rm -f "$lockfile" TODO.md.bak TODO.md.tmp' EXIT INT TERM
             # Strip header lines and leading blank lines in one atomic sed pass
             sed -i.bak \
                 -e '/^## Current Branch:/d' \

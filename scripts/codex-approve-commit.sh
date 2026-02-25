@@ -35,6 +35,7 @@ If changes needed, specify what to fix."
 
 # Save to temp file (no .txt suffix — macOS mktemp only randomizes trailing X's)
 temp_file=$(mktemp "${TMPDIR:-/tmp}/codex-review-XXXXXXXX")
+trap 'rm -f "$temp_file"' EXIT INT TERM
 echo "$prompt" > "$temp_file"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

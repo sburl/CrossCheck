@@ -2,6 +2,11 @@
 # Commit-msg hook: Enforce conventional commit format
 # Addresses: Consistent commit message format across workflow
 
+if [ ! -f "$1" ] || [ ! -r "$1" ]; then
+    echo "❌ commit-msg hook: cannot read commit message from $1"
+    exit 1
+fi
+
 commit_msg=$(< "$1")
 
 # Allow merge commits

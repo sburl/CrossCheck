@@ -305,6 +305,344 @@ test_revert_commit_passes
 echo ""
 
 # ============================================================
+# Pre-commit: Provider-specific token detection
+# ============================================================
+echo "📋 Category: Pre-commit provider-specific tokens"
+echo ""
+
+test_provider_token_blocks() {
+    setup_test_repo "provider-token"
+    # Use a GitHub PAT pattern with a non-keyword variable name
+    # so only the provider-specific check catches it (not the generic secret check)
+    local token_prefix="ghp_" token_body="abcdefghijklmnopqrstuvwxyz1234567890"
+    echo "SETTING=${token_prefix}${token_body}" > config.txt
+    git add config.txt
+    if git commit -m "feat: add config template file" -q 2>&1; then
+        fail "Committing provider-specific token should be blocked"
+    else
+        pass "Provider-specific token (GitHub PAT) blocks commit"
+    fi
+}
+
+test_provider_token_blocks
+echo ""
+
+# ============================================================
+# Post-commit: Checkpoint and session tracking
+# ============================================================
+echo "📋 Category: Post-commit checkpoint and session tracking"
+echo ""
+
+test_progress_checkpoint_created() {
+    setup_test_repo "progress-checkpoint"
+    cp "$CROSSCHECK_DIR/git-hooks/post-commit" ".git/hooks/post-commit"
+    chmod +x ".git/hooks/post-commit"
+
+    # Create PROGRESS.md and commit it (no-verify to skip hooks for setup)
+    echo "# Progress" > PROGRESS.md
+    git add PROGRESS.md
+    git commit -m "chore: add progress tracking file" -q --no-verify
+
+    # Now make a real commit that triggers post-commit hook
+    echo "change" > data.txt
+    git add data.txt
+    git commit -m "feat: add data file for testing" -q 2>&1 || true
+
+    if grep -q "## Checkpoint:" PROGRESS.md; then
+        pass "PROGRESS.md checkpoint created after commit"
+    else
+        fail "PROGRESS.md should have checkpoint after commit"
+    fi
+}
+
+test_session_counter_incremented() {
+    setup_test_repo "session-counter"
+    cp "$CROSSCHECK_DIR/git-hooks/post-commit" ".git/hooks/post-commit"
+    chmod +x ".git/hooks/post-commit"
+
+    echo "change" > data.txt
+    git add data.txt
+    git commit -m "feat: add data file for testing" -q 2>&1 || true
+
+    counter_file=".git/hooks-session-counter"
+    if [ -f "$counter_file" ] && [ "$(cat "$counter_file")" -ge 1 ]; then
+        pass "Session counter incremented after commit"
+    else
+        fail "Session counter should be >= 1 after commit"
+    fi
+}
+
+test_session_reminder_at_five() {
+    setup_test_repo "session-reminder"
+    cp "$CROSSCHECK_DIR/git-hooks/post-commit" ".git/hooks/post-commit"
+    chmod +x ".git/hooks/post-commit"
+
+    # Pre-set counter to 4 so next commit triggers reminder at 5
+    echo "4" > ".git/hooks-session-counter"
+
+    echo "change5" > data.txt
+    git add data.txt
+    output=$(git commit -m "feat: trigger session reminder now" 2>&1) || true
+
+    if echo "$output" | grep -q "Long session detected"; then
+        pass "Session reminder shown at 5 commits"
+    else
+        fail "Session reminder should appear at 5 commits"
+    fi
+}
+
+test_progress_checkpoint_created
+test_session_counter_incremented
+test_session_reminder_at_five
+echo ""
+
+# ============================================================
+# Pre-push: Secret detection and branch rules
+# ============================================================
+echo "📋 Category: Pre-push secret detection"
+echo ""
+
+setup_test_repo_with_remote() {
+    local name="$1"
+    TEST_DIR="/tmp/hook-behavior-test-$name-$$"
+    local REMOTE_DIR="/tmp/hook-behavior-test-${name}-remote-$$"
+    rm -rf "$TEST_DIR" "$REMOTE_DIR" 2>/dev/null || true
+
+    # Create bare remote
+    mkdir -p "$REMOTE_DIR"
+    cd "$REMOTE_DIR"
+    git init -q --bare
+
+    # Create local repo
+    mkdir -p "$TEST_DIR"
+    cd "$TEST_DIR"
+    git init -q
+    git symbolic-ref HEAD refs/heads/main
+    git config user.email "test@test.com"
+    git config user.name "Test"
+    git remote add origin "$REMOTE_DIR"
+
+    # Install commit hooks only (pre-push installed AFTER initial push to avoid
+    # the pre-check gate that blocks pushes to main without /techdebt marker)
+    mkdir -p .git/hooks
+    for hook in pre-commit commit-msg; do
+        cp "$CROSSCHECK_DIR/git-hooks/$hook" ".git/hooks/$hook"
+        chmod +x ".git/hooks/$hook"
+    done
+
+    # Initial commit and push (no pre-push hook yet)
+    # Include timestamps in README.md to satisfy pre-push timestamp check
+    cat > README.md << 'READMEEOF'
+# Test
+
+**Created:** 2026-01-01-00-00
+**Last Updated:** 2026-01-01-00-00
+READMEEOF
+    git add README.md
+    git commit -m "chore: initial commit" -q --no-verify
+    git push -u origin main -q 2>/dev/null
+
+    # NOW install pre-push hook (after initial main push)
+    cp "$CROSSCHECK_DIR/git-hooks/pre-push" ".git/hooks/pre-push"
+    chmod +x ".git/hooks/pre-push"
+
+    # Switch to feature branch
+    git checkout -q -b feat/test
+}
+
+test_prepush_secret_rescan_blocks() {
+    setup_test_repo_with_remote "prepush-secret"
+
+    # Build secret from parts to avoid triggering repo's own hooks
+    local key_name="api_key" key_val="sk-proj-abcdefghijklmnopqrstuvwx"
+    echo "$key_name = \"$key_val\"" > secret.py
+    git add secret.py
+    git commit -m "feat: add config file with key" -q --no-verify
+
+    if git push origin feat/test 2>&1; then
+        fail "Pushing secret should be blocked by pre-push"
+    else
+        pass "Pre-push secret re-scan blocks push"
+    fi
+}
+
+test_prepush_feature_branch_allowed() {
+    setup_test_repo_with_remote "prepush-clean"
+
+    echo "clean code" > app.py
+    git add app.py
+    git commit -m "feat: add clean application code" -q --no-verify
+
+    if git push origin feat/test 2>&1; then
+        pass "Clean feature branch push allowed"
+    else
+        fail "Clean feature branch push should be allowed"
+    fi
+}
+
+test_prepush_provider_token_blocks() {
+    setup_test_repo_with_remote "prepush-provider"
+
+    # Use a GitHub PAT pattern with a non-keyword variable name
+    # to ensure only the provider-specific check catches it (not the generic secret check)
+    local token_prefix="ghp_" token_body="abcdefghijklmnopqrstuvwxyz1234567890"
+    echo "SETTING=${token_prefix}${token_body}" > config.txt
+    git add config.txt
+    git commit -m "feat: add config template file" -q --no-verify
+
+    if git push origin feat/test 2>&1; then
+        fail "Pushing provider-specific token should be blocked"
+    else
+        pass "Pre-push blocks provider-specific token (GitHub PAT)"
+    fi
+}
+
+test_prepush_secret_rescan_blocks
+test_prepush_feature_branch_allowed
+test_prepush_provider_token_blocks
+echo ""
+
+# ============================================================
+# Post-checkout: Environment cleanup and TODO.md
+# ============================================================
+echo "📋 Category: Post-checkout environment cleanup"
+echo ""
+
+test_postcheckout_todo_branch_header() {
+    setup_test_repo "checkout-todo"
+    cp "$CROSSCHECK_DIR/git-hooks/post-checkout" ".git/hooks/post-checkout"
+    chmod +x ".git/hooks/post-checkout"
+
+    # Create TODO.md on the feature branch
+    echo "# TODO" > TODO.md
+    echo "- Task 1" >> TODO.md
+    git add TODO.md
+    git commit -m "chore: add todo file for testing" -q --no-verify
+
+    # Switch to a new branch (triggers post-checkout)
+    git checkout -q -b feat/other 2>&1 || true
+
+    if grep -q "## Current Branch: feat/other" TODO.md; then
+        pass "TODO.md branch header updated on checkout"
+    else
+        fail "TODO.md should have branch header after checkout"
+    fi
+}
+
+test_postcheckout_cleanup_runs() {
+    setup_test_repo "checkout-cleanup"
+    cp "$CROSSCHECK_DIR/git-hooks/post-checkout" ".git/hooks/post-checkout"
+    chmod +x ".git/hooks/post-checkout"
+
+    # Switch branches and check that the hook runs (check output)
+    output=$(git checkout -q -b feat/cleanup-test 2>&1) || true
+
+    if echo "$output" | grep -q "Branch switched"; then
+        pass "Post-checkout hook runs on branch switch"
+    else
+        fail "Post-checkout hook should run on branch switch"
+    fi
+}
+
+test_postcheckout_todo_branch_header
+test_postcheckout_cleanup_runs
+echo ""
+
+# ============================================================
+# Post-merge: PR counter and waterfall reminder
+# ============================================================
+echo "📋 Category: Post-merge PR counter and waterfall"
+echo ""
+
+test_postmerge_pr_counter_incremented() {
+    local name="postmerge-counter"
+    TEST_DIR="/tmp/hook-behavior-test-$name-$$"
+    rm -rf "$TEST_DIR" 2>/dev/null || true
+    mkdir -p "$TEST_DIR"
+    cd "$TEST_DIR"
+    git init -q
+    git symbolic-ref HEAD refs/heads/main
+    git config user.email "test@test.com"
+    git config user.name "Test"
+
+    mkdir -p .git/hooks
+    cp "$CROSSCHECK_DIR/git-hooks/post-merge" ".git/hooks/post-merge"
+    chmod +x ".git/hooks/post-merge"
+
+    # Initial commit on main
+    echo "initial" > README.md
+    git add README.md
+    git commit -m "chore: initial commit" -q --no-verify
+
+    # Create and commit on feature branch
+    git checkout -q -b feat/merge-test
+    echo "feature" > feature.txt
+    git add feature.txt
+    git commit -m "feat: add feature for merge" -q --no-verify
+
+    # Merge into main (diverge first to force true merge)
+    git checkout -q main
+    echo "main diverge" > diverge.txt
+    git add diverge.txt
+    git commit -m "chore: diverge main for merge" -q --no-verify
+    git merge feat/merge-test --no-edit -q 2>&1 || true
+
+    counter_file=".git/hooks-pr-counter"
+    if [ -f "$counter_file" ] && [ "$(cat "$counter_file")" -ge 1 ]; then
+        pass "PR counter incremented after merge"
+    else
+        fail "PR counter should be >= 1 after merge"
+    fi
+}
+
+test_postmerge_waterfall_reminder() {
+    local name="postmerge-waterfall"
+    TEST_DIR="/tmp/hook-behavior-test-$name-$$"
+    rm -rf "$TEST_DIR" 2>/dev/null || true
+    mkdir -p "$TEST_DIR"
+    cd "$TEST_DIR"
+    git init -q
+    git symbolic-ref HEAD refs/heads/main
+    git config user.email "test@test.com"
+    git config user.name "Test"
+
+    mkdir -p .git/hooks
+    cp "$CROSSCHECK_DIR/git-hooks/post-merge" ".git/hooks/post-merge"
+    chmod +x ".git/hooks/post-merge"
+
+    # Initial commit on main
+    echo "initial" > README.md
+    git add README.md
+    git commit -m "chore: initial commit" -q --no-verify
+
+    # Pre-set PR counter to 2 so next merge triggers reminder at 3
+    echo "2" > ".git/hooks-pr-counter"
+
+    # Create and commit on feature branch
+    git checkout -q -b feat/waterfall-test
+    echo "feature" > feature.txt
+    git add feature.txt
+    git commit -m "feat: add feature for waterfall" -q --no-verify
+
+    # Merge into main
+    git checkout -q main
+    echo "main diverge" > diverge.txt
+    git add diverge.txt
+    git commit -m "chore: diverge main for merge" -q --no-verify
+    output=$(git merge feat/waterfall-test --no-edit 2>&1) || true
+
+    if echo "$output" | grep -q "Assessment waterfall due"; then
+        pass "Waterfall reminder shown at 3 PR merges"
+    else
+        fail "Waterfall reminder should appear at 3 PR merges"
+    fi
+}
+
+test_postmerge_pr_counter_incremented
+test_postmerge_waterfall_reminder
+echo ""
+
+# ============================================================
 # Summary
 # ============================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

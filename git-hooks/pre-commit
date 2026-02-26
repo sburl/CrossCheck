@@ -6,6 +6,11 @@ set -e
 
 echo "🔍 Running pre-commit checks..."
 
+# Cache git diff output (avoids repeated process forks)
+CACHED_DIFF_CONTENT=$(git diff --cached -p)
+CACHED_NAMES=$(git diff --cached --name-only)
+CACHED_NAMES_ACM=$(git diff --cached --name-only --diff-filter=ACM)
+
 # 1. Doc timestamp verification (addresses recurring lag issue)
 # Canonical format: **Last Updated:** YYYY-MM-DD-HH-MM (matches doc-timestamp skill)
 echo "  📝 Checking doc timestamps..."
@@ -18,10 +23,10 @@ while IFS= read -r -d '' file; do
         echo "     Skipping check (warning only)"
         # Don't block, just warn
     fi
-done < <(git diff --cached --name-only --diff-filter=ACM -z | grep -z '\.md$')
+done < <(printf '%s\n' "$CACHED_NAMES_ACM" | grep '\.md$' | tr '\n' '\0')
 
 # 2. Protect user-content/ directory (human-only zone)
-if git diff --cached --name-only | grep -q '^user-content/'; then
+if echo "$CACHED_NAMES" | grep -q '^user-content/'; then
     echo "  ❌ Files in user-content/ directory are being committed"
     echo "     user-content/ is a human-only zone - agents must never modify it"
     echo "     If YOU (the human) made these changes intentionally:"
@@ -33,7 +38,7 @@ fi
 echo "  🔒 Checking for secrets..."
 
 # Check for common API key patterns (only in added lines, not deletions)
-if git diff --cached | grep -E '^\+[^+]' | grep -qiE '(api_key|apikey|password|secret|token|aws_access|private_key|bearer|auth|credential)(\s*[=:]\s*)['"'"'"]?(sk-|pk-|[a-zA-Z0-9_-]{20,})['"'"'"]?'; then
+if echo "$CACHED_DIFF_CONTENT" | grep -E '^\+[^+]' | grep -qiE '(api_key|apikey|password|secret|token|aws_access|private_key|bearer|auth|credential)(\s*[=:]\s*)['"'"'"]?(sk-|pk-|[a-zA-Z0-9_-]{20,})['"'"'"]?'; then
     echo "  ❌ Possible secret detected in staged changes"
     echo "     Common patterns: API keys, tokens, passwords (20+ chars)"
     echo "     Review carefully. If false positive: --no-verify is blocked by permissions"
@@ -41,16 +46,24 @@ if git diff --cached | grep -E '^\+[^+]' | grep -qiE '(api_key|apikey|password|s
 fi
 
 # Check specifically for OpenAI/Anthropic API keys (these are never false positives)
-if git diff --cached | grep -E '^\+[^+]' | grep -qE '(OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY).*=.*['"'"'"]?sk-(proj-|ant-)?[a-zA-Z0-9]{20,}'; then
+if echo "$CACHED_DIFF_CONTENT" | grep -E '^\+[^+]' | grep -qE '(OPENAI_API_KEY|ANTHROPIC_API_KEY|CLAUDE_API_KEY).*=.*['"'"'"]?sk-(proj-|ant-)?[a-zA-Z0-9]{20,}'; then
     echo "  ❌ OpenAI/Anthropic API key detected - MUST NOT COMMIT"
     echo "     Use environment variables: export OPENAI_API_KEY=\$YOUR_KEY"
     exit 1
 fi
 
 # Check for .env files (only added/modified, not deletions)
-if git diff --cached --name-only --diff-filter=ACM | grep -qE '\.env$|\.env\.'; then
+if echo "$CACHED_NAMES_ACM" | grep -qE '\.env$|\.env\.'; then
     echo "  ❌ .env file in staged changes"
     echo "     .env files should never be committed"
+    exit 1
+fi
+
+# Provider-specific token formats (zero false-positive patterns)
+if echo "$CACHED_DIFF_CONTENT" | grep -E '^\+[^+]' | grep -qE '(ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|ghu_[A-Za-z0-9]{36}|ghs_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[A-Za-z0-9]{24,}|pk_live_[A-Za-z0-9]{24,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{35}|SG\.[A-Za-z0-9_-]{22}\.)'; then
+    echo "  ❌ Provider-specific API token detected in staged changes"
+    echo "     Matched patterns: GitHub (ghp_/gho_/ghu_/ghs_/github_pat_), GitLab (glpat-),"
+    echo "     Slack (xox[baprs]-), Stripe (sk_live_/pk_live_), AWS (AKIA), Google (AIza), SendGrid (SG.)"
     exit 1
 fi
 
@@ -58,8 +71,8 @@ fi
 echo "  🐛 Checking for debug code..."
 # Exclude common non-debug uses: logging.print, println, printf, fprintf, sprint, print!, eprint
 # Only flag bare print( which is the typical debug pattern in Python
-if git diff --cached | grep -E '^\+[^+]' | grep -qE '\b(console\.log|debugger|import pdb|breakpoint\(\))' || \
-   git diff --cached | grep -E '^\+[^+]' | grep -E '(^|[^a-zA-Z_.])print\(' | grep -vqE '(println|printf|fprintf|sprint|eprint|fprint|print!|logging\.|logger\.|self\.print|\.print\()'; then
+if echo "$CACHED_DIFF_CONTENT" | grep -E '^\+[^+]' | grep -qE '\b(console\.log|debugger|import pdb|breakpoint\(\))' || \
+   echo "$CACHED_DIFF_CONTENT" | grep -E '^\+[^+]' | grep -E '(^|[^a-zA-Z_.])print\(' | grep -vqE '(println|printf|fprintf|sprint|eprint|fprint|print!|logging\.|logger\.|self\.print|\.print\()'; then
     echo "  ⚠️  Debug statements found (console.log, debugger, pdb, breakpoint, print)"
     echo "     Consider removing before commit"
     # Don't block, just warn
@@ -80,7 +93,7 @@ while IFS= read -r file; do
 done < <(git diff --cached --name-only --diff-filter=A | grep -E '\.(py|ts|tsx|js|jsx)$' | grep -v -E '(test|spec|__tests__)')
 
 # 6. Security-sensitive change detection
-security_files=$(git diff --cached --name-only | grep -iE '(auth|security|permission|credential|token|secret|crypto|encrypt|ssl|tls|cert|\.env|config/.*secret|middleware/auth)' || true)
+security_files=$(echo "$CACHED_NAMES" | grep -iE '(auth|security|permission|credential|token|secret|crypto|encrypt|ssl|tls|cert|\.env|config/.*secret|middleware/auth)' || true)
 if [ -n "$security_files" ]; then
     echo ""
     echo "  🔒 Security-sensitive files detected in this commit:"

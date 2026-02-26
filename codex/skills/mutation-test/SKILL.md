@@ -138,7 +138,7 @@ Works on any language. Uses `sed` to apply one mutation at a time.
 **How it works:**
 1. Select a source file with corresponding tests
 2. Backup: `cp file file.bak`
-3. Apply ONE `sed` mutation (e.g., `sed -i 's/< /<=/' file`)
+3. Apply ONE `sed` mutation (e.g., `sed -i.bak 's/< /<=/' file`)
 4. Run tests (timeout: 2x normal test time)
 5. Record result:
    - **Killed**: Tests fail (good -- mutation was caught)

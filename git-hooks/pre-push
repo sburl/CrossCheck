@@ -217,6 +217,12 @@ if [ -n "$diff_base" ]; then
         echo "     Review carefully before pushing"
         exit 1
     fi
+
+    # Provider-specific token formats (zero false-positive patterns)
+    if git diff "$diff_base"..HEAD | grep -E '^\+[^+]' | grep -qE '(ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|ghu_[A-Za-z0-9]{36}|ghs_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[A-Za-z0-9]{24,}|pk_live_[A-Za-z0-9]{24,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{35}|SG\.[A-Za-z0-9_-]{22}\.)'; then
+        echo "  ❌ Provider-specific API token detected in changes being pushed"
+        exit 1
+    fi
 fi
 
 # 6. Git history reminder (detect rebased or amended commits)

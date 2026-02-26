@@ -56,15 +56,3 @@ if [ -d "$HOOK_DIR" ]; then
         fi
     done
 fi
-
-# Legacy: Direct call to claude-commit-review.sh (kept for backwards compatibility)
-# New installs should use post-commit.d/ directory instead
-codex_review=""
-for candidate in \
-    "$HOME/.crosscheck/scripts/claude-commit-review.sh" \
-    "$HOME/.claude/CrossCheck/scripts/claude-commit-review.sh"; do
-    [ -f "$candidate" ] && { codex_review="$candidate"; break; }
-done
-if [ -n "$codex_review" ] && [ ! -d "$HOOK_DIR" ]; then
-    "$codex_review" || true
-fi

@@ -1,7 +1,7 @@
 # Codex Workflow
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-12-12-00
+**Last Updated:** 2026-02-25-00-00
 
 ---
 
@@ -138,7 +138,7 @@ Each worktree is fully autonomous: own branch, own context, own PR counter. No c
 - **Rebasing/squashing history:** `docs/rules/git-history.md` (what to keep vs clean)
 - **Long sessions or Codex review:** `docs/rules/autonomous-sessions.md` (15-min updates, blocked protocol)
 
-**Assessment waterfall (every 3 PRs):** `/repo-assessment` -> `/bug-review` -> `/security-review`. Run in order. Fix findings from each before starting the next. Triggered by post-merge hook. Lightweight secret + dependency scan on every push.
+**Assessment waterfall (every 3 PRs):** `/repo-assessment` -> `/bug-review` -> `/security-review` -> `/redteam`. Run in order. Fix findings from each before starting the next. Triggered by post-merge hook. Lightweight secret + dependency scan on every push.
 
 **File operations:** Delete via `garbage/` folder, then `/garbage-collect`. Never modify `user-content/` (human-only zone, hook-protected).
 

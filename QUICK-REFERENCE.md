@@ -22,6 +22,9 @@ When user requests these tasks, invoke the corresponding skill:
 | "review", "Codex review" | `/pr-review` | Standard Codex review handoff |
 | Every 3 PRs | `/repo-assessment` | Comprehensive Codex assessment |
 | "security review" | `/security-review` | Full security audit (deps, secrets, perms) |
+| "red team", "exploit" | `/redteam` | Active exploit verification of security findings |
+| "fuzz", "adversarial input" | `/fuzz` | Property-based and adversarial input testing |
+| "mutation test", "test quality" | `/mutation-test` | Verify test suite catches real bugs |
 | "parallel work", "worktree" | `/create-worktree` | Proper worktree setup |
 | "show worktrees" | `/list-worktrees` | List active worktrees |
 | "cleanup worktrees" | `/cleanup-worktrees` | Remove merged worktrees |
@@ -244,6 +247,9 @@ mv old-file.js garbage/
 | `/repo-assessment` | Every 3 PRs | Comprehensive Codex analysis of repo state |
 | `/security-review` | Every 3 PRs (waterfall) or on demand | Dependency audit, secrets scan, trust model check |
 | `/bug-review` | On demand or before major release | AI code patterns, concurrency, memory leaks, error handling |
+| `/redteam` | After `/security-review` or standalone | Active exploit verification (writes throwaway exploit tests) |
+| `/fuzz` | On demand for specific modules | Property-based and adversarial input testing |
+| `/mutation-test` | On demand to verify test quality | Mutation testing — checks if tests catch real bugs |
 
 ### Git Operations
 

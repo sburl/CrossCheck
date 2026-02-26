@@ -11,7 +11,7 @@ echo "🚀 Running pre-push checks..."
 # Deletions have an all-zero local SHA — no code is being pushed, skip all checks
 ZERO_SHA="0000000000000000000000000000000000000000"
 has_non_delete=false
-while read local_ref local_sha remote_ref remote_sha; do
+while read _local_ref local_sha _remote_ref _remote_sha; do
     if [ "$local_sha" != "$ZERO_SHA" ]; then
         has_non_delete=true
         break

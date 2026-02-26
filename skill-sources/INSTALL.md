@@ -134,11 +134,11 @@ git push
 ```
 ~/.claude/
 ├── commands/              ← Active skills for Claude Code
-│   └── *.md              ← 29 skill files
+│   └── *.md              ← 30 skill files
 
 ~/.codex/
 ├── commands/              ← Active skills for Codex
-│   └── *.md              ← 29 skill files
+│   └── *.md              ← 30 skill files
 └── settings.json         ← Global permissions
 
 ~/.crosscheck/                 ← Git repo (source of truth, traditional install)

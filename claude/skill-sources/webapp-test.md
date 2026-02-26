@@ -122,7 +122,7 @@ Compare screenshots before and after code changes.
 2. Bootstrap Playwright if needed
 3. Run selected phases (--recon, --selectors, --quick, or all)
 4. Generate report with screenshots
-5. Cleanup: delete __webtest_* artifacts
+5. Cleanup: delete __webtest_* artifacts (except __webtest_baseline/)
 6. Stop server if we started it
 ```
 
@@ -145,8 +145,8 @@ All artifacts use the `__webtest_` prefix:
 
 - **Localhost only** — Never navigate to external URLs
 - **Headless only** — Always run Playwright in headless mode
-- **Never commit artifacts** — All `__webtest_*` files are temporary
-- **Cleanup on completion** — Delete all `__webtest_*` files and directories when done
+- **Never commit artifacts** — All `__webtest_*` files are temporary (add to `.gitignore`)
+- **Cleanup on completion** — Delete all `__webtest_*` files and directories when done, **except** `__webtest_baseline/` which persists for future visual regression comparisons
 - **Stop what you started** — If this skill started a dev server, stop it on completion
 - **No production** — This is for local development testing only
 - **Timeout** — Each phase has a 60-second timeout; abort and report on timeout

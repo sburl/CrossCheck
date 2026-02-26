@@ -4,7 +4,7 @@ description: Initiate autonomous PR review process with Claude agent
 ---
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-16-00-00
+**Last Updated:** 2026-02-26-00-00
 
 # PR Review with Claude Agent
 
@@ -30,6 +30,16 @@ Before starting the review:
    ```
 
 If checklist incomplete, stop and complete it first.
+
+## IMPORTANT: What "Claude Review" Means
+
+**PR review = running a separate Claude session to review the PR (this skill).**
+
+Do NOT treat GitHub PR comments from bots (e.g., `chatgpt-codex-connector`) as the PR review.
+Those are legacy artifacts from a removed integration — completely unrelated to this process.
+Similarly, the `codex-commit-reviews.log` (post-commit hook) is a commit-level log, not a PR review.
+
+**The only valid review is the Claude session output from Step 2 below.**
 
 ## Step 2: Initiate Claude Review
 

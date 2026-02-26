@@ -497,9 +497,27 @@ test_prepush_provider_token_blocks() {
     fi
 }
 
+test_prepush_delete_branch_allowed() {
+    setup_test_repo_with_remote "prepush-delete"
+
+    # Push a feature branch first
+    echo "feature code" > feature.py
+    git add feature.py
+    git commit -m "feat: add feature code here" -q --no-verify
+    git push origin feat/test -q 2>/dev/null
+
+    # Now delete the remote branch — should NOT be blocked
+    if git push origin --delete feat/test 2>&1; then
+        pass "Branch deletion push is not blocked"
+    else
+        fail "git push --delete should not be blocked by pre-push hook"
+    fi
+}
+
 test_prepush_secret_rescan_blocks
 test_prepush_feature_branch_allowed
 test_prepush_provider_token_blocks
+test_prepush_delete_branch_allowed
 echo ""
 
 # ============================================================

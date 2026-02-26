@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-25-00-00
+**Last Updated:** 2026-02-26-00-00
 
 Complete reference tables for daily workflow.
 
@@ -37,6 +37,7 @@ When user requests these tasks, invoke the corresponding skill:
 | "do the work", "process tasks" | `/do-work` | Process task queue from do-work/ folder |
 | "cleanup garbage" | `/garbage-collect` | Review /garbage folder |
 | "usage", "tokens", "how much AI", "spending" | `/ai-usage` | Token usage, cost, and impact dashboard |
+| "test webapp", "browser test", "screenshot" | `/webapp-test` | Automated Playwright-based web app testing |
 | "setup plugins", "install plugins" | `/setup-plugins` | Opinionated plugin selection with CrossCheck overlap awareness |
 | "update crosscheck", "update skills" | `/update-crosscheck` | Pull latest from main, sync skills and agents |
 
@@ -250,6 +251,7 @@ mv old-file.js garbage/
 | `/redteam` | After `/security-review` or standalone | Active exploit verification (writes throwaway exploit tests) |
 | `/fuzz` | On demand for specific modules | Property-based and adversarial input testing |
 | `/mutation-test` | On demand to verify test quality | Mutation testing — checks if tests catch real bugs |
+| `/webapp-test` | Test running web app | Playwright-based screenshot, interaction, and visual regression testing |
 
 ### Git Operations
 

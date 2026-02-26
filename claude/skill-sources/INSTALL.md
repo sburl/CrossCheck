@@ -1,7 +1,7 @@
 # Installing Claude Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-25-00-00
+**Last Updated:** 2026-02-26-00-00
 
 This directory contains all custom skill sources for Claude.
 
@@ -30,9 +30,9 @@ ls ~/.claude/commands/
 mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
 ```
 
-## Available Skills (31 total)
+## Available Skills (32 total)
 
-### PR Workflow (8)
+### PR Workflow (9)
 - `/submit-pr` - Automated PR submission with checks
 - `/pre-pr-check` - Comprehensive pre-PR checklist (runs tests, linting, timestamps)
 - `/techdebt` - Find and eliminate technical debt (runs automated checks)
@@ -41,6 +41,7 @@ mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/com
 - `/redteam` - Active exploit verification (writes throwaway exploit tests)
 - `/fuzz` - Property-based and adversarial input testing
 - `/mutation-test` - Mutation testing for test suite quality
+- `/webapp-test` - Automated Playwright-based web app testing (screenshot, interact, visual regression)
 
 ### Agent Delegation (5)
 - `/claude-delegate` - Delegate task to Claude agent
@@ -132,7 +133,7 @@ git push
 ```
 ~/.claude/
 ├── commands/              ← Active skills (copied from CrossCheck/skill-sources/)
-│   └── *.md              ← 31 skill files
+│   └── *.md              ← 32 skill files
 └── settings.json         ← Global permissions
 
 ~/.crosscheck/                 ← Git repo (source of truth, traditional install)

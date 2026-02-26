@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-24-13-46
+**Last Updated:** 2026-02-26-00-00
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -392,5 +392,9 @@ cd ~/path/to/CrossCheck
 - [GitHub](https://github.com/sburl/CrossCheck)
 - [Issues](https://github.com/sburl/CrossCheck/issues)
 - [Discussions](https://github.com/sburl/CrossCheck/discussions)
+
+**Acknowledgments:**
+- [claude-code-studio](https://github.com/arnaldo-delisio/claude-code-studio) by @arnaldo-delisio — Agent definitions adapted under MIT license
+- [anthropics/skills](https://github.com/anthropics/skills) by Anthropic — Skill eval loop, trigger evaluation, and webapp testing patterns inspired by the skill-creator and webapp-testing skills
 
 **License:** MIT

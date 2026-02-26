@@ -620,8 +620,14 @@ This script uses exact regex patterns for all major providers (OpenAI, Anthropic
 
 The pre-push hook runs a lightweight version of this on every push. The full script runs as part of the periodic security review.
 
+## Next Steps
+
+If Critical or High findings were reported, run `/redteam` to verify exploitability.
+Pattern-matching finds possibilities; red teaming confirms realities.
+
 ## Related
 
+- `/redteam` -- Active exploit verification (confirms or disproves findings from this review)
 - `docs/rules/trust-model.md` -- Trust boundaries and zero-trust philosophy
 - `scripts/scan-secrets.sh` -- Deterministic secret scanner (standalone)
 - `/repo-assessment` -- General code quality (runs at the same cadence)

@@ -18,6 +18,8 @@ AI-generated code is structurally sound but prone to specific failure patterns. 
 /bug-review                    # Full audit (all 10 categories)
 /bug-review --quick            # Categories 1-3 only (the most common AI bugs)
 /bug-review --focus concurrency  # Single category deep-dive
+/bug-review --reproduce          # Full audit + reproduce Critical/High findings
+/bug-review --quick --reproduce  # Quick audit + reproduce
 ```
 
 ---
@@ -405,6 +407,24 @@ Categories 1-3 only. These catch 80% of bugs in AI-generated codebases.
 
 Options: `ai-patterns`, `errors`, `state`, `concurrency`, `memory`, `api`, `performance`, `config`, `testing`, `maintenance`.
 
+### Reproduction Phase (`--reproduce`)
+
+After the pattern-matching audit, attempt to reproduce each Critical/High finding:
+
+1. Identify the specific code path from the finding
+2. Write a minimal reproduction test:
+   - Filename: `__bugrepro_<N>.test.{ts,py,go}` (prefixed to be obvious)
+   - Import the target module directly
+   - Exercise the exact failure scenario
+   - Assert the buggy behavior (test should PASS if bug exists)
+3. Run the test:
+   - **REPRODUCED**: Bug confirmed. Include reproduction test as evidence.
+   - **NOT REPRODUCED**: Could not trigger. Downgrade severity or note conditions.
+   - **INCONCLUSIVE**: Complex setup required. Note for manual verification.
+4. **Cleanup**: Delete ALL `__bugrepro_*` files. Verify with `git status`.
+
+Adds 10-20 minutes to the audit. Only runs when `--reproduce` flag is passed.
+
 ---
 
 ## Report Format
@@ -432,6 +452,13 @@ Options: `ai-patterns`, `errors`, `state`, `concurrency`, `memory`, `api`, `perf
 
 ### Positive Findings
 - [Things done well]
+
+### Reproduction Results (--reproduce)
+
+| Finding | Category | Severity | Reproduced? | Evidence |
+|---------|----------|----------|-------------|----------|
+| Unawaited promise in auth.ts:23 | Async | High | YES | Silent failure on reject |
+| Race condition in counter.ts:45 | State | Critical | YES | 3/100 runs wrong count |
 ```
 
 ---

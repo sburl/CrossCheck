@@ -114,6 +114,7 @@ if [ "$pr_count" -ge 3 ]; then
     echo "   Step 1: /repo-assessment    ← Codex comprehensive quality review"
     echo "   Step 2: /bug-review         ← Systematic failure mode audit"
     echo "   Step 3: /security-review    ← Full security audit"
+    echo "   Step 4: /redteam            ← Active exploit verification (Critical/High only)"
     echo ""
     echo "   Process each like a Codex review loop: run skill, address findings, verify, then next step."
     echo ""

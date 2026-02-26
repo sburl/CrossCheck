@@ -30,7 +30,7 @@ ls ~/.claude/commands/
 mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
 ```
 
-## Available Skills (28 total)
+## Available Skills (31 total)
 
 ### PR Workflow (5)
 - `/submit-pr` - Automated PR submission with checks
@@ -38,6 +38,9 @@ mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/com
 - `/techdebt` - Find and eliminate technical debt (runs automated checks)
 - `/security-review` - Comprehensive security audit (dependencies, secrets, permissions)
 - `/bug-review` - Systematic failure mode audit (AI patterns, concurrency, memory, etc.)
+- `/redteam` - Active exploit verification (writes throwaway exploit tests)
+- `/fuzz` - Property-based and adversarial input testing
+- `/mutation-test` - Mutation testing for test suite quality
 
 ### Agent Delegation (5)
 - `/claude-delegate` - Delegate task to Claude agent

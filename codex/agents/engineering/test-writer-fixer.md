@@ -62,6 +62,9 @@ Your primary responsibilities:
 - If a test fails due to brittleness: Refactor the test to be more robust
 - If a test fails due to a bug in the code: Report the issue without fixing the code
 - If unsure about test intent: Analyze surrounding tests and code comments for context
+- If code handles external input: Write adversarial input tests (injection, type confusion, boundary)
+- If code has auth/permission checks: Write bypass tests (no creds, wrong creds, escalation)
+- If code modifies shared state: Write concurrent access tests
 
 **Test Writing Best Practices**:
 - Test behavior, not implementation details
@@ -71,6 +74,14 @@ Your primary responsibilities:
 - Mock external dependencies appropriately
 - Write tests that serve as documentation
 - Prioritize tests that catch real bugs
+
+**Adversarial Testing Mindset** (always include alongside happy-path tests):
+- Boundary inputs: For every parameter, test at exact boundaries (0, -1, MAX_INT, empty string, max length)
+- Injection payloads: For functions processing external strings, include SQL (`' OR 1=1--`), XSS (`<script>alert(1)</script>`), path traversal (`../../../etc/passwd`), command injection payloads
+- Auth bypass: For auth-gated functions, test without credentials, expired credentials, wrong user's credentials
+- Concurrent access: For shared-state functions, call N times simultaneously and verify data integrity
+- Error injection: For functions with external deps, test when deps throw, timeout, or return unexpected data
+- Type confusion: Pass wrong types (number for string, array for object, null, undefined)
 
 **Test Maintenance Best Practices**:
 - Always run tests in isolation first, then as part of the suite

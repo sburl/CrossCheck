@@ -33,7 +33,7 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
   cp ~/.crosscheck/skill-sources/*.md ~/.codex/commands/
 ```
 
-## Available Skills (26 total)
+## Available Skills (29 total)
 
 ### PR Workflow (5)
 - `/submit-pr` - Automated PR submission with checks
@@ -41,6 +41,9 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
 - `/techdebt` - Find and eliminate technical debt (runs automated checks)
 - `/security-review` - Comprehensive security audit (dependencies, secrets, permissions)
 - `/bug-review` - Systematic failure mode audit (AI patterns, concurrency, memory, etc.)
+- `/redteam` - Active exploit verification (writes throwaway exploit tests)
+- `/fuzz` - Property-based and adversarial input testing
+- `/mutation-test` - Mutation testing for test suite quality
 
 ### Agent Delegation (5)
 - `/codex-delegate` - Delegate task to Codex agent

@@ -6,6 +6,22 @@ set -e
 
 echo "🚀 Running pre-push checks..."
 
+# Detect delete-only pushes (e.g., git push origin --delete <branch>)
+# Git sends ref info on stdin: <local ref> <local sha> <remote ref> <remote sha>
+# Deletions have an all-zero local SHA — no code is being pushed, skip all checks
+ZERO_SHA="0000000000000000000000000000000000000000"
+has_non_delete=false
+while read local_ref local_sha remote_ref remote_sha; do
+    if [ "$local_sha" != "$ZERO_SHA" ]; then
+        has_non_delete=true
+        break
+    fi
+done
+if [ "$has_non_delete" = false ]; then
+    echo "  ℹ️  Delete-only push — skipping checks"
+    exit 0
+fi
+
 # Get the current branch
 current_branch=$(git branch --show-current)
 

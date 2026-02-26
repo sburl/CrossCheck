@@ -35,7 +35,7 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
 
 ## Available Skills (29 total)
 
-### PR Workflow (5)
+### PR Workflow (8)
 - `/submit-pr` - Automated PR submission with checks
 - `/pre-pr-check` - Comprehensive pre-PR checklist (runs tests, linting, timestamps)
 - `/techdebt` - Find and eliminate technical debt (runs automated checks)

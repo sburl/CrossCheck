@@ -9,7 +9,7 @@ description: |
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-02-26-00-00
 
 *Inspired by [Claudeception](https://github.com/blader/Claudeception) by [@blader](https://github.com/blader).*
 
@@ -130,7 +130,40 @@ this skill is relevant. Be specific — these are what enable future retrieval.>
 
 ---
 
-## Step 4: Install the Skill
+## Step 4: Eval Loop (Optional)
+
+*Skip for narrow single-fix skills. Required for behavioral skills that change how the agent works.*
+
+Verify the skill actually improves outcomes before installing:
+
+1. **Write 2-3 realistic test prompts** that should trigger this skill
+2. **Run two parallel sessions per prompt:** one with the skill installed, one without (baseline)
+3. **Compare results:**
+   - Did the skill-equipped session solve faster or more accurately?
+   - Were there any false triggers (skill fired when it shouldn't)?
+4. **If marginal improvement or false triggers:** revise the skill content and re-test
+5. **Pass criteria:** skill-equipped session measurably outperforms baseline on at least 2/3 prompts with zero false triggers
+
+---
+
+## Step 5: Trigger Evaluation
+
+Verify the skill's description fires correctly in the Skill-First Protocol:
+
+1. **Write 3 test prompts:**
+   - 2 prompts that SHOULD trigger the skill
+   - 1 prompt that SHOULD NOT trigger the skill
+2. **Check the description** contains enough signal for semantic matching
+3. **If skill doesn't trigger on valid prompts:** make the description "pushier" — add more
+   keywords, error messages, or scenario variants
+4. **If skill triggers on invalid prompts:** narrow the description — remove overly generic
+   terms, add qualifying conditions
+
+**Good descriptions:** specific enough to avoid false positives, broad enough for natural phrasing.
+
+---
+
+## Step 6: Install the Skill
 
 Write the file and install it to both Codex and Claude command directories:
 

@@ -114,6 +114,40 @@ if [ ! -f "$HOME/.codex/settings.json" ]; then
     echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
 else
     echo "   ✅ Settings already exist at ~/.codex/settings.json"
+
+    # Sync critical deny rules even when settings exist
+    echo "   Checking critical deny rules..."
+    CRITICAL_DENY_RULES=(
+        'Bash(gh*--admin*)'
+        'Bash(*--admin*)'
+        'Bash(gh api*rulesets*)'
+        'Bash(gh api*branches/*/protection*)'
+        'Bash(*graphql*BranchProtection*)'
+        'Bash(*graphql*Ruleset*)'
+    )
+
+    DENY_UPDATED=0
+    DENY_FAILED=0
+    for rule in "${CRITICAL_DENY_RULES[@]}"; do
+        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$HOME/.codex/settings.json" >/dev/null 2>&1; then
+            if jq --arg r "$rule" '.permissions.deny += [$r]' "$HOME/.codex/settings.json" > "$HOME/.codex/settings.json.tmp" \
+                && mv "$HOME/.codex/settings.json.tmp" "$HOME/.codex/settings.json"; then
+                echo "   + Added critical deny rule: $rule"
+                DENY_UPDATED=$((DENY_UPDATED + 1))
+            else
+                echo "   ⚠️  Failed to add deny rule: $rule (jq or write error)"
+                DENY_FAILED=$((DENY_FAILED + 1))
+            fi
+        fi
+    done
+
+    if [ "$DENY_FAILED" -gt 0 ]; then
+        echo "   ⚠️  $DENY_FAILED deny rule(s) failed to sync — check settings.json is valid JSON"
+    elif [ "$DENY_UPDATED" -eq 0 ]; then
+        echo "   ✅ All critical deny rules present"
+    else
+        echo "   ✅ Added $DENY_UPDATED critical security rule(s)"
+    fi
 fi
 echo ""
 

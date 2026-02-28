@@ -23,6 +23,17 @@ GitHub enforces identity-based rules:
 - Linear history only
 - **Need separate account** to approve PRs you create
 
+## Absolute prohibitions
+
+**NEVER bypass branch protections.** These are hard rules that no agent may violate under any circumstances:
+
+- **NEVER use `--admin` flag** on `gh pr merge` or any `gh` command. This bypasses branch protection rules and defeats the entire trust model.
+- **NEVER modify GitHub rulesets** via `gh api` or any other mechanism. Rulesets are configured once by the human via `/setup-automation` and must not be weakened, relaxed, or changed by agents.
+- **NEVER modify branch protection settings** via the GitHub API. This includes changing `required_approving_review_count`, `require_last_push_approval`, `require_code_owner_review`, or any other protection parameter.
+- If a PR is blocked by branch protection, **that is working as intended**. The correct response is to get a legitimate review from a separate account, not to bypass the protection.
+
+These are enforced by deny rules in `settings.json` (`gh*--admin*`, `*--admin*`, `gh api*rulesets*`, `gh api*branches/*/protection*`, `*graphql*BranchProtection*`, `*graphql*Ruleset*`), but the prohibition is absolute regardless of settings. The `*--admin*` catch-all prevents command-prefixing bypasses (e.g. `cd . && gh pr merge --admin`). The GraphQL patterns prevent ruleset mutation via the GitHub GraphQL API.
+
 ## Why this works
 
 - Agents work freely on feature branches

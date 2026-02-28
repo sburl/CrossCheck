@@ -217,6 +217,34 @@ else
     ISSUES=$((ISSUES + 1))
 fi
 
+# Check: Local settings have critical deny rules
+echo ""
+echo "📋 Checking local settings deny rules..."
+
+CRITICAL_DENY_RULES=(
+    'Bash(gh*--admin*)'
+    'Bash(*--admin*)'
+    'Bash(gh api*rulesets*)'
+    'Bash(gh api*branches/*/protection*)'
+    'Bash(*graphql*BranchProtection*)'
+    'Bash(*graphql*Ruleset*)'
+)
+
+for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
+    [ -f "$SETTINGS_FILE" ] || continue
+    SETTINGS_NAME=$(basename "$(dirname "$SETTINGS_FILE")")/$(basename "$SETTINGS_FILE")
+
+    for rule in "${CRITICAL_DENY_RULES[@]}"; do
+        if jq -e --arg r "$rule" '.permissions.deny | index($r)' "$SETTINGS_FILE" >/dev/null 2>&1; then
+            echo "✅ $SETTINGS_NAME denies: $rule"
+        else
+            echo "❌ FAIL: $SETTINGS_NAME missing deny rule: $rule"
+            echo "   Run /update-crosscheck to sync critical deny rules"
+            ISSUES=$((ISSUES + 1))
+        fi
+    done
+done
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 

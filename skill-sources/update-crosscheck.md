@@ -53,7 +53,64 @@ CURRENT=$(cat "$CROSSCHECK_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo 
 echo "   Current version: $CURRENT"
 ```
 
-## Step 3: Pull Latest
+## Step 3: Sync Critical Deny Rules
+
+Critical security deny rules must propagate to existing settings even when settings
+are not fully overwritten. This runs BEFORE the up-to-date check so it always executes.
+
+```bash
+# Critical deny rules that MUST exist in settings (security boundary)
+CRITICAL_DENY_RULES=(
+    'Bash(gh*--admin*)'
+    'Bash(*--admin*)'
+    'Bash(gh api*rulesets*)'
+    'Bash(gh api*branches/*/protection*)'
+    'Bash(*graphql*BranchProtection*)'
+    'Bash(*graphql*Ruleset*)'
+)
+
+SETTINGS_UPDATED=0
+SETTINGS_FAILED=0
+
+for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
+    [ -f "$SETTINGS_FILE" ] || continue
+
+    for rule in "${CRITICAL_DENY_RULES[@]}"; do
+        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$SETTINGS_FILE" >/dev/null 2>&1; then
+            if jq --arg r "$rule" '.permissions.deny += [$r]' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
+                && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"; then
+                echo "   + Added critical deny rule to $(basename "$SETTINGS_FILE"): $rule"
+                SETTINGS_UPDATED=$((SETTINGS_UPDATED + 1))
+            else
+                echo "   ⚠️  Failed to add deny rule to $(basename "$SETTINGS_FILE"): $rule"
+                SETTINGS_FAILED=$((SETTINGS_FAILED + 1))
+            fi
+        fi
+    done
+
+    # Also ensure gh api is in ask list (not auto-allowed)
+    if ! jq -e '.permissions.ask | index("Bash(gh api *)")' "$SETTINGS_FILE" >/dev/null 2>&1; then
+        if jq '.permissions.ask += ["Bash(gh api *)"]' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
+            && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"; then
+            echo "   + Added gh api to ask list in $(basename "$SETTINGS_FILE")"
+            SETTINGS_UPDATED=$((SETTINGS_UPDATED + 1))
+        else
+            echo "   ⚠️  Failed to update ask list in $(basename "$SETTINGS_FILE")"
+            SETTINGS_FAILED=$((SETTINGS_FAILED + 1))
+        fi
+    fi
+done
+
+if [ "$SETTINGS_FAILED" -gt 0 ]; then
+    echo "   ⚠️  $SETTINGS_FAILED setting(s) failed to sync — check settings files are valid JSON"
+elif [ "$SETTINGS_UPDATED" -eq 0 ]; then
+    echo "   ✅ All critical deny rules present"
+else
+    echo "   ✅ $SETTINGS_UPDATED setting(s) updated with critical security rules"
+fi
+```
+
+## Step 4: Pull Latest
 
 ```bash
 cd "$CROSSCHECK_DIR"
@@ -82,7 +139,7 @@ git pull origin main --quiet
 echo "   ✅ Pulled latest"
 ```
 
-## Step 4: Show New Version
+## Step 5: Show New Version
 
 ```bash
 LATEST=$(cat "$CROSSCHECK_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
@@ -94,7 +151,7 @@ else
 fi
 ```
 
-## Step 5: Wire Any New Skills and Agents
+## Step 6: Wire Any New Skills and Agents
 
 Skills and agents are symlinked to CrossCheck — the git pull already updated
 them in place. This step only needs to create symlinks for files that were
@@ -142,7 +199,7 @@ done
     || echo "   ✅ $NEW_LINKED new symlink(s) created"
 ```
 
-## Step 6: Report
+## Step 7: Report
 
 ```bash
 echo ""
@@ -160,11 +217,12 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 - **Skills and agents update instantly** — they're symlinked to CrossCheck, so
   `git pull` is the update. No re-run needed for existing files; new files get
-  symlinked by Step 5.
+  symlinked by Step 6.
 - **CLAUDE.md updates instantly** — symlinked in multi-project mode; git pull
   propagates changes to all sessions automatically.
-- **Settings are not overwritten.** `~/.codex/settings.json` and `~/.claude/settings.json`
-  are your personal configs. Re-run bootstrap to pick up settings template changes.
+- **Settings are not overwritten,** but **critical deny rules are synced.** Step 3
+  ensures security-critical deny rules (like `--admin` bypass prevention) are always
+  present in your settings — this runs even when already up to date.
 - **Git hooks are not updated.** If CrossCheck ships hook changes, re-run
   `/setup-automation` in affected repos.
 - **Check the release notes** at `github.com/sburl/CrossCheck/releases` for any

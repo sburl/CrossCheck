@@ -70,6 +70,7 @@ CRITICAL_DENY_RULES=(
 )
 
 SETTINGS_UPDATED=0
+SETTINGS_FAILED=0
 
 for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
     [ -f "$SETTINGS_FILE" ] || continue
@@ -82,6 +83,7 @@ for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json";
                 SETTINGS_UPDATED=$((SETTINGS_UPDATED + 1))
             else
                 echo "   ⚠️  Failed to add deny rule to $(basename "$SETTINGS_FILE"): $rule"
+                SETTINGS_FAILED=$((SETTINGS_FAILED + 1))
             fi
         fi
     done
@@ -94,11 +96,14 @@ for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json";
             SETTINGS_UPDATED=$((SETTINGS_UPDATED + 1))
         else
             echo "   ⚠️  Failed to update ask list in $(basename "$SETTINGS_FILE")"
+            SETTINGS_FAILED=$((SETTINGS_FAILED + 1))
         fi
     fi
 done
 
-if [ "$SETTINGS_UPDATED" -eq 0 ]; then
+if [ "$SETTINGS_FAILED" -gt 0 ]; then
+    echo "   ⚠️  $SETTINGS_FAILED setting(s) failed to sync — check settings files are valid JSON"
+elif [ "$SETTINGS_UPDATED" -eq 0 ]; then
     echo "   ✅ All critical deny rules present"
 else
     echo "   ✅ $SETTINGS_UPDATED setting(s) updated with critical security rules"
@@ -134,7 +139,7 @@ git pull origin main --quiet
 echo "   ✅ Pulled latest"
 ```
 
-## Step 4: Show New Version
+## Step 5: Show New Version
 
 ```bash
 LATEST=$(cat "$CROSSCHECK_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
@@ -146,7 +151,7 @@ else
 fi
 ```
 
-## Step 5: Wire Any New Skills and Agents
+## Step 6: Wire Any New Skills and Agents
 
 Skills and agents are symlinked to CrossCheck — the git pull already updated
 them in place. This step only needs to create symlinks for files that were
@@ -194,7 +199,7 @@ done
     || echo "   ✅ $NEW_LINKED new symlink(s) created"
 ```
 
-## Step 6: Report
+## Step 7: Report
 
 ```bash
 echo ""
@@ -212,7 +217,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 - **Skills and agents update instantly** — they're symlinked to CrossCheck, so
   `git pull` is the update. No re-run needed for existing files; new files get
-  symlinked by Step 5.
+  symlinked by Step 6.
 - **CLAUDE.md updates instantly** — symlinked in multi-project mode; git pull
   propagates changes to all sessions automatically.
 - **Settings are not overwritten,** but **critical deny rules are synced.** Step 3

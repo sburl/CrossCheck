@@ -223,8 +223,11 @@ echo "📋 Checking local settings deny rules..."
 
 CRITICAL_DENY_RULES=(
     'Bash(gh*--admin*)'
+    'Bash(*--admin*)'
     'Bash(gh api*rulesets*)'
     'Bash(gh api*branches/*/protection*)'
+    'Bash(*graphql*BranchProtection*)'
+    'Bash(*graphql*Ruleset*)'
 )
 
 for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do

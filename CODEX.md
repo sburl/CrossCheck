@@ -144,6 +144,8 @@ Each worktree is fully autonomous: own branch, own context, own PR counter. No c
 
 **PRs:** Small > large | Split if >3 files | Cohesive changes | Different areas = different PRs
 
-**Dangerous commands blocked** in `settings.template.json`: `rm`, `git reset --hard`, `--no-verify`, `sudo`, `docker`, `eval`, reading `.env`/`.pem`/`.key` files. This is the settings.json deny list -- it's a hard guardrail the agent cannot override. Rebase and force-push are allowed (feature branches need them); GitHub branch protection blocks force-push to main server-side.
+**Dangerous commands blocked** in `settings.template.json`: `rm`, `git reset --hard`, `--no-verify`, `sudo`, `docker`, `eval`, reading `.env`/`.pem`/`.key` files, `gh --admin` (bypasses branch protection), `gh api` calls to rulesets/branch-protection (modifies protections). This is the settings.json deny list -- it's a hard guardrail the agent cannot override. Rebase and force-push are allowed (feature branches need them); GitHub branch protection blocks force-push to main server-side.
+
+**NEVER bypass branch protections.** If a PR is blocked by branch protection, that is working as intended. Do not use `--admin`, do not modify GitHub rulesets, do not weaken review requirements. Get a legitimate review from a separate account. See `docs/rules/trust-model.md` for details.
 
 **Gotchas:** `~/.codex/settings.json` is global | CODEX.md is per-repo | Check `which tool` before using CLI tools

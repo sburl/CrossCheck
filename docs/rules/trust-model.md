@@ -32,7 +32,7 @@ GitHub enforces identity-based rules:
 - **NEVER modify branch protection settings** via the GitHub API. This includes changing `required_approving_review_count`, `require_last_push_approval`, `require_code_owner_review`, or any other protection parameter.
 - If a PR is blocked by branch protection, **that is working as intended**. The correct response is to get a legitimate review from a separate account, not to bypass the protection.
 
-These are enforced by deny rules in `settings.json` (`gh*--admin*`, `gh api*rulesets*`, `gh api*branches/*/protection*`), but the prohibition is absolute regardless of settings.
+These are enforced by deny rules in `settings.json` (`gh*--admin*`, `*--admin*`, `gh api*rulesets*`, `gh api*branches/*/protection*`, `*graphql*BranchProtection*`, `*graphql*Ruleset*`), but the prohibition is absolute regardless of settings. The `*--admin*` catch-all prevents command-prefixing bypasses (e.g. `cd . && gh pr merge --admin`). The GraphQL patterns prevent ruleset mutation via the GitHub GraphQL API.
 
 ## Why this works
 

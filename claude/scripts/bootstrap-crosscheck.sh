@@ -102,17 +102,23 @@ else
     echo "   Checking critical deny rules..."
     CRITICAL_DENY_RULES=(
         'Bash(gh*--admin*)'
+        'Bash(*--admin*)'
         'Bash(gh api*rulesets*)'
         'Bash(gh api*branches/*/protection*)'
+        'Bash(*graphql*BranchProtection*)'
+        'Bash(*graphql*Ruleset*)'
     )
 
     DENY_UPDATED=0
     for rule in "${CRITICAL_DENY_RULES[@]}"; do
         if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
-            jq --arg r "$rule" '.permissions.deny += [$r]' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json.tmp" \
-                && mv "$HOME/.claude/settings.json.tmp" "$HOME/.claude/settings.json"
-            echo "   + Added critical deny rule: $rule"
-            DENY_UPDATED=$((DENY_UPDATED + 1))
+            if jq --arg r "$rule" '.permissions.deny += [$r]' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json.tmp" \
+                && mv "$HOME/.claude/settings.json.tmp" "$HOME/.claude/settings.json"; then
+                echo "   + Added critical deny rule: $rule"
+                DENY_UPDATED=$((DENY_UPDATED + 1))
+            else
+                echo "   ⚠️  Failed to add deny rule: $rule (jq or write error)"
+            fi
         fi
     done
 

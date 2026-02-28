@@ -142,7 +142,52 @@ done
     || echo "   ✅ $NEW_LINKED new symlink(s) created"
 ```
 
-## Step 6: Report
+## Step 6: Sync Critical Deny Rules
+
+Critical security deny rules must propagate to existing settings even when settings
+are not fully overwritten. This step ensures new deny rules from the template are
+present in the user's settings.
+
+```bash
+# Critical deny rules that MUST exist in settings (security boundary)
+CRITICAL_DENY_RULES=(
+    'Bash(gh*--admin*)'
+    'Bash(gh api*rulesets*)'
+    'Bash(gh api*branches/*/protection*)'
+)
+
+SETTINGS_UPDATED=0
+
+for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
+    [ -f "$SETTINGS_FILE" ] || continue
+
+    for rule in "${CRITICAL_DENY_RULES[@]}"; do
+        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$SETTINGS_FILE" >/dev/null 2>&1; then
+            # Add missing deny rule
+            jq --arg r "$rule" '.permissions.deny += [$r]' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
+                && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+            echo "   + Added critical deny rule to $(basename "$SETTINGS_FILE"): $rule"
+            SETTINGS_UPDATED=$((SETTINGS_UPDATED + 1))
+        fi
+    done
+
+    # Also ensure gh api is in ask list (not auto-allowed)
+    if ! jq -e '.permissions.ask | index("Bash(gh api *)")' "$SETTINGS_FILE" >/dev/null 2>&1; then
+        jq '.permissions.ask += ["Bash(gh api *)"]' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
+            && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"
+        echo "   + Added gh api to ask list in $(basename "$SETTINGS_FILE")"
+        SETTINGS_UPDATED=$((SETTINGS_UPDATED + 1))
+    fi
+done
+
+if [ "$SETTINGS_UPDATED" -eq 0 ]; then
+    echo "   ✅ All critical deny rules present"
+else
+    echo "   ✅ $SETTINGS_UPDATED setting(s) updated with critical security rules"
+fi
+```
+
+## Step 7: Report
 
 ```bash
 echo ""
@@ -163,8 +208,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
   symlinked by Step 5.
 - **CLAUDE.md updates instantly** — symlinked in multi-project mode; git pull
   propagates changes to all sessions automatically.
-- **Settings are not overwritten.** `~/.codex/settings.json` and `~/.claude/settings.json`
-  are your personal configs. Re-run bootstrap to pick up settings template changes.
+- **Settings are not overwritten,** but **critical deny rules are synced.** Step 6
+  ensures security-critical deny rules (like `--admin` bypass prevention) are always
+  present in your settings, even without a full re-bootstrap.
 - **Git hooks are not updated.** If CrossCheck ships hook changes, re-run
   `/setup-automation` in affected repos.
 - **Check the release notes** at `github.com/sburl/CrossCheck/releases` for any

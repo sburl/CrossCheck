@@ -97,6 +97,30 @@ if [ ! -f "$HOME/.claude/settings.json" ]; then
     echo "      Remove Spencer's commands (claude*, dailybrief*) and add yours"
 else
     echo "   ✅ Settings already exist at ~/.claude/settings.json"
+
+    # Sync critical deny rules even when settings exist
+    echo "   Checking critical deny rules..."
+    CRITICAL_DENY_RULES=(
+        'Bash(gh*--admin*)'
+        'Bash(gh api*rulesets*)'
+        'Bash(gh api*branches/*/protection*)'
+    )
+
+    DENY_UPDATED=0
+    for rule in "${CRITICAL_DENY_RULES[@]}"; do
+        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
+            jq --arg r "$rule" '.permissions.deny += [$r]' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json.tmp" \
+                && mv "$HOME/.claude/settings.json.tmp" "$HOME/.claude/settings.json"
+            echo "   + Added critical deny rule: $rule"
+            DENY_UPDATED=$((DENY_UPDATED + 1))
+        fi
+    done
+
+    if [ "$DENY_UPDATED" -eq 0 ]; then
+        echo "   ✅ All critical deny rules present"
+    else
+        echo "   ✅ Added $DENY_UPDATED critical security rule(s)"
+    fi
 fi
 echo ""
 

@@ -1,9 +1,9 @@
-# Claude Code Custom Agents
+# Claude Custom Agents
 
 **Created:** 2026-02-09-00-00
 **Last Updated:** 2026-02-09-16-00
 
-This directory contains custom agents for Claude Code, curated for high-value specialized tasks.
+This directory contains custom agents for Claude, curated for high-value specialized tasks.
 
 ---
 
@@ -39,7 +39,7 @@ This directory contains custom agents for Claude Code, curated for high-value sp
 
 ## 📚 Attribution
 
-These agents are adapted from **[Claude Code Studio](https://github.com/arnaldo-delisio/claude-code-studio)** by Arnaldo Delisio, an excellent open-source repository that transforms Claude Code into a complete development studio with 40+ specialized AI agents.
+These agents are adapted from **[Claude Code Studio](https://github.com/arnaldo-delisio/claude-code-studio)** by Arnaldo Delisio, an excellent open-source repository that transforms Claude into a complete development studio with 40+ specialized AI agents.
 
 **Original Repository:** https://github.com/arnaldo-delisio/claude-code-studio
 **License:** MIT License
@@ -48,7 +48,7 @@ These agents are adapted from **[Claude Code Studio](https://github.com/arnaldo-
 
 **Modifications:**
 - Curated to 14 agents (from original 39) based on unique value
-- Removed agents redundant with Anthropic's built-in general-purpose agent
+- Removed agents redundant with a built-in general-purpose coding agent
 - Kept only agents with specialized domain expertise
 
 ---
@@ -57,7 +57,7 @@ These agents are adapted from **[Claude Code Studio](https://github.com/arnaldo-
 
 ### On New Computer
 
-1. **Copy agents to Claude Code directory:**
+1. **Copy agents to Claude directory:**
    ```bash
    cp -r ~/Documents/Developer/CrossCheck/agents/* ~/.claude/agents/
    ```
@@ -69,7 +69,7 @@ These agents are adapted from **[Claude Code Studio](https://github.com/arnaldo-
 
    Should show 14 agent files.
 
-3. **Restart Claude Code** (if running)
+3. **Restart Claude** (if running)
 
 ### Enforce This Agent List (Clean Install)
 
@@ -127,7 +127,7 @@ Claude: Uses Task(coach)
 
 ## 🔍 Why These 14?
 
-**Kept agents with unique specialized expertise that Anthropic's built-in agents don't provide:**
+**Kept agents with unique specialized expertise that built-in general-purpose agents don't provide:**
 
 | Agent | Why Kept | Alternative |
 |-------|----------|-------------|
@@ -146,7 +146,7 @@ Claude: Uses Task(coach)
 | **coach** | Strategic planning, agent coordination | No general-purpose equivalent |
 | **claude_critic** | Critical analysis, risk identification | No general-purpose equivalent |
 
-**Removed 25 agents that were redundant with Anthropic's general-purpose agent:**
+**Removed 25 agents that were redundant with a general-purpose agent:**
 - Engineering agents (backend, frontend, DevOps, AI, mobile)
 - Marketing agents (TikTok, Instagram, Reddit, Twitter, growth)
 - Product agents (trend research, feedback, sprint planning)
@@ -283,6 +283,6 @@ cp -r agents/* ~/.claude/agents/
 
 ## 🙏 Thanks
 
-Huge thanks to Arnaldo Delisio for creating and open-sourcing this excellent collection of agents. Their work made rapid product development with Claude Code significantly more powerful.
+Huge thanks to Arnaldo Delisio for creating and open-sourcing this excellent collection of agents. Their work made rapid product development with Claude significantly more powerful.
 
 **Check out their work:** https://github.com/arnaldo-delisio/claude-code-studio

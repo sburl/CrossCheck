@@ -22,33 +22,27 @@ if [ ! -f "$SETTINGS_FILE" ]; then
 {
   "telemetry": {
     "enabled": true,
-    "exporters": {
-      "file": {
-        "enabled": true,
-        "path": "~/.gemini/telemetry.log"
-      }
-    }
+    "target": "local",
+    "outfile": "~/.gemini/telemetry.log"
   }
 }
 EOF
     echo "Created $SETTINGS_FILE with telemetry config."
 else
-    # Check if telemetry config already exists
+    # Check if telemetry config already exists and is correct
     if SETTINGS_FILE="$SETTINGS_FILE" python3 -c "
 import json, sys, os
 settings_file = os.environ['SETTINGS_FILE']
 with open(settings_file) as f:
     data = json.load(f)
 tel = data.get('telemetry', {})
-exporters = tel.get('exporters', {})
-file_exp = exporters.get('file', {})
-if file_exp.get('enabled') and file_exp.get('path'):
+if tel.get('enabled') and tel.get('target') == 'local' and tel.get('outfile'):
     sys.exit(0)
 sys.exit(1)
 " 2>/dev/null; then
         echo "Telemetry already configured in $SETTINGS_FILE. No changes needed."
     else
-        # Add telemetry config to existing settings
+        # Add telemetry config to existing settings, removing old 'exporters' if present
         SETTINGS_FILE="$SETTINGS_FILE" python3 -c "
 import json, os
 settings_file = os.environ['SETTINGS_FILE']
@@ -56,11 +50,11 @@ with open(settings_file) as f:
     data = json.load(f)
 data.setdefault('telemetry', {})
 data['telemetry']['enabled'] = True
-data['telemetry'].setdefault('exporters', {})
-data['telemetry']['exporters']['file'] = {
-    'enabled': True,
-    'path': '~/.gemini/telemetry.log'
-}
+data['telemetry']['target'] = 'local'
+data['telemetry']['outfile'] = '~/.gemini/telemetry.log'
+# Remove old/invalid exporters key if it exists
+if 'exporters' in data['telemetry']:
+    del data['telemetry']['exporters']
 with open(settings_file, 'w') as f:
     json.dump(data, f, indent=2)
 print(f'Updated {settings_file} with telemetry config.')

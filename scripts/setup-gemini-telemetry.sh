@@ -18,52 +18,48 @@ mkdir -p "$GEMINI_DIR"
 
 # If settings.json doesn't exist, create it with telemetry config
 if [ ! -f "$SETTINGS_FILE" ]; then
-    cat > "$SETTINGS_FILE" << 'EOF'
+    cat > "$SETTINGS_FILE" << EOF
 {
   "telemetry": {
     "enabled": true,
-    "exporters": {
-      "file": {
-        "enabled": true,
-        "path": "~/.gemini/telemetry.log"
-      }
-    }
+    "target": "local",
+    "outfile": "$HOME/.gemini/telemetry.log"
   }
 }
 EOF
     echo "Created $SETTINGS_FILE with telemetry config."
 else
-    # Check if telemetry config already exists
+    # Check if telemetry config already exists and is correct (absolute path)
     if SETTINGS_FILE="$SETTINGS_FILE" python3 -c "
 import json, sys, os
 settings_file = os.environ['SETTINGS_FILE']
 with open(settings_file) as f:
     data = json.load(f)
 tel = data.get('telemetry', {})
-exporters = tel.get('exporters', {})
-file_exp = exporters.get('file', {})
-if file_exp.get('enabled') and file_exp.get('path'):
+path = tel.get('outfile', '')
+if tel.get('enabled') and tel.get('target') == 'local' and path and not path.startswith('~'):
     sys.exit(0)
 sys.exit(1)
 " 2>/dev/null; then
-        echo "Telemetry already configured in $SETTINGS_FILE. No changes needed."
+        echo "Telemetry already configured with absolute path in $SETTINGS_FILE. No changes needed."
     else
-        # Add telemetry config to existing settings
-        SETTINGS_FILE="$SETTINGS_FILE" python3 -c "
+        # Add telemetry config to existing settings with absolute path
+        SETTINGS_FILE="$SETTINGS_FILE" HOME_DIR="$HOME" python3 -c "
 import json, os
 settings_file = os.environ['SETTINGS_FILE']
+home_dir = os.environ['HOME_DIR']
 with open(settings_file) as f:
     data = json.load(f)
 data.setdefault('telemetry', {})
 data['telemetry']['enabled'] = True
-data['telemetry'].setdefault('exporters', {})
-data['telemetry']['exporters']['file'] = {
-    'enabled': True,
-    'path': '~/.gemini/telemetry.log'
-}
+data['telemetry']['target'] = 'local'
+data['telemetry']['outfile'] = os.path.join(home_dir, '.gemini/telemetry.log')
+# Remove old/invalid exporters key if it exists
+if 'exporters' in data['telemetry']:
+    del data['telemetry']['exporters']
 with open(settings_file, 'w') as f:
     json.dump(data, f, indent=2)
-print(f'Updated {settings_file} with telemetry config.')
+print(f'Updated {settings_file} with absolute telemetry path.')
 "
     fi
 fi

@@ -14,4 +14,7 @@ settings.personal.json
 
 # User-specific overrides
 local-overrides/
+CLAUDE.local.md
+CODEX.local.md
+GEMINI.local.md
 /blog

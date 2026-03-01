@@ -6,7 +6,8 @@
 ## Sections
 
 - `claude/` - Claude-focused workflow bundle (`claude/README.md`)
-- `codex/` - Codex-focused workflow bundle (`codex/README.md`, `codex/CODEX.md`, `codex/skills/*/SKILL.md`)
+- `codex/` - Codex-focused workflow bundle (`codex/README.md`, `codex/CODEX.md`)
+- `gemini/` - Gemini-focused workflow bundle (`gemini/README.md`, `gemini/GEMINI.md`)
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -88,14 +89,16 @@ The holes in each layer are *uncorrelated* because they use different mechanisms
 
 ---
 
-## Why Codex?
+## Why Multi-Model?
 
-**I've tested multiple reviewers. Codex is more precise.**
+**I've tested multiple reviewers. Cross-lab review is more precise.**
 
 But here's the key: **Use an agent from a different lab than your developer agent.**
 
 ```
 Codex (OpenAI) writes → Claude (Anthropic) reviews
+Gemini (Google) writes → Codex (OpenAI) reviews
+Claude (Anthropic) writes → Gemini (Google) reviews
 └─ Different training → Different blind spots → Better coverage
 ```
 

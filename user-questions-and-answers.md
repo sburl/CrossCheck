@@ -1,90 +1,65 @@
 **Created:** 2026-03-03-16-00
-**Last Updated:** 2026-03-03-16-00
+**Last Updated:** 2026-03-03-17-00
 
 # User Questions and Assumptions Log
 
-## 0) Executive Understanding (what this repo is now)
+## 0) Executive understanding
 
-- This repository is currently an **AI-native workflow engine**, not a product app.
-- Core purpose: enforce quality and review gates for autonomous agents (CrossCheck) via hooks, workflows, skills, and agent prompts.
-- The highest-leverage risk right now is **process quality drift**:
-  - conventions hidden in many docs
-  - large PRs reducing review precision
-  - stale patterns spreading across mirrored paths (`codex`, `claude`, root, hooks, scripts)
-- User goal is to reduce entropy and rebuild momentum by making the codebase cleaner, safer, and easier to evolve.
+- This repo is an **AI-native workflow engine** used by multiple contributors (open-source), not a single-person scratchpad.
+- Non-negotiable constraints: keep PR gates, avoid behavior-breaking automation, and preserve compatibility across CLAUDE/CODEX/GEMINI surfaces.
+- Highest-value risk remains **process drift** (large PRs + mirrored docs + hidden conventions).
 
-## 1) Repo-level Questions and Explicit Working Assumptions
+## 1) Clarified answers to the initial discovery questions
 
-These are the high-value questions I need from you before we move into execution-heavy stages.
+## 1A) Purpose and audience
 
-### 1. Purpose and audience
+- The repo is public and used by others. Stability is required for all merged changes.
+- Primary maintainer should remain this repo’s maintainer flow, but changes should be stable for downstream users.
+- Claude is primary today, while Codex and Gemini should remain first-class and equally supported for compatibility.
+- `/do-work` should stay a **strict execution cue** and stage-driven queue.
 
-- Is this repository for your **personal workflow only**, or should it be maintained as a **general tool template** for others?
-- Who is the long-term maintainer: only you, or also delegated collaborators/agents?
-- Should compatibility with both Codex + Claude + Gemini be kept equal, or is one primary?
-- Should `/do-work` be a strict execution queue or an optional planning aid?
+## 1B) Risk posture
 
-### 2. Risk posture
+- Throughput is important, but PR sanctity is explicitly non-negotiable.
+- PR review and separate-account gate remain mandatory; no shortcuts for branch protection.
+- There should be a clear install-time choice around elevated permissions:
+  - default secure posture,
+  - explicit opt-in to high-permission modes with clear warnings.
+- A second GitHub account for review/submission should be strongly encouraged.
+- Fast throughput can be pursued, but not at the cost of branch integrity.
 
-- Is your current priority:
-  1. strictest security,
-  2. fastest developer throughput,
-  3. broad compatibility,
-  4. or lowest maintenance cost?
-- What incidents are unacceptable versus acceptable in the next 90 days?
-- Which security risks are “never-negotiable” (ex: remote execution, hook escapes, branch-protection changes)?
-- Are we allowed to make changes that temporarily reduce speed to improve safety?
+## 1C) CI / testing strategy
 
-### 3. CI / testing strategy
+- CI credits are constrained; nightly checks should absorb heavier work.
+- PR CI should be lightweight and fast to support many PRs.
+- Required checks on PRs should stay strict enough to prevent regression, but non-essential gates should be moved to nightly.
+- Initial priority is Linux/macOS; Windows can be added when workflow impact is justified.
 
-- Should PR runs stay lightweight (fast feedback) with heavier **nightly** only, or can nightly also include medium-scale smoke checks?
-- What is your minimum acceptable CI runtime per PR?
-- Do you want required checks to fail hard on docs drift, or should some be advisory?
-- Are there target platforms/environments we must test from the start (Linux/macOS/Windows)?
+## 1D) Governance / process
 
-4. Change governance and merge discipline
+- Stage gates should be explicit and conservative.
+- PR authoring can be by agents from any supported model.
+- Repo assessment should happen between stages.
 
-- Are we enforcing **strict stage-based PR batches** (e.g., only one stage per merge window) or can stages overlap?
-- How aggressively do you want to split by file count and ownership (5-file PR cap versus topic cap)?
-- Is PR authoring always to be done by me, or should agents produce and merge some classes of changes directly?
-- Do you want explicit owner labels per stage, or is merge-by-stage sufficient?
+## 1E) Scope and roadmap
 
-### 5. Scope and roadmap boundaries
+- Quality infrastructure first, then maintainability, then feature expansion.
+- Keep all three agent surfaces (`codex`, `claude`, `gemini`) and reduce drift where possible, rather than deleting compatible surfaces.
+- Breaking doc/command changes can be done only with migration guidance and compatibility notes.
 
-- Should the roadmap prioritize:
-  - repo maintainability first,
-  - quality infrastructure first,
-  - or feature expansion first?
-- Can we retire or remove `claude`/`codex` mirror artifacts if duplicated (or keep for compatibility)?
-- Is it acceptable to make breaking changes to docs commands if they improve clarity and reduce confusion?
+## 2) Final assumptions to run with
 
-## 2) Why I think this matters (and my default read)
+1. Keep agent-first, cross-model workflow.
+2. Maintain strict, atomic PRs with explicit intent and review trail.
+3. Preserve PR safety and branch protection as hard limits.
+4. Use staged execution; re-assess after each stage.
+5. CI is split: fast PR checks + nightly deeper checks.
+6. Keep docs and do-work queue machine-actionable.
 
-- Quality drift has a bigger multiplier than any single script bug. Every agent run compounds it.
-- Current docs and hooks are strong; main risk is **complexity growth without explicit compaction**.
-- `do-work` queue is effectively absent, so execution direction is likely under-specified.
-- Existing PR queue has three independent large changes; they should be reviewed in smaller chunks before merge.
+## 3) Explicit implementation implications from this pass
 
-## 3) Working assumptions I will proceed with unless corrected
-
-1. You want the repo to remain **agent-first** and **workflow-centric**.
-2. We should keep PRs small and stage-based, with strict review gates and documented intent.
-3. Security posture should not be reduced for convenience.
-4. Docs are part of the product surface and must be lint-clean + timestamped.
-5. CI should be split into fast PR checks + nightly deeper checks.
-6. Plan + PR tracking must be explicit and machine-readable.
-
-## 4) Quick answer key (if you want defaults now)
-
-- Repository is for personal plus transferable use.
-- Priorities: security + maintainability first, then workflow throughput.
-- Keep docs-driven architecture; preserve compatibility across Codex/Claude/Gemini entry points.
-- CI: keep PR checks fast; run heavy matrix and mutation/security sweeps nightly.
-- Keep queue system active with clear staged objectives, not ad-hoc tasks.
-
-## 5) Planned review cadence (your requested style)
-
-- Before coding: complete this assumptions pass and lock categories.
-- PR processing: review open PRs first, each in one tight PR scope.
-- After each stage: run bug/security/test-infra assessment pass again before advancing.
-
+- Do not ship permissive execution shortcuts as defaults.
+- Add clear install-time consent language around dangerous permission choices.
+- Add clear guidance that PR review is user gatekeeping, not optional.
+- Keep `do-work` as a strict queue with stage-based execution cadence.
+- Apply Stage 1 with tiny PRs only and loop with review after each unit.

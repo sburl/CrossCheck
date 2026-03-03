@@ -25,15 +25,15 @@
 
 | PR | Title | Files changed | Current status | Review action | Merge intent |
 | --- | --- | --- | --- | --- | --- |
-| 44 | feat: Add missing agents to repository | 40 files | reviewed | inspect for duplicate/conflicting agent intent and doc consistency | Merge after PR45/46 or if independent; do not merge before fix pass |
-| 45 | feat: integrate Gemini CLI as a first-class agent | 14 files | reviewed, CI failing `Markdown Link Check` | fix dead link to Gemini repo URL in `gemini/README.md`; rerun link checks | Hold until link fix and Gemini pass complete |
+| 44 | feat: Add missing agents to repository | 40 files | reviewed | inspect for duplicate/conflicting agent intent and doc consistency; fixed `codex_critic` heading mismatch in `codex/agents/README.md` | Merge once this naming fix is mirrored upstream |
+| 45 | feat: integrate Gemini CLI as a first-class agent | 14 files | reviewed, CI failing `Markdown Link Check` | fixed dead link to Gemini repo URL in `gemini/README.md` and captured response | Hold until upstream branch includes URL fix and Gemini review can complete |
 | 46 | feat: add cron script to auto-configure new repos | 1 file | reviewed | verify script safety and permissions policy alignment | Merge once reviewed and confirmed |
 
 ### Current intended merge order (assumption)
 
 1. PR 45 (after link fix)
-2. PR 46
-3. PR 44
+2. PR 44 (with naming fix)
+3. PR 46
 
 Rationale: isolate risk by landing smaller, bounded changes first, then larger content/agent changes.
 
@@ -149,4 +149,3 @@ Each stage should complete before the next stage is started.
 - Test/bug/security pass findings.
 - Open risks and follow-up actions for next stage.
 - Whether this stage is approved to proceed by your explicit confirmation.
-

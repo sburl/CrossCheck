@@ -232,7 +232,7 @@ Strategic planning and agent coordination. Specializes in:
 - Strategic planning
 - Team motivation
 
-### claude_critic
+### codex_critic
 Critical analysis without bias. Specializes in:
 - Identifying risks and blind spots
 - Alternative approaches

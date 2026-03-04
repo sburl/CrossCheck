@@ -1,4 +1,6 @@
 # Contributing to CrossCheck (for agents)
+**Created:** 2026-03-04-00-00
+**Last Updated:** 2026-03-04-00-00
 
 CrossCheck is built for autonomous and human workflows that submit changes through PRs.  
 Agents must treat this repo as a PR-only control plane: branch locally, validate in hooks, then file PRs for merge.

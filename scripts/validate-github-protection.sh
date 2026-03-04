@@ -234,15 +234,21 @@ for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json";
     [ -f "$SETTINGS_FILE" ] || continue
     SETTINGS_NAME=$(basename "$(dirname "$SETTINGS_FILE")")/$(basename "$SETTINGS_FILE")
 
-    for rule in "${CRITICAL_DENY_RULES[@]}"; do
-        if jq -e --arg r "$rule" '.permissions.deny | index($r)' "$SETTINGS_FILE" >/dev/null 2>&1; then
+    while IFS=: read -r status rule; do
+        [ -z "$status" ] && continue
+        if [ "$status" = "OK" ]; then
             echo "✅ $SETTINGS_NAME denies: $rule"
         else
             echo "❌ FAIL: $SETTINGS_NAME missing deny rule: $rule"
             echo "   Run /update-crosscheck to sync critical deny rules"
             ISSUES=$((ISSUES + 1))
         fi
-    done
+    done < <(jq -r '
+        (.permissions.deny // []) as $deny |
+        $ARGS.positional[] |
+        . as $rule |
+        if ($deny | index($rule)) then "OK:" + $rule else "MISSING:" + $rule end
+    ' --args "${CRITICAL_DENY_RULES[@]}" < "$SETTINGS_FILE")
 done
 
 echo ""

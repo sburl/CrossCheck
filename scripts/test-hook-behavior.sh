@@ -29,7 +29,7 @@ export GIT_CONFIG_GLOBAL=/dev/null
 
 # Cleanup function — remove all test directories from this run (keyed by PID)
 cleanup() {
-    rm -rf /tmp/hook-behavior-test-*-$$ 2>/dev/null || true
+    rm -rf /tmp/hook-behavior-test-*-$$* 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -37,9 +37,7 @@ trap cleanup EXIT
 # Uses a feature branch to avoid Codex approval gate on main
 setup_test_repo() {
     local name="$1"
-    TEST_DIR="/tmp/hook-behavior-test-$name-$$"
-    rm -rf "$TEST_DIR" 2>/dev/null || true
-    mkdir -p "$TEST_DIR"
+    TEST_DIR=$(mktemp -d /tmp/hook-behavior-test-"$name"-$$."XXXXXX")
     cd "$TEST_DIR"
     git init -q
     git config user.email "test@test.com"
@@ -404,12 +402,10 @@ echo ""
 
 setup_test_repo_with_remote() {
     local name="$1"
-    TEST_DIR="/tmp/hook-behavior-test-$name-$$"
-    local REMOTE_DIR="/tmp/hook-behavior-test-${name}-remote-$$"
-    rm -rf "$TEST_DIR" "$REMOTE_DIR" 2>/dev/null || true
+    TEST_DIR=$(mktemp -d /tmp/hook-behavior-test-"$name"-$$."XXXXXX")
+    local REMOTE_DIR=$(mktemp -d /tmp/hook-behavior-test-"$name"-remote-$$."XXXXXX")
 
     # Create bare remote
-    mkdir -p "$REMOTE_DIR"
     cd "$REMOTE_DIR"
     git init -q --bare
 
@@ -574,9 +570,7 @@ echo ""
 
 test_postmerge_pr_counter_incremented() {
     local name="postmerge-counter"
-    TEST_DIR="/tmp/hook-behavior-test-$name-$$"
-    rm -rf "$TEST_DIR" 2>/dev/null || true
-    mkdir -p "$TEST_DIR"
+    TEST_DIR=$(mktemp -d /tmp/hook-behavior-test-"$name"-$$."XXXXXX")
     cd "$TEST_DIR"
     git init -q
     git symbolic-ref HEAD refs/heads/main
@@ -615,9 +609,7 @@ test_postmerge_pr_counter_incremented() {
 
 test_postmerge_waterfall_reminder() {
     local name="postmerge-waterfall"
-    TEST_DIR="/tmp/hook-behavior-test-$name-$$"
-    rm -rf "$TEST_DIR" 2>/dev/null || true
-    mkdir -p "$TEST_DIR"
+    TEST_DIR=$(mktemp -d /tmp/hook-behavior-test-"$name"-$$."XXXXXX")
     cd "$TEST_DIR"
     git init -q
     git symbolic-ref HEAD refs/heads/main

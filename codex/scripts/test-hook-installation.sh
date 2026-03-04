@@ -45,7 +45,7 @@ export GIT_CONFIG_GLOBAL=/dev/null
 # Cleanup function
 cleanup() {
     echo "  🧹 Cleaning up test directories..."
-    rm -rf /tmp/hook-test-* 2>/dev/null || true
+    rm -rf /tmp/hook-test-*-$$* 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -69,9 +69,11 @@ test_codex_alone() {
     echo ""
 
     cleanup
-    mkdir -p /tmp/hook-test-codex-alone
-    cd /tmp/hook-test-codex-alone
+    local TEST_DIR=$(mktemp -d /tmp/hook-test-codex-alone-$$."XXXXXX")
+    cd "$TEST_DIR"
     git init -q
+    git config user.email "test@test.com"
+    git config user.name "Test"
 
     # Create initial commit (hooks need a commit history to work)
     echo "initial" > README.md
@@ -123,9 +125,11 @@ test_git_then_codex() {
     echo ""
 
     cleanup
-    mkdir -p /tmp/hook-test-git-then-codex
-    cd /tmp/hook-test-git-then-codex
+    local TEST_DIR=$(mktemp -d /tmp/hook-test-git-then-codex-$$."XXXXXX")
+    cd "$TEST_DIR"
     git init -q
+    git config user.email "test@test.com"
+    git config user.name "Test"
 
     # Create initial commit (git diff-tree HEAD needs a parent commit)
     echo "initial" > README.md
@@ -210,9 +214,11 @@ test_codex_then_git() {
     echo ""
 
     cleanup
-    mkdir -p /tmp/hook-test-codex-then-git
-    cd /tmp/hook-test-codex-then-git
+    local TEST_DIR=$(mktemp -d /tmp/hook-test-codex-then-git-$$."XXXXXX")
+    cd "$TEST_DIR"
     git init -q
+    git config user.email "test@test.com"
+    git config user.name "Test"
 
     # Create initial commit (git diff-tree HEAD needs a parent commit)
     echo "initial" > README.md

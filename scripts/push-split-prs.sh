@@ -11,14 +11,12 @@ BRANCHES=(
 )
 
 REPO="sburl/CrossCheck"
-REQUIRED_ACCOUNT="sburl"
+REQUIRED_ACCOUNT="${REQUIRED_ACCOUNT_OVERRIDE:-sburl-bot}"
 
-if ! gh auth status >/dev/null 2>&1; then
+if ! CURRENT_ACCOUNT="$(gh api /user --jq '.login' 2>/dev/null)"; then
   echo "❌ No active gh auth session. Run: gh auth login --hostname github.com --git-protocol https --web" >&2
   exit 1
 fi
-
-CURRENT_ACCOUNT="$(gh api /user --jq '.login')"
 if [[ "$CURRENT_ACCOUNT" != "$REQUIRED_ACCOUNT" ]]; then
   echo "❌ Wrong account: $CURRENT_ACCOUNT (expected $REQUIRED_ACCOUNT)." >&2
   exit 1

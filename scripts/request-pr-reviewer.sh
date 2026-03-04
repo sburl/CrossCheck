@@ -52,7 +52,7 @@ resolve_map_reviewer() {
     entry="$(trim "$entry")"
     [ -z "$entry" ] && continue
     case "$entry" in
-      \#*|"#"[[:space:]]*) continue ;;
+      \#*) continue ;;
     esac
 
     separator=""

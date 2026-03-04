@@ -18,7 +18,6 @@ Environment:
 EOF
 }
 
-DRY_RUN=0
 VERIFY_ONLY=0
 TARGETS=()
 

@@ -106,7 +106,9 @@ if command -v rg >/dev/null 2>&1; then
     # Exclude specific scanner/doc files to avoid self-referential false positives
     # Use anchored paths (not broad substrings) so real secrets in similarly-named files are caught
     matches=$(rg -n --no-heading -g '!.git' -g '!node_modules' -g '!*.lock' -g '!*.min.js' \
-        -g '!skill-sources/security-review.md' -g '!scripts/scan-secrets.sh' -g '!scripts/test-hook-behavior.sh' \
+        -g '!skill-sources/security-review.md' \
+        -g '!scripts/scan-secrets.sh' -g '!claude/scripts/scan-secrets.sh' -g '!codex/scripts/scan-secrets.sh' \
+        -g '!scripts/test-hook-behavior.sh' -g '!claude/scripts/test-hook-behavior.sh' -g '!codex/scripts/test-hook-behavior.sh' \
         "$COMBINED" . 2>/dev/null || true)
 else
     matches=$(grep -rn --include='*.py' --include='*.js' --include='*.ts' --include='*.tsx' \
@@ -116,7 +118,11 @@ else
         -E "$COMBINED" . 2>/dev/null | grep -v '.git/' \
         | grep -Fv './skill-sources/security-review.md' \
         | grep -Fv './scripts/scan-secrets.sh' \
-        | grep -Fv './scripts/test-hook-behavior.sh' || true)
+        | grep -Fv './claude/scripts/scan-secrets.sh' \
+        | grep -Fv './codex/scripts/scan-secrets.sh' \
+        | grep -Fv './scripts/test-hook-behavior.sh' \
+        | grep -Fv './claude/scripts/test-hook-behavior.sh' \
+        | grep -Fv './codex/scripts/test-hook-behavior.sh' || true)
 fi
 
 # Filter known false positives from working tree results
@@ -157,7 +163,11 @@ if [ "$SCAN_HISTORY" = true ]; then
     history_matches=""
     for pattern in "sk-proj-" "sk-ant-" "AKIA" "ghp_" "sk_live_" "AIza"; do
         # Exclude security-review.md from history results (contains example patterns)
-        found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline -- ':!skill-sources/security-review.md' ':!commands/security-review.md' ':!scripts/scan-secrets.sh' 2>/dev/null | head -5 || true)
+        found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline -- \
+            ':!skill-sources/security-review.md' ':!claude/skill-sources/security-review.md' ':!codex/skill-sources/security-review.md' ':!codex/skills/security-review/SKILL.md' \
+            ':!commands/security-review.md' \
+            ':!scripts/scan-secrets.sh' ':!claude/scripts/scan-secrets.sh' ':!codex/scripts/scan-secrets.sh' \
+            2>/dev/null | head -5 || true)
         if [ -n "$found" ]; then
             history_matches="$history_matches\n  Pattern '$pattern' found in deleted history:\n$found"
         fi

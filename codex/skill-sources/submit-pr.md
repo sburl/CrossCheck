@@ -110,7 +110,8 @@ EOF
 #   and optional --actor "<your-bot-name>"
 # - Or set one of:
 #   - CROSSCHECK_BOT_HUMAN_REVIEWER/CROSSCHECK_BOT_ACTOR
-#   - CROSSCHECK_BOT_REVIEWER_MAP (newline entries like `bot-name:human-name`)
+#   - CROSSCHECK_BOT_REVIEWER_MAP (newline entries like `bot-name:human-name`,
+#      `bot_name=human_name`, or `bot-name->human-name`)
 bash scripts/request-pr-reviewer.sh --pr "$PR_NUMBER"
 ```
 

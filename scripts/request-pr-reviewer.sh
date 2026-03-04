@@ -35,6 +35,50 @@ Environment:
 EOF
 }
 
+trim() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+resolve_map_reviewer() {
+  local map_value="$1"
+  local actor="$2"
+  local entry bot_name human_name separator
+
+  while IFS= read -r entry; do
+    entry="$(trim "$entry")"
+    [ -z "$entry" ] && continue
+    case "$entry" in
+      \#*|"#"[[:space:]]*) continue ;;
+    esac
+
+    separator=""
+    if [[ "$entry" == *"->"* ]]; then
+      separator="->"
+    elif [[ "$entry" == *"="* ]]; then
+      separator="="
+    elif [[ "$entry" == *":"* ]]; then
+      separator=":"
+    else
+      continue
+    fi
+
+    bot_name="${entry%%$separator*}"
+    human_name="${entry#*$separator}"
+    bot_name="$(trim "$bot_name")"
+    human_name="$(trim "$human_name")"
+
+    if [ -n "$bot_name" ] && [ -n "$human_name" ] && [ "$bot_name" = "$actor" ] && [ "$bot_name" != "$human_name" ]; then
+      printf '%s' "$human_name"
+      return 0
+    fi
+  done <<< "$map_value"
+
+  return 1
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --pr|--pr-number)
@@ -121,20 +165,10 @@ if [ -z "$HUMAN_REVIEWER" ]; then
 fi
 
 if [ -z "$HUMAN_REVIEWER" ] && [ -n "${CROSSCHECK_BOT_REVIEWER_MAP:-}" ]; then
-  while IFS= read -r mapping; do
-    [ -z "$mapping" ] && continue
-    case "$mapping" in
-      \#*) continue ;;
-    esac
-    bot_name="${mapping%%[:=]*}"
-    human_name="${mapping#*[:=]}"
-    if [ "$bot_name" = "$OPERATING_ACTOR" ] && [ -n "$human_name" ] && [ "$bot_name" != "$human_name" ]; then
-      HUMAN_REVIEWER="$human_name"
-      break
-    fi
-  done <<EOF
-$(printf '%s\n' "$CROSSCHECK_BOT_REVIEWER_MAP")
-EOF
+  map_reviewer="$(resolve_map_reviewer "$CROSSCHECK_BOT_REVIEWER_MAP" "$OPERATING_ACTOR" || true)"
+  if [ -n "$map_reviewer" ]; then
+    HUMAN_REVIEWER="$map_reviewer"
+  fi
 fi
 
 if [ -z "$HUMAN_REVIEWER" ] && [ "$FORCE_REQUEST" != "true" ] && [ "$FORCE_REQUEST" != "1" ] && [ "$FORCE_REQUEST" != "yes" ]; then

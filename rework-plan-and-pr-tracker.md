@@ -18,10 +18,10 @@
 
 ### Repo-first status
 
-- Current branch: `feat/review-pr44-fix`
+- Current branch: `feat/pr58-bot-reviewer-map`
 - Working tree: clean before each major stage
 - Open PRs found (remote): 44, 45, 46, 47, 48, 49
-- Local split PR branches prepared but not yet pushed (pending GH write access): `feat/pr52-54-gemini-telemetry-hardened`, `feat/pr49-50-ci-nightly-audit`, `feat/pr46-gh-repo-setup-cron`, `feat/pr57-bot-reviewer`, `chore/pr51-pr53-cleanup`
+- Local split PR branches prepared but not yet pushed (pending GH write access): `feat/pr52-54-gemini-telemetry-hardened`, `feat/pr49-50-ci-nightly-audit`, `feat/pr46-gh-repo-setup-cron`, `feat/pr57-bot-reviewer`, `feat/pr58-bot-reviewer-map`, `chore/pr51-pr53-cleanup`
 
 ### GitHub write access status
 

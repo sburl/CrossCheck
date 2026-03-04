@@ -30,7 +30,8 @@ Environment:
   CROSSCHECK_BOT_ACTOR           actor login to evaluate
   CROSSCHECK_BOT_HUMAN_REVIEWER   mapped human reviewer
                                   supports user-bot, user_bot, user[bot]
-  CROSSCHECK_BOT_REVIEWER_MAP    bot-to-human fallback map entries, e.g. `bot-name:human-name`
+  CROSSCHECK_BOT_REVIEWER_MAP    bot-to-human fallback map entries, e.g. `bot-name:human-name`;
+                                applied before suffix-based inference
   CROSSCHECK_FORCE_REVIEW_REQUEST set to 1/true/yes to force request
 EOF
 }
@@ -156,19 +157,19 @@ if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
   exit 1
 fi
 
+if [ -z "$HUMAN_REVIEWER" ] && [ -n "${CROSSCHECK_BOT_REVIEWER_MAP:-}" ]; then
+  map_reviewer="$(resolve_map_reviewer "$CROSSCHECK_BOT_REVIEWER_MAP" "$OPERATING_ACTOR" || true)"
+  if [ -n "$map_reviewer" ]; then
+    HUMAN_REVIEWER="$map_reviewer"
+  fi
+fi
+
 if [ -z "$HUMAN_REVIEWER" ]; then
   case "$OPERATING_ACTOR" in
     *-bot) HUMAN_REVIEWER="${OPERATING_ACTOR%-bot}" ;;
     *_bot) HUMAN_REVIEWER="${OPERATING_ACTOR%_bot}" ;;
     *\[bot\]) HUMAN_REVIEWER="${OPERATING_ACTOR%\[bot\]}" ;;
   esac
-fi
-
-if [ -z "$HUMAN_REVIEWER" ] && [ -n "${CROSSCHECK_BOT_REVIEWER_MAP:-}" ]; then
-  map_reviewer="$(resolve_map_reviewer "$CROSSCHECK_BOT_REVIEWER_MAP" "$OPERATING_ACTOR" || true)"
-  if [ -n "$map_reviewer" ]; then
-    HUMAN_REVIEWER="$map_reviewer"
-  fi
 fi
 
 if [ -z "$HUMAN_REVIEWER" ] && [ "$FORCE_REQUEST" != "true" ] && [ "$FORCE_REQUEST" != "1" ] && [ "$FORCE_REQUEST" != "yes" ]; then

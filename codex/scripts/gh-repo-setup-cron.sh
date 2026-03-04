@@ -86,10 +86,13 @@ echo "$REPOS_JSON" | jq -r '.[] | "\(.nameWithOwner)\t\(.createdAt)\t\(.viewerPe
 
   echo "--- $REPO ---"
   CAN_ADMIN="false"
-  if [ "$HAS_VIEWER_PERMISSION" = "true" ]; then
+  if [ "$HAS_VIEWER_PERMISSION" = "true" ] && [ -n "$VIEWER_PERMISSION" ]; then
     if [ "$VIEWER_PERMISSION" = "admin" ] || [ "$VIEWER_PERMISSION" = "ADMIN" ]; then
       CAN_ADMIN="true"
     fi
+  elif [ "$HAS_VIEWER_PERMISSION" = "true" ]; then
+    # Fallback in case viewerPermission is unexpectedly omitted for a specific repo.
+    CAN_ADMIN="$(gh api "repos/$REPO" --jq '.permissions.admin // false' 2>/dev/null || echo false)"
   else
     CAN_ADMIN="$(gh api "repos/$REPO" --jq '.permissions.admin // false' 2>/dev/null || echo false)"
   fi

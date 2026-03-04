@@ -44,6 +44,7 @@
 | PR 50 | feat: add nightly security gates + script mirror audit | 3 workflow/script files | **Gemini PASS + ready** | run `scan-secrets.sh` nightly and add script mirror drift coverage in nightly quality gates | Merge after CI split PR, before broad Stage 3 work |
 | 44 | feat: Add missing agents to repository | 40 files | reviewed; split into micro-PRs | inspect for duplicate/conflicting agent intent and doc consistency; fixed `codex_critic` naming + inventory drift in `codex/agents/README.md`; removed orphaned helper script | Merge once this PR-set completes |
 | 57 | Add bot-aware PR reviewer request + mirror sync helper | 11 files | **READY** | bot-aware reviewer mapping supports `-bot`, `_bot`, and `[bot]`; docs include custom bot-name mapping and `--reviewer/--actor` usage; `/submit-pr` now auto-triggers bot-reviewer request; sync helper now auto-discovers NotActive CrossCheck installs while still supporting `.crosscheck` skip semantics and explicit `.claude` / `.cache` targets. Verified sync pass across all known CrossCheck installs. | Merge after PR 56 |
+| 58 | Add custom bot-to-human reviewer mapping fallback | 4 files | **READY** | adds `CROSSCHECK_BOT_REVIEWER_MAP` support for non-standard bot names | Merge after PR 57 |
 | 45 | feat: integrate Gemini CLI as a first-class agent | 14 files | **Gemini PASS + ready** | fixed dead link to Gemini repo URL in `gemini/README.md` and captured response | Merge once branch includes URL fix and final scope review sync |
 | 46 | feat: add cron script to auto-configure new repos | 1 file | **Gemini PASS + ready** | bot invite is now gated on repo admin permission, idempotent collaborator checks, and viewer-permission fallback when `viewerPermission` is unavailable | Merge once reviewed and confirmed |
 
@@ -62,7 +63,8 @@
 11. PR 44 micro-PR C: final PR-44 merge packaging
 12. PR 56: harden cron script payload lookup and mirror path behavior
 13. PR 57: bot-aware reviewer mapping + sync propagation
-14. PR 46
+14. PR 58: custom bot-to-human mapping support
+15. PR 46
 
 ### Stage 2 add-on actions
 

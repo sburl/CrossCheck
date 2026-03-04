@@ -64,7 +64,7 @@ Define task → Gemini builds on branch → Hooks enforce quality
 ## Quick Start
 
 **Prerequisites:**
-- [Gemini CLI](https://github.com/google/gemini-cli)
+- [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - Gemini API Key
 - Git + GitHub CLI (`gh`)
 

@@ -30,6 +30,7 @@ Environment:
   CROSSCHECK_BOT_ACTOR           actor login to evaluate
   CROSSCHECK_BOT_HUMAN_REVIEWER   mapped human reviewer
                                   supports user-bot, user_bot, user[bot]
+  CROSSCHECK_BOT_REVIEWER_MAP    bot-to-human fallback map entries, e.g. `bot-name:human-name`
   CROSSCHECK_FORCE_REVIEW_REQUEST set to 1/true/yes to force request
 EOF
 }
@@ -119,6 +120,23 @@ if [ -z "$HUMAN_REVIEWER" ]; then
   esac
 fi
 
+if [ -z "$HUMAN_REVIEWER" ] && [ -n "${CROSSCHECK_BOT_REVIEWER_MAP:-}" ]; then
+  while IFS= read -r mapping; do
+    [ -z "$mapping" ] && continue
+    case "$mapping" in
+      \#*) continue ;;
+    esac
+    bot_name="${mapping%%[:=]*}"
+    human_name="${mapping#*[:=]}"
+    if [ "$bot_name" = "$OPERATING_ACTOR" ] && [ -n "$human_name" ] && [ "$bot_name" != "$human_name" ]; then
+      HUMAN_REVIEWER="$human_name"
+      break
+    fi
+  done <<EOF
+$(printf '%s\n' "$CROSSCHECK_BOT_REVIEWER_MAP")
+EOF
+fi
+
 if [ -z "$HUMAN_REVIEWER" ] && [ "$FORCE_REQUEST" != "true" ] && [ "$FORCE_REQUEST" != "1" ] && [ "$FORCE_REQUEST" != "yes" ]; then
   echo "ℹ️ Operating account '$OPERATING_ACTOR' is not a bot account and no explicit --reviewer was provided."
   echo "   Set --reviewer / CROSSCHECK_BOT_HUMAN_REVIEWER or pass --force to request anyway."
@@ -126,7 +144,7 @@ if [ -z "$HUMAN_REVIEWER" ] && [ "$FORCE_REQUEST" != "true" ] && [ "$FORCE_REQUE
 fi
 
 if [ -z "$HUMAN_REVIEWER" ]; then
-  echo "❌ No mapped human reviewer found. Set --reviewer / CROSSCHECK_BOT_HUMAN_REVIEWER." >&2
+  echo "❌ No mapped human reviewer found. Set --reviewer / CROSSCHECK_BOT_HUMAN_REVIEWER / CROSSCHECK_BOT_REVIEWER_MAP." >&2
   exit 1
 fi
 

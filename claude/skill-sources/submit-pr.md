@@ -108,7 +108,9 @@ EOF
 # - Pass explicit mapping:
 #   --reviewer "<your-human-name>" 
 #   and optional --actor "<your-bot-name>"
-# - Or set CROSSCHECK_BOT_HUMAN_REVIEWER/CROSSCHECK_BOT_ACTOR env vars.
+# - Or set one of:
+#   - CROSSCHECK_BOT_HUMAN_REVIEWER/CROSSCHECK_BOT_ACTOR
+#   - CROSSCHECK_BOT_REVIEWER_MAP (newline entries like `bot-name:human-name`)
 bash scripts/request-pr-reviewer.sh --pr "$PR_NUMBER"
 ```
 

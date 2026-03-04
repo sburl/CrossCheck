@@ -13,14 +13,15 @@ When user requests these tasks, invoke the corresponding skill:
 
 | User Request | Skill to Invoke | Why Mandatory |
 |-------------|-----------------|---------------|
-| "create pr", "submit pr", "open pr" | `/submit-pr` | Complete workflow: techdebt → pre-check → PR → Codex review |
+| "create pr", "submit pr", "open pr" | `/submit-pr` | Complete workflow: techdebt → pre-check → PR → Peer review |
 | "commit", "save changes" | `/commit-smart` | Good commit messages, reviews changes |
 | Complex task (>3 files) | `/plan` | Design before implementation |
+| "have Claude do X" | `/claude-delegate` | Proper context injection |
 | "have Codex do X" | `/codex-delegate` | Proper context injection |
 | "have Gemini do X" | `/gemini-delegate` | Proper context injection |
 | "get opinions", "ask other models" | `/ensemble-opinion` | Multi-model perspectives |
-| "review", "Codex review" | `/pr-review` | Standard Codex review handoff |
-| Every 3 PRs | `/repo-assessment` | Comprehensive Codex assessment |
+| "review", "Peer review" | `/pr-review` | Standard review handoff |
+| Every 3 PRs | `/repo-assessment` | Comprehensive assessment |
 | "security review" | `/security-review` | Full security audit (deps, secrets, perms) |
 | "red team", "exploit" | `/redteam` | Active exploit verification of security findings |
 | "fuzz", "adversarial input" | `/fuzz` | Property-based and adversarial input testing |
@@ -54,21 +55,23 @@ When user requests these tasks, invoke the corresponding skill:
 | **Code "looks right"** | Don't trust - verify with tests |
 | **Claim "X works"** | Show passing test results as proof |
 | **Bug fix** | (1) Test reproduces (2) Verify fails (3) Fix (4) Pass (5) Commit |
-| **User corrects** | Add specific rule to CODEX.md NOW |
-| **Unfamiliar tech** | ASK before "fixing" (post-Jan 2025?) |
-| **Post-cutoff working code** | Don't change - add `# WARNING: post-cutoff - VALID` |
-| **User wants commit** | INVOKE `/commit-smart` (NEVER git commit directly) |
-| **User wants PR** | INVOKE `/submit-pr` (auto-runs techdebt + pre-check) |
-| **Submit PR** | `/submit-pr` handles everything (no manual steps) |
-| **CI pass** | Merge on GitHub (not locally) |
-| **CI fail** | Fix on feature branch, push, wait again |
-| **After merge** | `git checkout main && git pull` |
-| **Codex review** | Auto loop - fix issues autonomously |
-| **Stuck 10+ rounds** | Ask user for input |
-| **Every 3 PRs** | INVOKE `/repo-assessment` → refactor PR |
-| **Delegate to Codex** | INVOKE `/codex-delegate` with context |
-| **Delegate to Gemini** | INVOKE `/gemini-delegate` with context |
-| **Multiple AI opinions** | INVOKE `/ensemble-opinion` |
+| User corrects | Add specific rule to GEMINI.md/CLAUDE.md/CODEX.md NOW |
+| Unfamiliar tech | ASK before "fixing" (post-Jan 2025?) |
+| Post-cutoff working code | Don't change - add `# WARNING: post-cutoff - VALID` |
+| User wants commit | INVOKE `/commit-smart` (NEVER git commit directly) |
+| User wants PR | INVOKE `/submit-pr` (auto-runs techdebt + pre-check) |
+| Submit PR | `/submit-pr` handles everything (no manual steps) |
+| CI pass | Merge on GitHub (not locally) |
+| CI fail | Fix on feature branch, push, wait again |
+| After merge | `git checkout main && git pull` |
+| Peer review | Auto loop - fix issues autonomously |
+| Stuck 10+ rounds | Ask user for input |
+| Every 3 PRs | INVOKE `/repo-assessment` → refactor PR |
+| Delegate to Codex | INVOKE `/codex-delegate` with context |
+| Delegate to Gemini | INVOKE `/gemini-delegate` with context |
+| Delegate to Claude | INVOKE `/claude-delegate` with context |
+| Multiple AI opinions | INVOKE `/ensemble-opinion` |
+
 | **Parallel work needed** | INVOKE `/create-worktree` |
 | **Autonomous 30+ min** | Pre-flight checks + TODO.md scratchpad every 15min |
 | **Blocker >10min** | Document in TODO.md scratchpad, try alternative |

@@ -1,5 +1,5 @@
 **Created:** 2026-03-03-16-00
-**Last Updated:** 2026-03-03-16-00
+**Last Updated:** 2026-03-03-12-54
 
 # CrossCheck Rework Plan + PR Tracker
 
@@ -17,23 +17,77 @@
 
 ### Repo-first status
 
-- Current branch: `main`
+- Current branch: `feat/review-pr44-fix`
 - Working tree: clean before each major stage
-- Open PRs found: 44, 45, 46
+- Open PRs found: 44, 45, 46, 49, 50, 51, 52, 53, 54, 56
 
 ## 1) Existing PRs to process now
 
 | PR | Title | Files changed | Current status | Review action | Merge intent |
 | --- | --- | --- | --- | --- | --- |
-| 44 | feat: Add missing agents to repository | 40 files | reviewed | inspect for duplicate/conflicting agent intent and doc consistency; fixed `codex_critic` heading mismatch in `codex/agents/README.md` | Merge once this naming fix is mirrored upstream |
-| 45 | feat: integrate Gemini CLI as a first-class agent | 14 files | reviewed, CI failing `Markdown Link Check` | fixed dead link to Gemini repo URL in `gemini/README.md` and captured response | Hold until upstream branch includes URL fix and Gemini review can complete |
-| 46 | feat: add cron script to auto-configure new repos | 1 file | reviewed | verify script safety and permissions policy alignment | Merge once reviewed and confirmed |
+| 51 | Remove dead `setup-github-protection` scripts | 3 script files | **Gemini PASS + ready** | confirmed unreferenced via repo-wide string scan; pass script mirror audit | Merge before PR 44 packaging |
+| 52 | Harden Gemini telemetry setup scripts | 3 script files | **Gemini PASS + ready** | syntax-checked and handles invalid JSON by backup + recreate; preserves valid config idempotently | Merge after PR 51 |
+| 53 | Add script mirror executable-mode parity checks | 3 script files | **Gemini PASS + ready** | detects executable bit mismatches between root/codex (+ warnings for claude) | Merge before PR 50 and CI split if needed |
+| 54 | Fix runtime regression in Gemini telemetry scripts | 3 script files | **Gemini PASS + ready** | fix malformed inline Python and preserve idempotent telemetry settings update behavior | Merge after PR 53 |
+| 56 | Harden cron setup script payload lookup | 2 script files | **Gemini PASS + ready** | mirrored-path tolerant payload lookup + admin-safe repo mutation and invite-idempotence | Merge after PR 46 prep |
+| PR 49 | feat: split quality gates into PR + nightly workflows | 2 workflow files | **Gemini PASS + ready** | review for PR/CI boundary and execution policy; run and log Gemini opinion before merge | Merge first (infrastructure risk reduction before broader changes) |
+| PR 50 | feat: add nightly security gates + script mirror audit | 3 workflow/script files | **Gemini PASS + ready** | run `scan-secrets.sh` nightly and add script mirror drift coverage in nightly quality gates | Merge after CI split PR, before broad Stage 3 work |
+| 44 | feat: Add missing agents to repository | 40 files | reviewed; split into micro-PRs | inspect for duplicate/conflicting agent intent and doc consistency; fixed `codex_critic` naming + inventory drift in `codex/agents/README.md`; removed orphaned helper script | Merge once this PR-set completes |
+| 57 | Add bot-aware PR reviewer request + mirror sync helper | 11 files | **READY** | bot-aware reviewer mapping supports `-bot`, `_bot`, and `[bot]`; docs include custom bot-name mapping and `--reviewer/--actor` usage; `/submit-pr` now auto-triggers bot-reviewer request; sync helper now auto-discovers NotActive CrossCheck installs while still supporting `.crosscheck` skip semantics and explicit `.claude` / `.cache` targets. Verified sync pass across all known CrossCheck installs. | Merge after PR 56 |
+| 45 | feat: integrate Gemini CLI as a first-class agent | 14 files | **Gemini PASS + ready** | fixed dead link to Gemini repo URL in `gemini/README.md` and captured response | Merge once branch includes URL fix and final scope review sync |
+| 46 | feat: add cron script to auto-configure new repos | 1 file | **Gemini PASS + ready** | bot invite is now gated on repo admin permission, idempotent collaborator checks, and viewer-permission fallback when `viewerPermission` is unavailable | Merge once reviewed and confirmed |
 
 ### Current intended merge order (assumption)
 
-1. PR 45 (after link fix)
-2. PR 44 (with naming fix)
-3. PR 46
+1. CI split PR (this workflow change)
+2. PR 49: split quality gates and nightly workflow
+3. PR 50: nightly security + script mirror audit
+4. PR 45 (after link fix)
+5. PR 44 micro-PR A: `codex/agents/README.md` consistency
+6. PR 44 micro-PR B: dead-code removal (`fix_all_descriptions2.py`)
+7. PR 51: remove unused `setup-github-protection.sh` scripts
+8. PR 52: harden Gemini telemetry setup scripts
+9. PR 53: add script mirror executable-mode parity checks
+10. PR 54: fix telemetry script runtime regression
+11. PR 44 micro-PR C: final PR-44 merge packaging
+12. PR 56: harden cron script payload lookup and mirror path behavior
+13. PR 57: bot-aware reviewer mapping + sync propagation
+14. PR 46
+
+### Stage 2 add-on actions
+
+- Added nightly workflow split:
+  - `quality-gates.yml` now keeps PR-friendly checks only.
+  - `quality-gates-nightly.yml` runs hook/doc metadata/mirror drift checks on a daily schedule and on `workflow_dispatch`.
+- Value add:
+  - Faster PR feedback.
+  - Heavier or longer-running checks preserved for nightly audit coverage.
+- Gemini review status:
+  - `PASS_WITH_NOTES` on scope and risk.
+  - Action item: keep this workflow tracked in PR and release cadence.
+  - Explicit trade-off: `Mirror Drift Check` is nightly-only, so sync issues may not block PR merge immediately but are caught on daily run.
+
+- Security gates baseline:
+  - Added `security-gates-nightly.yml` to run `scripts/scan-secrets.sh --all` on schedule/dispatch.
+  - Purpose: separate secret + history + log scanning from PR feedback path.
+- Maintenance hardening:
+  - Added `scripts/check-script-mirrors.sh` and wired it into nightly quality gates.
+  - Enforces exact root↔codex mirror parity; Claude mirror extras are tracked by allowlist.
+- 44A implemented:
+  - Fixed `codex/agents/README.md` inventory drift (`engineering`, `product`, `project`, `testing`, `bonus` headings).
+  - Confirmed `codex_critic` remains the canonical Codex critic label in Codex docs.
+- 44B implemented:
+  - Removed `fix_all_descriptions2.py` (migration utility with no runtime references).
+- 52 implemented:
+  - Hardened Gemini telemetry setup scripts for invalid JSON recovery with backup and clean config recreation.
+- 53 implemented:
+  - Initial bug/security pass documented in `docs/repo-assessment-pass-1.md`.
+- 54 implemented:
+  - Risk-pattern pass completed in `docs/repo-assessment-pass-2.md`.
+- 55 implemented:
+  - Added script-mirror executable-mode parity checks in `scripts/check-script-mirrors.sh` and mirrored copies.
+- 56 implemented:
+  - Hardened cron setup payload lookup/mirror behavior and admin-safe mutation flow for new-repo protection automation.
 
 Rationale: isolate risk by landing smaller, bounded changes first, then larger content/agent changes.
 

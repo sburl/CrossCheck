@@ -106,6 +106,15 @@ EOF
 
 ```bash
 PR_NUMBER=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number')
+
+# If your account is a bot (like `user-bot`, `user_bot`, or `user[bot]`),
+# this maps to the human reviewer for review notification.
+# If your bot account name is custom, either:
+# - Pass explicit mapping:
+#   --reviewer "<your-human-name>" 
+#   and optional --actor "<your-bot-name>"
+# - Or set CROSSCHECK_BOT_HUMAN_REVIEWER/CROSSCHECK_BOT_ACTOR env vars.
+bash scripts/request-pr-reviewer.sh --pr "$PR_NUMBER"
 ```
 
 ## Step 4: Initiate Codex Review

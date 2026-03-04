@@ -11,7 +11,7 @@ description: Automated PR submission - runs pre-checks, creates PR, and starts r
 This command automates the entire PR submission process:
 1. Pre-PR checks
 2. PR creation
-3. Initiate Claude review
+3. Initiate Codex review
 
 ## Usage
 
@@ -57,12 +57,12 @@ Automatically runs quality checks:
 ✅ Coach agent reviewed
 ✅ No critical issues
 
-### Summary for Claude
+### Summary for Codex
 This PR has been pre-screened with /techdebt and /pre-pr-check.
 All technical debt addressed, tests passing, documentation current.
 ```
 
-**Save this to include with Claude review (Step 4).**
+**Save this to include with Codex review (Step 4).**
 
 ## Step 2: Create Pull Request
 
@@ -75,12 +75,12 @@ BRANCH=$(git branch --show-current)
 # Auto-generate PR title from branch name
 TITLE=$(echo "$BRANCH" | sed 's/-/ /g' | sed 's/^./\u&/')
 
-# Create PR with template
-gh pr create \
+# Create PR and capture number
+PR_NUMBER=$(gh pr create \
   --title "$TITLE" \
   --body "$(cat <<EOF
 ## Summary
-[Auto-generated - Claude will fill this in]
+[Auto-generated - Claude Code will fill this in]
 
 ## Changes
 $(git log main..HEAD --oneline)
@@ -97,9 +97,19 @@ $(git log main..HEAD --oneline)
 - [x] Pre-PR checks completed
 - [x] Code tested
 - [x] Docs updated with timestamps
-- [x] Ready for Claude review
+- [x] Ready for Codex review
 EOF
-)"
+)" \
+  --json number --jq '.number')
+
+# If your account is a bot (like `user-bot`, `user_bot`, or `user[bot]`),
+# this maps to the human reviewer.
+# If your bot account name is custom, either:
+# - Pass explicit mapping:
+#   --reviewer "<your-human-name>" 
+#   and optional --actor "<your-bot-name>"
+# - Or set CROSSCHECK_BOT_HUMAN_REVIEWER/CROSSCHECK_BOT_ACTOR env vars.
+bash scripts/request-pr-reviewer.sh --pr "$PR_NUMBER"
 ```
 
 ## Step 3: Get PR Number
@@ -108,11 +118,11 @@ EOF
 PR_NUMBER=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number')
 ```
 
-## Step 4: Initiate Claude Review
+## Step 4: Initiate Codex Review
 
-Follow the `/pr-review` skill for the review process. Include the pre-review results from Step 1.5 in the Claude prompt so the reviewer knows what was already checked.
+Follow the `/pr-review` skill for the review process. Include the pre-review results from Step 1.5 in the Codex prompt so the reviewer knows what was already checked.
 
-The review loop (Claude feedback → assess → fix → re-review) is defined in `/pr-review` Steps 2-7. Do NOT merge unless Claude explicitly approves and specifies the merge destination.
+The review loop (Codex feedback → assess → fix → re-review) is defined in `/pr-review` Steps 2-7. Do NOT merge unless Codex explicitly approves and specifies the merge destination.
 
 ## Step 5: Post-Merge Automation
 
@@ -144,11 +154,11 @@ Pre-checks run automatically
          ↓
 PR created automatically
          ↓
-Claude review prompt provided
+Codex review prompt provided
          ↓
-[User runs Claude in new terminal]
+[User runs Codex in new terminal]
          ↓
-Claude ↔ Claude review loop
+Claude ↔ Codex review loop
          ↓
 Merge when approved
          ↓
@@ -171,7 +181,7 @@ If PR creation fails:
 - Verify branch is pushed
 - Show error details
 
-If Claude review stalls:
+If Codex review stalls:
 - Timeout after 30 minutes
 - Prompt user for manual intervention
 - Save session state for resume

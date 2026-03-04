@@ -9,7 +9,10 @@ This directory contains custom agents for Codex, curated for high-value speciali
 
 ## 📦 Agent Inventory (14 total)
 
-### Engineering (2)
+### Engineering (5)
+- **backend-architect** - Backend architecture and database design
+- **devops-automator** - CI/CD pipelines, infrastructure, and deployment
+- **frontend-developer** - Frontend development and UI implementation
 - **rapid-prototyper** - Fast MVP/prototype building within 6-day cycles
 - **test-writer-fixer** - Test automation, writing, and fixing
 
@@ -17,12 +20,20 @@ This directory contains custom agents for Codex, curated for high-value speciali
 - **ui-designer** - Interface design and component creation
 - **whimsy-injector** - UX delight patterns and playful moments
 
-### Testing (1)
-- **tool-evaluator** - Tech stack evaluation and tool selection
+### Product (1)
+- **sprint-prioritizer** - Sprint planning and task prioritization
 
-### Bonus (2)
+### Project Management (1)
+- **project-shipper** - Release management and project coordination
+
+### Testing (2)
+- **tool-evaluator** - Tech stack evaluation and tool selection
+- **api-tester** - API validation and contract testing
+
+### Bonus (3)
 - **coach** - Strategic planning, motivation, and agent coordination
 - **codex_critic** - Critical analysis and risk identification
+- **studio-coach** - Performance coaching and guidance
 
 ---
 

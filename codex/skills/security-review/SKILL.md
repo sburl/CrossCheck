@@ -161,7 +161,7 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
    ```bash
    # Temporary files from Codex debugging pattern
    grep -n 'sk-proj-\|sk-ant-\|AKIA\|ghp_\|sk_live_' \
-     /tmp/question.txt /tmp/reply.txt 2>/dev/null
+     /tmp/debug-*/question.txt /tmp/debug-*/reply.txt 2>/dev/null
    ```
 
    **If secrets found in logs:**

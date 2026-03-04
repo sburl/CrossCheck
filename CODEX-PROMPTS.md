@@ -247,7 +247,8 @@ For complex debugging that benefits from a second model's perspective, use the f
 ### Step 1: Write the question
 
 ```bash
-cat > /tmp/question.txt << 'QUESTION'
+TMPDIR=$(mktemp -d /tmp/debug-$$.XXXXXX)
+cat > $TMPDIR/question.txt << 'QUESTION'
 I have a [component] that fails with [specific error].
 
 Here is the full function:
@@ -262,14 +263,14 @@ Can you identify:
 1. [Specific question 1]
 2. [Specific question 2]
 
-Please write a detailed analysis to /tmp/reply.txt
+Please write a detailed analysis to $TMPDIR/reply.txt
 QUESTION
 ```
 
 ### Step 2: Run Codex
 
 ```bash
-cat /tmp/question.txt | codex exec --full-auto
+cat $TMPDIR/question.txt | codex exec --full-auto
 ```
 
 Flags:
@@ -281,7 +282,7 @@ Flags:
 ### Step 3: Read the analysis
 
 ```bash
-cat /tmp/reply.txt
+cat $TMPDIR/reply.txt
 ```
 
 Evaluate suggestions critically. Codex may identify real bugs but can occasionally misinterpret specifications. Always verify against authoritative sources.

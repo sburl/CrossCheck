@@ -221,7 +221,7 @@ if [ "$SCAN_LOGS" = true ]; then
     fi
 
     # Temp files from Codex debugging
-    for tmpfile in /tmp/question.txt /tmp/reply.txt; do
+    for tmpfile in /tmp/debug-*.*/question.txt /tmp/debug-*.*/reply.txt; do
         if [ -f "$tmpfile" ] && grep -qE "$COMBINED" "$tmpfile" 2>/dev/null; then
             log_matches="$log_matches\n  Codex temp file contains secrets: $tmpfile"
         fi

@@ -106,7 +106,7 @@ EOF
 # this maps to the human reviewer.
 # If your bot account name is custom, either:
 # - Pass explicit mapping:
-#   --reviewer "<your-human-name>" 
+#   --reviewer "<your-human-name>"
 #   and optional --actor "<your-bot-name>"
 # - Or set one of:
 #   - CROSSCHECK_BOT_HUMAN_REVIEWER/CROSSCHECK_BOT_ACTOR

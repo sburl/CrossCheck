@@ -1,5 +1,5 @@
 **Created:** 2026-03-03-16-00
-**Last Updated:** 2026-03-03-12-54
+**Last Updated:** 2026-03-04-00-00
 
 # CrossCheck Rework Plan + PR Tracker
 
@@ -14,12 +14,22 @@
   - explicit merge readiness decision
 - After edits, run Gemini review (where practical) before merge.
 - Record every stage and PR in this file in merge order.
+- PRs are split by design for reviewability. Current branch set includes local micro-PR branches grouped by scope.
 
 ### Repo-first status
 
 - Current branch: `feat/review-pr44-fix`
 - Working tree: clean before each major stage
-- Open PRs found: 44, 45, 46, 49, 50, 51, 52, 53, 54, 56
+- Open PRs found (remote): 44, 45, 46, 47, 48, 49
+- Local split PR branches prepared but not yet pushed (pending GH write access): `feat/pr52-54-gemini-telemetry-hardened`, `feat/pr49-50-ci-nightly-audit`, `feat/pr46-gh-repo-setup-cron`, `feat/pr57-bot-reviewer`, `chore/pr51-pr53-cleanup`
+
+### GitHub write access status
+
+- Current runtime account: `sburl-bot`
+- Push blocked by GitHub: `Permission to sburl/CrossCheck.git denied to sburl-bot`
+- Action needed: authenticate `gh` as a user with branch-write permission on `sburl/CrossCheck`, then rerun:
+  - `git push -u origin <branch-name>`
+  - open PRs from those branch references via GitHub UI or `gh pr create`
 
 ## 1) Existing PRs to process now
 

@@ -403,7 +403,8 @@ echo ""
 setup_test_repo_with_remote() {
     local name="$1"
     TEST_DIR=$(mktemp -d /tmp/hook-behavior-test-"$name"-$$."XXXXXX")
-    local REMOTE_DIR=$(mktemp -d /tmp/hook-behavior-test-"$name"-remote-$$."XXXXXX")
+    local REMOTE_DIR
+    REMOTE_DIR=$(mktemp -d /tmp/hook-behavior-test-"$name"-remote-$$."XXXXXX")
 
     # Create bare remote
     cd "$REMOTE_DIR"

@@ -69,7 +69,8 @@ test_codex_alone() {
     echo ""
 
     cleanup
-    local TEST_DIR=$(mktemp -d /tmp/hook-test-claude-alone-$$."XXXXXX")
+    local TEST_DIR
+    TEST_DIR=$(mktemp -d /tmp/hook-test-claude-alone-$$."XXXXXX")
     cd "$TEST_DIR"
     git init -q
     git config user.email "test@test.com"
@@ -125,7 +126,8 @@ test_git_then_codex() {
     echo ""
 
     cleanup
-    local TEST_DIR=$(mktemp -d /tmp/hook-test-git-then-claude-$$."XXXXXX")
+    local TEST_DIR
+    TEST_DIR=$(mktemp -d /tmp/hook-test-git-then-claude-$$."XXXXXX")
     cd "$TEST_DIR"
     git init -q
     git config user.email "test@test.com"
@@ -214,7 +216,8 @@ test_codex_then_git() {
     echo ""
 
     cleanup
-    local TEST_DIR=$(mktemp -d /tmp/hook-test-claude-then-git-$$."XXXXXX")
+    local TEST_DIR
+    TEST_DIR=$(mktemp -d /tmp/hook-test-claude-then-git-$$."XXXXXX")
     cd "$TEST_DIR"
     git init -q
     git config user.email "test@test.com"

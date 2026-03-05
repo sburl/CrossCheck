@@ -107,7 +107,7 @@ while [ "$#" -gt 0 ]; do
       exit 0
       ;;
     *)
-      echo "Unknown argument: $1"
+      echo "Unknown argument: $1" >&2
       usage >&2
       exit 1
       ;;

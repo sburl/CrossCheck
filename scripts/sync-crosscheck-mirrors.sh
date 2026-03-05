@@ -13,7 +13,7 @@ Options:
   --help             Show this help
 
 Environment:
-  CROSSCHECK_MIRROR_PATHS  Extra mirror paths (newline/space-separated)
+  CROSSCHECK_MIRROR_PATHS  Extra mirror paths (newline-separated)
   CROSSCHECK_INCLUDE_NOTACTIVE When set to 1, also sync NotActive installs
 EOF
 }

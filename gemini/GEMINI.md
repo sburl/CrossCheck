@@ -16,7 +16,7 @@ The user decides *what* to build and reviews PRs. You do *everything else*. Don'
 **Escalation ladder:**
 
 1. Fix it yourself (try 2x)
-2. Ask Gemini for a second opinion (`/gemini-delegate`)
+2. Ask a cross-lab model for a second opinion (`/codex-delegate` or `/claude-delegate`)
 3. Try a different approach entirely
 4. Only escalate to the user after exhausting 1-3
 

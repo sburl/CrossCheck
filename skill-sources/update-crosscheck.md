@@ -72,7 +72,7 @@ CRITICAL_DENY_RULES=(
 SETTINGS_UPDATED=0
 SETTINGS_FAILED=0
 
-for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
+for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json" "$HOME/.gemini/settings.json"; do
     [ -f "$SETTINGS_FILE" ] || continue
 
     for rule in "${CRITICAL_DENY_RULES[@]}"; do
@@ -168,8 +168,9 @@ for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
     if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
         continue
     fi
-    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands"; do
-        [ -d "$TARGET_DIR" ] || continue
+    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands" "$HOME/.gemini/agents"; do
+        [ -d "$(dirname "$TARGET_DIR")" ] || mkdir -p "$(dirname "$TARGET_DIR")" 2>/dev/null
+        [ -d "$TARGET_DIR" ] || mkdir -p "$TARGET_DIR" 2>/dev/null
         target="$TARGET_DIR/$skill_name.md"
         if [ ! -e "$target" ] && [ ! -L "$target" ]; then
             ln -sf "$skill_file" "$target"
@@ -183,8 +184,9 @@ done
 for agent_path in "$CROSSCHECK_DIR/agents/"*; do
     [ -e "$agent_path" ] || continue
     agent_name="$(basename "$agent_path")"
-    for TARGET_DIR in "$HOME/.claude/agents" "$HOME/.codex/agents"; do
-        [ -d "$TARGET_DIR" ] || continue
+    for TARGET_DIR in "$HOME/.claude/agents" "$HOME/.codex/agents" "$HOME/.gemini/agents"; do
+        [ -d "$(dirname "$TARGET_DIR")" ] || mkdir -p "$(dirname "$TARGET_DIR")" 2>/dev/null
+        [ -d "$TARGET_DIR" ] || mkdir -p "$TARGET_DIR" 2>/dev/null
         target="$TARGET_DIR/$agent_name"
         if [ ! -e "$target" ] && [ ! -L "$target" ]; then
             ln -sf "$agent_path" "$target"

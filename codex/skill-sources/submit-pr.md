@@ -75,12 +75,12 @@ BRANCH=$(git branch --show-current)
 # Auto-generate PR title from branch name
 TITLE=$(echo "$BRANCH" | sed 's/-/ /g' | sed 's/^./\u&/')
 
-# Create PR with template
-gh pr create \
+# Create PR and capture number
+PR_NUMBER=$(gh pr create \
   --title "$TITLE" \
   --body "$(cat <<EOF
 ## Summary
-[Auto-generated - Codex will fill this in]
+[Auto-generated - Claude Code will fill this in]
 
 ## Changes
 $(git log main..HEAD --oneline)
@@ -99,7 +99,20 @@ $(git log main..HEAD --oneline)
 - [x] Docs updated with timestamps
 - [x] Ready for Codex review
 EOF
-)"
+)" \
+  --json number --jq '.number')
+
+# If your account is a bot (like `user-bot`, `user_bot`, or `user[bot]`),
+# this maps to the human reviewer.
+# If your bot account name is custom, either:
+# - Pass explicit mapping:
+#   --reviewer "<your-human-name>"
+#   and optional --actor "<your-bot-name>"
+# - Or set one of:
+#   - CROSSCHECK_BOT_HUMAN_REVIEWER/CROSSCHECK_BOT_ACTOR
+#   - CROSSCHECK_BOT_REVIEWER_MAP (newline entries like `bot-name:human-name`,
+#      `bot_name=human_name`, or `bot-name->human-name`)
+bash scripts/request-pr-reviewer.sh --pr "$PR_NUMBER"
 ```
 
 ## Step 3: Get PR Number
@@ -148,7 +161,7 @@ Codex review prompt provided
          ↓
 [User runs Codex in new terminal]
          ↓
-Codex ↔ Claude review loop
+Claude ↔ Codex review loop
          ↓
 Merge when approved
          ↓
@@ -179,6 +192,6 @@ If Codex review stalls:
 ## Customization
 
 Users can customize PR template by creating:
-`.codex/pr-template.md`
+`.claude/pr-template.md`
 
 This will be used instead of default template.

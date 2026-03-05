@@ -13,7 +13,7 @@ echo ""
 # Detect installation context
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd || echo "")"
 
-if [ -n "$SCRIPT_DIR" ] && { [ -f "$SCRIPT_DIR/codex/CODEX.md" ] || [ -f "$SCRIPT_DIR/CLAUDE.md" ]; }; then
+if [ -n "$SCRIPT_DIR" ] && { [ -f "$SCRIPT_DIR/codex/CODEX.md" ] || [ -f "$SCRIPT_DIR/gemini/GEMINI.md" ] || [ -f "$SCRIPT_DIR/CLAUDE.md" ]; }; then
     # Running from cloned repo - multi-project mode
     INSTALL_MODE="multi-project"
     CROSSCHECK_DIR="$SCRIPT_DIR"
@@ -70,17 +70,21 @@ else
     echo ""
 fi
 
-# 2. Copy full CLAUDE.md to global location (multi-project mode only)
+# 2. Sync core workflow files to global location (multi-project mode only)
 if [ "$INSTALL_MODE" = "multi-project" ]; then
-    echo "📝 Step 2: Sync CLAUDE.md to global location..."
+    echo "📝 Step 2: Sync workflow files to global location..."
 
-    # Symlink global CLAUDE.md to CrossCheck source — updates instantly on git pull.
-    # Personal overrides belong in CLAUDE.local.md (never touched by CrossCheck).
-    [ -e "$PROJECTS_DIR/CLAUDE.md" ] || [ -L "$PROJECTS_DIR/CLAUDE.md" ] && rm "$PROJECTS_DIR/CLAUDE.md"
-    ln -sf "$CROSSCHECK_DIR/CLAUDE.md" "$PROJECTS_DIR/CLAUDE.md"
-    echo "   ✅ Symlinked CLAUDE.md → CrossCheck/CLAUDE.md"
+    # Symlink core workflows to CrossCheck source — updates instantly on git pull.
+    # Personal overrides belong in *.local.md (never touched by CrossCheck).
+    for file in "CLAUDE.md" "CODEX.md" "GEMINI.md"; do
+        if [ -f "$CROSSCHECK_DIR/$file" ]; then
+            [ -e "$PROJECTS_DIR/$file" ] || [ -L "$PROJECTS_DIR/$file" ] && rm "$PROJECTS_DIR/$file"
+            ln -sf "$CROSSCHECK_DIR/$file" "$PROJECTS_DIR/$file"
+            echo "   ✅ Symlinked $file → CrossCheck/$file"
+        fi
+    done
     echo "   💡 Updates instantly on git pull in CrossCheck"
-    echo "   💡 Personal overrides → CLAUDE.local.md"
+    echo "   💡 Personal overrides → *.local.md"
     echo ""
 fi
 
@@ -165,8 +169,9 @@ for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
     if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
         continue
     fi
-    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands"; do
-        [ -d "$TARGET_DIR" ] || continue
+    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands" "$HOME/.gemini/agents"; do
+        [ -d "$(dirname "$TARGET_DIR")" ] || mkdir -p "$(dirname "$TARGET_DIR")" 2>/dev/null
+        [ -d "$TARGET_DIR" ] || mkdir -p "$TARGET_DIR" 2>/dev/null
         target="$TARGET_DIR/$skill_name.md"
         [ -e "$target" ] || [ -L "$target" ] && rm "$target"
         ln -sf "$skill_file" "$target"
@@ -214,7 +219,8 @@ echo ""
 echo "📝 Step 7: Install agents..."
 if [ -d "$CROSSCHECK_DIR/agents" ]; then
     AGENT_LINKED=0
-    for TARGET_DIR in "$HOME/.claude/agents" "$HOME/.codex/agents"; do
+    for TARGET_DIR in "$HOME/.claude/agents" "$HOME/.codex/agents" "$HOME/.gemini/agents"; do
+        [ -d "$(dirname "$TARGET_DIR")" ] || mkdir -p "$(dirname "$TARGET_DIR")" 2>/dev/null
         mkdir -p "$TARGET_DIR" 2>/dev/null || continue
         for agent_path in "$CROSSCHECK_DIR/agents/"*; do
             [ -e "$agent_path" ] || continue
@@ -230,6 +236,14 @@ else
     echo "   ⚠️  No agents directory found in $CROSSCHECK_DIR"
 fi
 
+# 8. Setup Gemini telemetry
+echo "📊 Step 8: Configure Gemini telemetry..."
+if [ -f "$CROSSCHECK_DIR/scripts/setup-gemini-telemetry.sh" ]; then
+    "$CROSSCHECK_DIR/scripts/setup-gemini-telemetry.sh"
+else
+    echo "   ⚠️  Gemini telemetry setup script not found"
+fi
+
 echo ""
 echo "✅ CrossCheck Bootstrap Complete!"
 echo ""
@@ -238,12 +252,12 @@ echo ""
 echo "📚 What was installed:"
 if [ "$INSTALL_MODE" = "multi-project" ]; then
     echo "   • CrossCheck workflow at $CROSSCHECK_DIR"
-    echo "   • Global CLAUDE.md at $PROJECTS_DIR/CLAUDE.md"
+    echo "   • Global CLAUDE.md, CODEX.md, and GEMINI.md at $PROJECTS_DIR/"
 else
     echo "   • CrossCheck workflow at ~/.crosscheck/"
 fi
 echo "   • Global settings at ~/.claude/settings.json"
-echo "   • Skills symlinked at ~/.claude/commands/ (live from CrossCheck)"
+echo "   • Skills symlinked at ~/.claude/commands/ and ~/.gemini/agents/"
 echo "   • Git hooks for quality gates (if accepted)"
 echo "   • Codex review hooks (if accepted)"
 if [ -d "$TOKENPRINT_DIR" ] && [ -f "$TOKENPRINT_DIR/tokenprint.py" ]; then
@@ -252,26 +266,26 @@ fi
 echo ""
 echo "🎯 Next steps:"
 echo ""
-echo "   1. Start Claude Code in any repo:"
+echo "   1. Start any supported CLI in your repo:"
 echo "      cd ~/your-project"
-echo "      claude"
+echo "      claude   # or: codex / gemini"
 echo ""
 if [ "$INSTALL_MODE" = "multi-project" ]; then
-    echo "   2. Claude will automatically load CLAUDE.md workflow"
-    echo "      from $PROJECTS_DIR/CLAUDE.md (full workflow)"
+    echo "   2. Each CLI loads its workflow config automatically:"
+    echo "      CLAUDE.md / CODEX.md / GEMINI.md from $PROJECTS_DIR/"
     echo "      Supporting docs: $CROSSCHECK_DIR/QUICK-REFERENCE.md, docs/rules/"
 else
-    echo "   2. Claude will automatically load CLAUDE.md workflow"
-    echo "      from ~/.crosscheck/"
+    echo "   2. Each CLI loads its workflow config automatically:"
+    echo "      CLAUDE.md / CODEX.md / GEMINI.md from ~/.crosscheck/"
 fi
 echo ""
 echo "   3. Set up a repo for autonomous work:"
-echo "      claude '/setup-automation'"
+echo "      claude '/setup-automation'   # or: codex / gemini"
 echo "      This creates: garbage/, do-work/, user-content/"
 echo ""
 echo "   4. Optional customization:"
-echo "      • Edit: ~/.claude/settings.json (customize for your stack)"
-echo "      • Copy: CLAUDE.local.md.template → CLAUDE.local.md (personal prefs)"
+echo "      • Edit settings: ~/.claude/settings.json / ~/.codex/settings.json / ~/.gemini/settings.json"
+echo "      • Copy: *.local.md.template → *.local.md (personal prefs)"
 if [ "$INSTALL_MODE" = "multi-project" ]; then
     echo "      • Docs: $CROSSCHECK_DIR/README.md"
 else

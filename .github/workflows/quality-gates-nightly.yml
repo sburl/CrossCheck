@@ -17,7 +17,13 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Verify root scripts are mirrored into codex/ and claude/
-        run: bash scripts/check-script-mirrors.sh
+        run: |
+          if [ -f scripts/check-script-mirrors.sh ]; then
+            bash scripts/check-script-mirrors.sh
+          else
+            echo "⚠️  scripts/check-script-mirrors.sh not found — skipping mirror audit"
+            echo "   Install via PR feat/bot-reviewer-routing to enable this check"
+          fi
 
   hook-docs-consistency:
     name: Hook Documentation Consistency

@@ -6,6 +6,26 @@
 
 set -e
 
+# Validate environment
+if [ -z "$HOME" ]; then
+    echo "❌ ERROR: HOME is not set" >&2
+    exit 1
+fi
+if [ ! -d "$HOME" ] || [ ! -w "$HOME" ]; then
+    echo "❌ ERROR: HOME ($HOME) is not a writable directory" >&2
+    exit 1
+fi
+for _cmd in git ln mkdir cp; do
+    if ! command -v "$_cmd" >/dev/null 2>&1; then
+        echo "❌ ERROR: Required command '$_cmd' not found" >&2
+        exit 1
+    fi
+done
+if ! command -v jq >/dev/null 2>&1; then
+    echo "⚠️  WARNING: 'jq' not found — deny rule sync will be skipped"
+    echo "   Install jq for full bootstrap: https://jqlang.github.io/jq/download/"
+fi
+
 echo "🚀 CrossCheck Bootstrap"
 echo "=================="
 echo ""
@@ -101,6 +121,19 @@ else
 
     # Sync critical deny rules even when settings exist
     echo "   Checking critical deny rules..."
+
+    # Validate settings.json is valid JSON before manipulation
+    if ! jq -e '.' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
+        echo "   ⚠️  ~/.claude/settings.json is not valid JSON — skipping deny rule sync"
+        echo "      Fix the file manually, then re-run bootstrap"
+    else
+    # Ensure .permissions.deny is an array
+    if ! jq -e '.permissions.deny | type == "array"' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
+        echo "   Initializing .permissions.deny array..."
+        jq '.permissions.deny //= []' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json.tmp" \
+            && mv "$HOME/.claude/settings.json.tmp" "$HOME/.claude/settings.json"
+    fi
+
     CRITICAL_DENY_RULES=(
         'Bash(gh*--admin*)'
         'Bash(*--admin*)'
@@ -132,6 +165,8 @@ else
     else
         echo "   ✅ Added $DENY_UPDATED critical security rule(s)"
     fi
+
+    fi  # end valid JSON check
 fi
 echo ""
 

@@ -1,10 +1,10 @@
 {
-  "model": "gpt-5-codex",
+  "model": "sonnet",
   "alwaysThinkingEnabled": true,
   "cleanupPeriodDays": 99999,
 
   "env": {
-    "CODEX_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
 
   "permissions": {
@@ -222,13 +222,19 @@
       "Bash(curl*--data-urlencode*)",
       "Bash(curl*-X DELETE*)",
       "Bash(git config*core.hooksPath*)",
+      "Bash(git -c core.hooksPath*)",
+      "Bash(git -c*core.hooksPath*)",
       "Bash(git config*alias*)",
+      "Bash(unlink *)",
+      "Bash(find*-delete*)",
+      "Bash(git push*:main)",
+      "Bash(git push*:master)",
       "Write(**/.git/hooks/*)",
       "Write(**/.git/config)",
-      "Write(~/.codex/git-hooks/*)",
+      "Write(~/.claude/git-hooks/*)",
       "Edit(**/.git/hooks/*)",
       "Edit(**/.git/config)",
-      "Edit(~/.codex/git-hooks/*)",
+      "Edit(~/.claude/git-hooks/*)",
       "Bash(*while read*)",
       "Bash(*while IFS=*)",
       "Bash(* | while *)",
@@ -258,10 +264,10 @@
       "Bash(source *)",
       "Bash(. /*)",
       "Bash(. ~/*)",
-      "Edit(CODEX.md)",
-      "Edit(*/CODEX.md)",
-      "Write(CODEX.md)",
-      "Write(*/CODEX.md)",
+      "Edit(CLAUDE.md)",
+      "Edit(*/CLAUDE.md)",
+      "Write(CLAUDE.md)",
+      "Write(*/CLAUDE.md)",
       "Edit(docs/rules/*)",
       "Write(docs/rules/*)"
     ]
@@ -277,11 +283,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "osascript -e 'display notification \"Codex finished\" with title \"Codex Done\"'"
-          },
-          {
-            "type": "command",
-            "command": "bash -c 'REPO=$(git rev-parse --show-toplevel 2>/dev/null || pwd) && cd \"$REPO\" || exit 0; W=; N=$(ls do-work/*.md 2>/dev/null | grep -cv README 2>/dev/null || echo 0); [ \"${N:-0}\" -gt 0 ] 2>/dev/null && W=\"${N} pending do-work tasks. \"; P=$(grep -rlF -- \"- [ ]\" . --include=\"*plan*.md\" --exclude-dir=.git 2>/dev/null | wc -l | tr -d \" \"); [ \"${P:-0}\" -gt 0 ] 2>/dev/null && W=\"${W}Unchecked plan items.\"; [ -n \"$W\" ] && osascript -e \"display notification \\\"${W}\\\" with title \\\"Codex: Unfinished Work\\\" sound name \\\"Basso\\\"\" 2>/dev/null; true'"
+            "command": "osascript -e 'display notification \"Claude Code finished\" with title \"Claude Done\"'"
           }
         ]
       }
@@ -292,7 +294,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "osascript -e 'display notification \"Input needed\" with title \"Codex Waiting\" sound name \"Ping\"'"
+            "command": "osascript -e 'display notification \"Input needed\" with title \"Claude Waiting\" sound name \"Ping\"'"
           }
         ]
       }

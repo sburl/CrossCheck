@@ -1,7 +1,7 @@
 # AGENTS.md for `claude/`
 
 **Created:** 2026-02-24-15-00
-**Last Updated:** 2026-02-24-15-00
+**Last Updated:** 2026-03-07-00-00
 
 Use this section as a Claude-native workspace.
 
@@ -10,7 +10,7 @@ Use this section as a Claude-native workspace.
 - Prompt patterns: `claude/CLAUDE-PROMPTS.md`
 - Skill catalog: `claude/skill-sources/`
 
-## Skills (Flat Format) — 27 total
+## Skills (Flat Format) — 36 total
 Each skill is a `.md` file in `claude/skill-sources/`.
 
 - `claude/skill-sources/ai-usage.md`
@@ -23,23 +23,32 @@ Each skill is a `.md` file in `claude/skill-sources/`.
 - `claude/skill-sources/codex-delegate.md`
 - `claude/skill-sources/commit-smart.md`
 - `claude/skill-sources/create-worktree.md`
+- `claude/skill-sources/deploy.md`
 - `claude/skill-sources/do-work.md`
 - `claude/skill-sources/doc-timestamp.md`
 - `claude/skill-sources/ensemble-opinion.md`
+- `claude/skill-sources/fuzz.md`
 - `claude/skill-sources/garbage-collect.md`
 - `claude/skill-sources/gemini-delegate.md`
+- `claude/skill-sources/handoff.md`
 - `claude/skill-sources/list-worktrees.md`
+- `claude/skill-sources/mutation-test.md`
 - `claude/skill-sources/napkin.md`
 - `claude/skill-sources/plan.md`
 - `claude/skill-sources/pr-review.md`
 - `claude/skill-sources/pre-pr-check.md`
+- `claude/skill-sources/publish-repo.md`
+- `claude/skill-sources/redteam.md`
 - `claude/skill-sources/repo-assessment.md`
+- `claude/skill-sources/run-local.md`
 - `claude/skill-sources/security-review.md`
 - `claude/skill-sources/setup-automation.md`
+- `claude/skill-sources/setup-plugins.md`
 - `claude/skill-sources/setup-statusline.md`
 - `claude/skill-sources/submit-pr.md`
 - `claude/skill-sources/techdebt.md`
 - `claude/skill-sources/update-crosscheck.md`
+- `claude/skill-sources/webapp-test.md`
 
 ## Skill Usage Rules
 - If a task clearly matches a skill, use that skill.

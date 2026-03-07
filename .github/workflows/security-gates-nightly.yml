@@ -1,0 +1,21 @@
+name: Security Gates (Nightly)
+
+on:
+  schedule:
+    - cron: "45 3 * * *"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Secret Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run repository secret scan (repo + history + logs)
+        run: |
+          bash scripts/scan-secrets.sh --all

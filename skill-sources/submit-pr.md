@@ -75,8 +75,8 @@ BRANCH=$(git branch --show-current)
 # Auto-generate PR title from branch name
 TITLE=$(echo "$BRANCH" | sed 's/-/ /g' | sed 's/^./\u&/')
 
-# Create PR with template
-gh pr create \
+# Create PR and capture number
+PR_NUMBER=$(gh pr create \
   --title "$TITLE" \
   --body "$(cat <<EOF
 ## Summary
@@ -99,7 +99,20 @@ $(git log main..HEAD --oneline)
 - [x] Docs updated with timestamps
 - [x] Ready for Codex review
 EOF
-)"
+)" \
+  --json number --jq '.number')
+
+# If your account is a bot (like `user-bot`, `user_bot`, or `user[bot]`),
+# this maps to the human reviewer.
+# If your bot account name is custom, either:
+# - Pass explicit mapping:
+#   --reviewer "<your-human-name>"
+#   and optional --actor "<your-bot-name>"
+# - Or set one of:
+#   - CROSSCHECK_BOT_HUMAN_REVIEWER/CROSSCHECK_BOT_ACTOR
+#   - CROSSCHECK_BOT_REVIEWER_MAP (newline entries like `bot-name:human-name`,
+#      `bot_name=human_name`, or `bot-name->human-name`)
+bash scripts/request-pr-reviewer.sh --pr "$PR_NUMBER"
 ```
 
 ## Step 3: Get PR Number

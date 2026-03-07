@@ -331,7 +331,7 @@ Before loops:
 
 ```
 ~/.codex/
-  ├─ commands/ (skills, loaded at startup)
+  ├─ skills/ (loaded at startup)
   ├─ settings.json (global, shared)
   └─ git-hooks/ (global, shared)
 

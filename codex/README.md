@@ -218,21 +218,21 @@ CrossCheck uses a **single source of truth** pattern:
 
 ```
 ~/Documents/Developer/          # Your projects folder
-├── CLAUDE.md                 # Global workflow (symlink → CrossCheck/CLAUDE.md)
+├── CODEX.md                  # Global workflow (symlink → CrossCheck/CODEX.md)
 │
 ├── CrossCheck/                # 🎯 Source repository
-│   ├── CLAUDE.md            # Source of truth for global workflow
+│   ├── CODEX.md             # Source of truth for global workflow
 │   ├── QUICK-REFERENCE.md    # Supporting reference (36 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history, memory)
 │   ├── skill-sources/        # 36 skills (symlinked to ~/.codex/commands/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
-    ├── CLAUDE.md (optional) # Project-specific overrides
+    ├── CODEX.md (optional)  # Project-specific overrides
     └── .git/hooks/           # Installed per-project
 ```
 
-**Key insight:** Skills and `CLAUDE.md` are symlinked — `git pull` in CrossCheck updates everything instantly everywhere. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Hooks install per-project.
+**Key insight:** Skills and `CODEX.md` are symlinked — `git pull` in CrossCheck updates everything instantly everywhere. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Hooks install per-project.
 
 ### GitHub Branch Protection Setup
 

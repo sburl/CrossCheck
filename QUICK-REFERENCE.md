@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-03-07-00-00
 
 Complete reference tables for daily workflow.
 
@@ -41,6 +41,11 @@ When user requests these tasks, invoke the corresponding skill:
 | "test webapp", "browser test", "screenshot" | `/webapp-test` | Automated Playwright-based web app testing |
 | "setup plugins", "install plugins" | `/setup-plugins` | Opinionated plugin selection with CrossCheck overlap awareness |
 | "update crosscheck", "update skills" | `/update-crosscheck` | Pull latest from main, sync skills and agents |
+| "bug audit", "failure modes", "find bugs" | `/bug-review` | Systematic failure mode analysis (10 categories) |
+| "before pr", "pre-push check" | `/pre-pr-check` | Comprehensive pre-PR checklist (tests, lint, timestamps) |
+| "tech debt", "find debt", "refactor check" | `/techdebt` | Find silenced errors, debug code, TODO comments |
+| "save skill", "record discovery" | `/capture-skill` | Distill session discoveries into reusable skills |
+| "session memory", "repo notes", "napkin" | `/napkin` | Per-repo behavioral memory in `.claude/napkin.md` |
 | "deploy", "push to production", "ship it" | `/deploy` | Auto-detect platform, deploy, tail logs, report URL |
 | "run locally", "start server", "start the app" | `/run-local` | Auto-detect project type, install deps, start dev server |
 | "handoff", "session summary", "write handoff" | `/handoff` | Snapshot state for session-to-session or agent-to-agent continuity |
@@ -282,6 +287,8 @@ mv old-file.js garbage/
 | `/plan` | Complex task (>3 files) | Enters plan mode, designs before implementation |
 | `/do-work` | Process task queue | Reads do-work/ folder, executes tasks autonomously |
 | `/doc-timestamp` | Modified .md file | Updates "Last Updated:" timestamp |
+| `/capture-skill` | Non-obvious discovery | Distills session learnings into reusable skill files |
+| `/napkin` | Repo-specific corrections | Per-repo behavioral memory in `.claude/napkin.md` |
 
 ### Operations
 
@@ -306,6 +313,7 @@ mv old-file.js garbage/
 | `/setup-statusline` | Customize status bar | Configures Claude Code statusline |
 | `/setup-plugins` | Install Claude Code plugins | Registers marketplaces, recommends plugins by tier, detects stack, warns about overlaps |
 | `/garbage-collect` | Review deleted files | Shows garbage/ folder contents for cleanup |
+| `/update-crosscheck` | Update CrossCheck | Pulls latest from main, syncs skills and agents |
 
 ---
 

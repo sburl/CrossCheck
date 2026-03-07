@@ -26,7 +26,17 @@ jobs:
 
       - name: Read version
         id: version
-        run: echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ ! -f VERSION ]; then
+            echo "❌ VERSION file not found" >&2
+            exit 1
+          fi
+          version=$(cat VERSION | tr -d '[:space:]')
+          if [ -z "$version" ]; then
+            echo "❌ VERSION file is empty" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
         env:
@@ -74,10 +84,17 @@ jobs:
         run: |
           TAG="v${VERSION}"
 
+          if [ ! -f /tmp/release-notes.md ]; then
+            echo "❌ Release notes file not created" >&2
+            exit 1
+          fi
+
           if gh release view "$TAG" &>/dev/null; then
-            gh release edit "$TAG" --title "CrossCheck ${VERSION}" --notes-file /tmp/release-notes.md
+            gh release edit "$TAG" --title "CrossCheck ${VERSION}" --notes-file /tmp/release-notes.md || \
+              { echo "❌ Failed to update release $TAG" >&2; exit 1; }
             echo "Updated existing release $TAG"
           else
-            gh release create "$TAG" --title "CrossCheck ${VERSION}" --notes-file /tmp/release-notes.md
+            gh release create "$TAG" --title "CrossCheck ${VERSION}" --notes-file /tmp/release-notes.md || \
+              { echo "❌ Failed to create release $TAG" >&2; exit 1; }
             echo "Created release $TAG"
           fi

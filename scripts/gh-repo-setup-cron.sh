@@ -26,6 +26,15 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 1
 fi
 
+# Rate limit guard: abort early if remaining quota is dangerously low.
+# Each repo can use up to 3 API calls (permissions check, ruleset list, ruleset create/collaborator).
+rate_remaining=$(gh api rate_limit --jq '.rate.remaining' 2>/dev/null || echo "999")
+if [ "$rate_remaining" -lt 50 ]; then
+  rate_reset=$(gh api rate_limit --jq '.rate.reset' 2>/dev/null || echo "unknown")
+  echo "ERROR: GitHub API rate limit too low (${rate_remaining} remaining, resets at ${rate_reset})" >&2
+  exit 1
+fi
+
 CUTOFF=$(date -u -d '25 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
   || date -u -v-25H +%Y-%m-%dT%H:%M:%SZ)
 
@@ -131,6 +140,10 @@ echo "$REPOS_JSON" | jq -r '.[] | "\(.nameWithOwner)\t\(.createdAt)\t\(.viewerPe
       echo "  Collaborator: FAILED"
     fi
   fi
+
+  # Pace API calls to stay within GitHub rate limits (max ~5000/hour).
+  # 1-second sleep between repos keeps a 300-repo run well under the cap.
+  sleep 1
 done
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) — repo-setup-cron finished"

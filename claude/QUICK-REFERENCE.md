@@ -382,7 +382,7 @@ These cannot be bypassed - enforced by GitHub regardless of local hooks.
 
 ## Related Documentation
 
-- **[CODEX.md](codex/CODEX.md)** - Core workflow (condensed version)
+- **[CODEX.md](../codex/CODEX.md)** - Core workflow (condensed version)
 - **[README.md](README.md)** - Project overview
 - **[README.md](README.md#detailed-setup)** - Setup guide
 - **[ADVANCED.md](ADVANCED.md)** - Customization and multi-agent workflows

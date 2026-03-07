@@ -40,6 +40,16 @@ if [ -f "package.json" ]; then
         done
     fi
 
+    # Fallback: if no standard script found, list available scripts and ask
+    if [ -z "$RUN" ] && [ -f "package.json" ]; then
+        SCRIPTS=$(node -e "const s=require('./package.json').scripts||{}; console.log(Object.keys(s).join(', '))" 2>/dev/null)
+        if [ -n "$SCRIPTS" ]; then
+            echo "No dev/start/serve script found. Available scripts: $SCRIPTS"
+            echo "Ask user which script to run."
+            exit 1
+        fi
+    fi
+
 elif [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "Pipfile" ]; then
     # Python project
     if [ -f "manage.py" ]; then
@@ -83,9 +93,11 @@ if [ -f "package.json" ] && [ ! -d "node_modules" ]; then
     fi
 fi
 
-# Python
-if [ -f "requirements.txt" ] && ! python -c "import flask" 2>/dev/null; then
-    pip install -r requirements.txt
+# Python — install if requirements.txt exists and no venv/installed marker
+if [ -f "requirements.txt" ]; then
+    if [ ! -d "venv" ] && [ ! -d ".venv" ] && [ -z "$VIRTUAL_ENV" ]; then
+        pip install -r requirements.txt
+    fi
 fi
 ```
 

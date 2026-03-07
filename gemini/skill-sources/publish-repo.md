@@ -55,7 +55,7 @@ Verify these exist and are current:
 [ -f "README.md" ] && echo "README exists" || echo "MISSING: README.md"
 
 # Check for LICENSE
-[ -f "LICENSE" ] || [ -f "LICENSE.md" ] && echo "LICENSE exists" || echo "MISSING: LICENSE"
+if [ -f "LICENSE" ] || [ -f "LICENSE.md" ]; then echo "LICENSE exists"; else echo "MISSING: LICENSE"; fi
 
 # Check gitignore
 [ -f ".gitignore" ] && echo ".gitignore exists" || echo "MISSING: .gitignore"

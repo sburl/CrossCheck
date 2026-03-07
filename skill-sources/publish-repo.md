@@ -26,8 +26,8 @@ git log --all --diff-filter=D -- '*.env' '.env*' '*.key' '*.pem' 2>/dev/null
 git log --all -p -- '*.env' 2>/dev/null | head -50
 
 # Check for personal paths in code
-grep -r "$HOME" . --include='*.{js,ts,py,go,rs,sh}' 2>/dev/null || true
-grep -r "/Users/" . --include='*.{js,ts,py,go,rs,sh}' 2>/dev/null || true
+grep -r "$HOME" . --include='*.js' --include='*.ts' --include='*.py' --include='*.go' --include='*.rs' --include='*.sh' 2>/dev/null || true
+grep -r "/Users/" . --include='*.js' --include='*.ts' --include='*.py' --include='*.go' --include='*.rs' --include='*.sh' 2>/dev/null || true
 ```
 
 If secrets are found in git history, the user must decide whether to rewrite history or accept the risk. Do NOT rewrite history without explicit approval.

@@ -60,7 +60,10 @@ elif [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "Pipfile" ]; t
     elif [ -f "pyproject.toml" ] && grep -q "uvicorn\|fastapi" pyproject.toml 2>/dev/null; then
         RUN="uvicorn app:app --reload"
     else
-        RUN="python main.py"
+        echo "Python project detected but no standard entry point found."
+        echo "Looked for: manage.py, app.py, main.py, FastAPI/uvicorn in pyproject.toml"
+        echo "Ask user for the start command."
+        exit 1
     fi
 
 elif [ -f "Cargo.toml" ]; then

@@ -19,7 +19,7 @@ Check for platform indicators in order:
 if [ -f "railway.json" ] || [ -f "railway.toml" ] || railway status 2>/dev/null | grep -q "Project"; then
     PLATFORM="railway"
 # Vercel
-elif [ -f "vercel.json" ] || [ -f ".vercel/project.json" ] || vercel whoami 2>/dev/null; then
+elif [ -f "vercel.json" ] || [ -f ".vercel/project.json" ]; then
     PLATFORM="vercel"
 # GitHub Pages
 elif gh api repos/{owner}/{repo}/pages 2>/dev/null | grep -q "url"; then

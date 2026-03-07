@@ -37,7 +37,7 @@ The user decides *what* to build and reviews PRs. You do *everything else*. Don'
 
 ---
 
-## Skills (27)
+## Skills (36)
 
 If a skill exists for what you're doing, use it. Skills save context and ensure correctness.
 
@@ -52,6 +52,9 @@ If a skill exists for what you're doing, use it. Skills save context and ensure 
 
 **Git:**
 `/create-worktree` | `/list-worktrees` | `/cleanup-worktrees` | `/cleanup-branches`
+
+**Operations:**
+`/deploy` (deploy to Railway/Vercel/GitHub Pages) | `/run-local` (start dev server) | `/handoff` (session handoff doc) | `/publish-repo` (prepare and publish repo publicly)
 
 **Setup:**
 `/setup-automation` | `/setup-statusline` | `/garbage-collect`
@@ -85,6 +88,12 @@ You have skills, hooks, Claude, tests, and this file. The user set up this syste
 - Nothing to do: tell the user once, then stop
 
 **CLIs over dashboards.** If a service has a CLI (`gh`, `railway`, `vercel`, `sqlite3`, `psql`, `redis-cli`), use it. A loop breaks the moment you hand off to a user to click a web UI. Configure CLIs once, interact programmatically. The settings template already allows these.
+
+**Agent delegation means exec, not instructions.** When told to involve another agent (Codex, Gemini, Claude) — review, delegate, get opinion — ALWAYS run the appropriate tool or skill yourself (`codex exec`, `/codex-delegate`, `/pr-review`, etc.). NEVER tell the user to run another agent manually. NEVER provide CLI commands for the user to copy-paste. NEVER say "you can run codex with...". You have the tools. Use them.
+
+**Merge gating.** NEVER merge a PR without review approval from a separate agent or account. If no review has happened, run `/pr-review` first. If review rejects, fix the issues and re-run. Do not skip review because it seems expedient. Do not ask the user if you should skip review.
+
+**Test-fix loops.** When tests fail, fix the failure and re-run. Repeat up to 5 times before escalating. Do not stop after one attempt and report back. Do not ask the user what to do about a test failure you haven't tried to fix. The loop is: run tests → read failures → fix code → re-run → repeat until green or 5 attempts exhausted.
 
 **Communication:** Report outcomes, not process. Batch updates at milestones. If blocked on the user, say what you need and move to the next task.
 

@@ -41,6 +41,10 @@ When user requests these tasks, invoke the corresponding skill:
 | "test webapp", "browser test", "screenshot" | `/webapp-test` | Automated Playwright-based web app testing |
 | "setup plugins", "install plugins" | `/setup-plugins` | Opinionated plugin selection with CrossCheck overlap awareness |
 | "update crosscheck", "update skills" | `/update-crosscheck` | Pull latest from main, sync skills and agents |
+| "deploy", "push to production", "ship it" | `/deploy` | Auto-detect platform, deploy, tail logs, report URL |
+| "run locally", "start server", "start the app" | `/run-local` | Auto-detect project type, install deps, start dev server |
+| "handoff", "session summary", "write handoff" | `/handoff` | Snapshot state for session-to-session or agent-to-agent continuity |
+| "publish", "make public", "open source" | `/publish-repo` | Security scan, clean dead code, verify docs, push to public remote |
 
 ---
 
@@ -75,6 +79,9 @@ When user requests these tasks, invoke the corresponding skill:
 | **Parallel work needed** | INVOKE `/create-worktree` |
 | **Autonomous 30+ min** | Pre-flight checks + TODO.md scratchpad every 15min |
 | **Blocker >10min** | Document in TODO.md scratchpad, try alternative |
+| **Deploy** | INVOKE `/deploy` (auto-detects Railway/Vercel/GitHub Pages) |
+| **Run locally** | INVOKE `/run-local` (auto-detects project type, starts server) |
+| **End of session** | INVOKE `/handoff` if switching agents or pausing work |
 | **Copy-paste from UI** | Find CLI/API first (`vercel`, `stripe`, etc) |
 | **Code execution** | Explain first, repo only |
 | **Commits** | Via `/commit-smart` only |
@@ -275,6 +282,15 @@ mv old-file.js garbage/
 | `/plan` | Complex task (>3 files) | Enters plan mode, designs before implementation |
 | `/do-work` | Process task queue | Reads do-work/ folder, executes tasks autonomously |
 | `/doc-timestamp` | Modified .md file | Updates "Last Updated:" timestamp |
+
+### Operations
+
+| Skill | When to Use | What It Does |
+|-------|-------------|--------------|
+| `/deploy` | Deploy to production | Auto-detects Railway/Vercel/GitHub Pages, deploys, tails logs, reports URL |
+| `/run-local` | Start dev server | Auto-detects project type, installs deps, starts server, reports URL |
+| `/handoff` | End of session or agent switch | Snapshots branch, commits, PRs, test status, writes do-work/handoff.md |
+| `/publish-repo` | Make repo public | Security scan, dead code cleanup, docs check, LICENSE verify, push |
 
 ### Analytics
 

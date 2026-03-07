@@ -1,7 +1,7 @@
 # Codex Workflow
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-25-00-00
+**Last Updated:** 2026-03-07-00-00
 
 ---
 
@@ -28,12 +28,13 @@ The user decides *what* to build and reviews PRs. You do *everything else*. Don'
 
 1. **Autonomous First** - Solve problems yourself. Escalate only after trying Codex and alternatives.
 2. **Zero Trust** - Test everything. Nothing works until proven.
-3. **Feature Branches** - NEVER work on main. All work on branches (or worktrees) then merged via PRs. `git checkout -b feat-name`, commit early and often (every meaningful change), PR to merge. Main requires approval from a separate account (builder != reviewer).
-4. **Honest Git** - Feature branches show messy reality. Main gets clean squashed commits via PR.
-5. **Test-First** - Write tests ALONGSIDE code, not after.
-6. **Codex as Partner** - Codex reviews and approves. Don't ask it to write code.
-7. **Skill-First** - ALWAYS use skills for common workflows.
-8. **Hard Cutover** - Never implement backward compatibility. When changing interfaces, configs, or APIs, make the breaking change directly. Don't support old and new simultaneously.
+3. **Progress ≠ Completion** - Describing what you did is not the same as finishing it. Never stop mid-task and summarize as if the goal is met. Completion means tests pass, a PR is merged, or the user explicitly confirmed the goal. If a plan has a checklist, every item must be ticked before stopping.
+4. **Feature Branches** - NEVER work on main. All work on branches (or worktrees) then merged via PRs. `git checkout -b feat-name`, commit early and often (every meaningful change), PR to merge. Main requires approval from a separate account (builder != reviewer).
+5. **Honest Git** - Feature branches show messy reality. Main gets clean squashed commits via PR.
+6. **Test-First** - Write tests ALONGSIDE code, not after.
+7. **Codex as Partner** - Codex reviews and approves. Don't ask it to write code.
+8. **Skill-First** - ALWAYS use skills for common workflows.
+9. **Hard Cutover** - Never implement backward compatibility. When changing interfaces, configs, or APIs, make the breaking change directly. Don't support old and new simultaneously.
 
 ---
 
@@ -98,6 +99,12 @@ You have skills, hooks, Codex, tests, and this file. The user set up this system
 
 **CLIs over dashboards.** If a service has a CLI (`gh`, `railway`, `vercel`, `sqlite3`, `psql`, `redis-cli`), use it. A loop breaks the moment you hand off to a user to click a web UI. Configure CLIs once, interact programmatically. The settings template already allows these.
 
+**Agent delegation means exec, not instructions.** When told to involve another agent (Codex, Gemini, Claude) — review, delegate, get opinion — ALWAYS run the appropriate tool or skill yourself (`codex exec`, `/codex-delegate`, `/pr-review`, etc.). NEVER tell the user to run another agent manually. NEVER provide CLI commands for the user to copy-paste. NEVER say "you can run codex with...". You have the tools. Use them.
+
+**Merge gating.** NEVER merge a PR without review approval from a separate agent or account. If no review has happened, run `/pr-review` first. If review rejects, fix the issues and re-run. Do not skip review because it seems expedient. Do not ask the user if you should skip review.
+
+**Test-fix loops.** When tests fail, fix the failure and re-run. Repeat up to 5 times before escalating. Do not stop after one attempt and report back. Do not ask the user what to do about a test failure you haven't tried to fix. The loop is: run tests → read failures → fix code → re-run → repeat until green or 5 attempts exhausted.
+
 **Communication:** Report outcomes, not process. Batch updates at milestones. If blocked on the user, say what you need and move to the next task.
 
 ---
@@ -145,10 +152,13 @@ Each worktree is fully autonomous: own branch, own context, own PR counter. No c
 
 ## Reference
 
+**Session start:** if `.claude/napkin.md` exists in the current repo, read it before doing anything else. Apply it silently.
+
 **On-demand rules (hooks auto-remind, but read proactively when relevant):**
 - **Freedom on branches, main locked down** `docs/rules/trust-model.md` (trust boundaries, zero-trust, two-account model)
 - **Rebasing/squashing history:** `docs/rules/git-history.md` (what to keep vs clean)
 - **Long sessions or Codex review:** `docs/rules/autonomous-sessions.md` (15-min updates, blocked protocol)
+- **Memory curation:** `docs/rules/memory.md` (10-item cap, MEMORY.md vs napkin)
 
 **Assessment waterfall (every 3 PRs):** `/repo-assessment` -> `/bug-review` -> `/security-review` -> `/redteam`. Run in order. Fix findings from each before starting the next. Triggered by post-merge hook. Lightweight secret + dependency scan on every push.
 

@@ -1,7 +1,7 @@
 # Codex Workflow
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-25-00-00
+**Last Updated:** 2026-03-07-00-00
 
 ---
 
@@ -34,6 +34,7 @@ The user decides *what* to build and reviews PRs. You do *everything else*. Don'
 6. **Test-First** - Write tests ALONGSIDE code, not after.
 7. **Codex as Partner** - Codex reviews and approves. Don't ask it to write code.
 8. **Skill-First** - ALWAYS use skills for common workflows.
+9. **Hard Cutover** - Never implement backward compatibility. When changing interfaces, configs, or APIs, make the breaking change directly. Don't support old and new simultaneously.
 
 ---
 
@@ -47,17 +48,23 @@ If a skill exists for what you're doing, use it. Skills save context and ensure 
 **Agent Delegation:**
 `/codex-delegate` (Codex review) | `/gemini-delegate` (Gemini) | `/ensemble-opinion` (multi-model) | `/pr-review` (Codex PR review) | `/repo-assessment` (every 3 PRs)
 
+**Testing:**
+`/redteam` (active exploit verification) | `/fuzz` (adversarial input testing) | `/mutation-test` (test quality) | `/webapp-test` (browser testing)
+
 **Development:**
-`/plan` (design first, >3 files) | `/do-work` (process task queue) | `/doc-timestamp` (update timestamps)
+`/plan` (design first, >3 files) | `/do-work` (process task queue) | `/doc-timestamp` (update timestamps) | `/capture-skill` (persist discoveries)
 
 **Git:**
-`/create-worktree` | `/list-worktrees` | `/cleanup-worktrees` | `/cleanup-branches`
+`/create-worktree` | `/list-worktrees` | `/cleanup-worktrees` | `/cleanup-branches` | `/cleanup-all` | `/cleanup-stashes`
 
 **Operations:**
 `/deploy` (deploy to Railway/Vercel/GitHub Pages) | `/run-local` (start dev server) | `/handoff` (session handoff doc) | `/publish-repo` (prepare and publish repo publicly)
 
+**Analytics:**
+`/ai-usage` (token usage and costs)
+
 **Setup:**
-`/setup-automation` | `/setup-statusline` | `/garbage-collect`
+`/setup-automation` | `/setup-statusline` | `/setup-plugins` | `/garbage-collect`
 
 **Memory:**
 `/napkin` (per-repo behavioral corrections in `.claude/napkin.md`)

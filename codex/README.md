@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-03-07-00-00
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -185,7 +185,7 @@ cd CrossCheck
 
 This installs:
 - Skills to `~/.codex/commands/` via symlinks (and `~/.claude/commands/` if present)
-- Global `CLAUDE.md` symlinked in your projects folder (full workflow, updates on `git pull`)
+- Global `CODEX.md` symlinked in your projects folder (full workflow, updates on `git pull`)
 - Agent settings with proper permissions
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
 

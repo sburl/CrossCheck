@@ -33,7 +33,7 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
   cp ~/.crosscheck/skill-sources/*.md ~/.codex/commands/
 ```
 
-## Available Skills (30 total)
+## Available Skills (36 total)
 
 ### PR Workflow (9)
 - `/submit-pr` - Automated PR submission with checks
@@ -134,11 +134,11 @@ git push
 ```
 ~/.claude/
 ├── commands/              ← Active skills for Claude Code
-│   └── *.md              ← 30 skill files
+│   └── *.md              ← 36 skill files
 
 ~/.codex/
 ├── commands/              ← Active skills for Codex
-│   └── *.md              ← 30 skill files
+│   └── *.md              ← 36 skill files
 └── settings.json         ← Global permissions
 
 ~/.crosscheck/                 ← Git repo (source of truth, traditional install)

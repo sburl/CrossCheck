@@ -254,4 +254,57 @@ jobs:
             exit 1
           fi
 
-          echo "✅ All mirror directories match ($ROOT_COUNT skills)"
+          echo "✅ All mirror directories match by filename ($ROOT_COUNT skills)"
+
+      - name: Check skill-sources content drift (advisory)
+        run: |
+          # Skills may have intentional agent-name deltas (CLAUDE→CODEX).
+          # This check normalizes agent names before comparing to catch
+          # real content drift while allowing intentional substitutions.
+          # See docs/MIRRORS.md for the mirror contract.
+          DRIFT=0
+
+          normalize() {
+            sed 's/CLAUDE/AGENT/g; s/Claude/Agent/g; s/claude/agent/g; s/CODEX/AGENT/g; s/Codex/Agent/g; s/codex/agent/g; s/GEMINI/AGENT/g; s/Gemini/Agent/g; s/gemini/agent/g' "$1"
+          }
+
+          for file in skill-sources/*.md; do
+            name=$(basename "$file")
+            [ "$name" = "INSTALL.md" ] && continue
+
+            ROOT_NORM=$(normalize "$file" | sha256sum | cut -d' ' -f1)
+
+            for mirror in claude/skill-sources codex/skill-sources; do
+              if [ -f "$mirror/$name" ]; then
+                MIRROR_NORM=$(normalize "$mirror/$name" | sha256sum | cut -d' ' -f1)
+                if [ "$ROOT_NORM" != "$MIRROR_NORM" ]; then
+                  echo "⚠️  Content drift: $file vs $mirror/$name"
+                  DRIFT=$((DRIFT + 1))
+                fi
+              fi
+            done
+          done
+
+          # Gemini mirrors (where files exist)
+          for file in gemini/skill-sources/*.md; do
+            [ -f "$file" ] || continue
+            name=$(basename "$file")
+            root_file="skill-sources/$name"
+            if [ -f "$root_file" ]; then
+              ROOT_NORM=$(normalize "$root_file" | sha256sum | cut -d' ' -f1)
+              GEMINI_NORM=$(normalize "$file" | sha256sum | cut -d' ' -f1)
+              if [ "$ROOT_NORM" != "$GEMINI_NORM" ]; then
+                echo "⚠️  Content drift: $root_file vs $file"
+                DRIFT=$((DRIFT + 1))
+              fi
+            fi
+          done
+
+          if [ "$DRIFT" -gt 0 ]; then
+            echo ""
+            echo "⚠️  $DRIFT skill(s) have drifted beyond agent-name substitution."
+            echo "Review docs/MIRRORS.md for sync procedures."
+            # Advisory only — does not block merge
+          else
+            echo "✅ No content drift detected (after normalizing agent names)"
+          fi

@@ -32,13 +32,13 @@ do-work/
 ├── 010-nice-to-have-cleanup.md    ← Lower priority
 ```
 
-**Skip files that start with `DONE-` or `SKIP-` prefix.**
+**Skip files in `do-work/done/` — those are completed or skipped tasks.**
 
 **Numbering convention:**
 
 - **001-099**: Reserved for human-created tasks (user sets priorities)
 - **100+**: Agent-created tasks (when the agent discovers follow-up work)
-- **NEVER reuse a number.** Check existing files (including DONE-/SKIP-) before assigning.
+- **NEVER reuse a number.** Check existing files (including done/) before assigning.
 - When creating a task, use the next available number above 100.
 
 ### Step 2: Read the Task File
@@ -75,7 +75,7 @@ For each task:
 4. **Write tests alongside code** (zero trust)
 5. **Run tests** - must pass before proceeding
 6. **Submit PR:** INVOKE `/submit-pr`
-7. **Mark task done:** Rename file to `DONE-{original-name}.md`
+7. **Mark task done:** Move file to `do-work/done/` (e.g. `mv do-work/001-foo.md do-work/done/`)
 8. **Return to main:** `git checkout main && git pull`
 9. **Move to next task**
 
@@ -91,7 +91,7 @@ After processing, output a summary:
 - ✅ 002-refactor-auth-module.md → PR #13
 
 ### Skipped
-- ⏭️ 003-write-api-docs.md (SKIP- prefix)
+- ⏭️ 003-write-api-docs.md (moved to done/SKIP-003-write-api-docs.md)
 
 ### Failed
 - ❌ 010-nice-to-have-cleanup.md (tests failed after 3 attempts)
@@ -142,8 +142,8 @@ Currently using session cookies. Need stateless auth for mobile app support.
 ## Rules
 
 1. **One task = one branch = one PR.** Never batch multiple tasks into one PR.
-2. **If a task is unclear, SKIP it.** Rename to `SKIP-{name}.md` and add a comment at the top explaining what's unclear. Don't guess.
-3. **If a task fails 3 times, SKIP it.** Rename to `SKIP-{name}.md` with error details at the top.
+2. **If a task is unclear, SKIP it.** Move to `do-work/done/SKIP-{name}.md` and add a comment at the top explaining what's unclear. Don't guess.
+3. **If a task fails 3 times, SKIP it.** Move to `do-work/done/SKIP-{name}.md` with error details at the top.
 4. **Respect the `user-content/` directory.** Never modify files in `user-content/` even if a task mentions it.
 5. **Follow all CODEX.md conventions.** do-work doesn't bypass any quality gates.
 6. **Don't create the do-work/ folder automatically.** If it doesn't exist, tell the user.

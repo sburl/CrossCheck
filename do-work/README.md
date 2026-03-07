@@ -20,7 +20,7 @@ Name files with numeric prefixes for priority ordering:
 
 - **001-099**: Reserved for humans. You set priorities here.
 - **100+**: Agents create tasks here when they discover follow-up work.
-- **Never reuse a number**, even after DONE-/SKIP- renaming.
+- **Never reuse a number**, even after moving to done/.
 
 ## Task File Template
 
@@ -43,8 +43,11 @@ Gotchas or constraints.
 
 ## Lifecycle
 
-- Active tasks: `001-my-task.md`
-- Completed: renamed to `DONE-001-my-task.md`
-- Skipped (unclear/failed): renamed to `SKIP-001-my-task.md`
+- **Active tasks**: files in `do-work/`
+- **Completed**: move to `do-work/done/` (e.g. `mv 001-foo.md done/`)
+- **Skipped** (unclear/failed): move to `do-work/done/` with `SKIP-` prefix (e.g. `mv 001-foo.md done/SKIP-001-foo.md`)
+- To see what's left: `ls do-work/*.md` (excludes README)
+- To see what's done: `ls do-work/done/`
+- Git history preserves the full timeline of when tasks were completed
 
 See `/do-work` skill for full details.

@@ -61,7 +61,7 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
             echo ""
             echo "⛔ BLOCKED: Codex approval required for $commit_type commits to $current_branch"
             echo ""
-            echo "🤖 Codex: Follow this workflow (DO NOT skip steps):"
+            echo "🤖 Claude Code: Follow this workflow (DO NOT skip steps):"
             echo ""
             # Resolve CrossCheck path dynamically
             codex_script=""
@@ -75,7 +75,7 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
                 [ -n "$candidate" ] && [ -f "$candidate" ] && { codex_script="$candidate"; break; }
             done
             echo "   Step 1: Get review prompt"
-            echo "   ${codex_script:-\$(find ~/.crosscheck ~/.claude ~/Documents/Developer -path '*/CrossCheck/scripts/codex-approve-commit.sh' 2>/dev/null | head -1)}"
+            echo "   ${codex_script:-\$(find ~/.claude ~/Documents/Developer -path '*/CrossCheck/scripts/codex-approve-commit.sh' 2>/dev/null | head -1)}"
             echo ""
             echo "   Step 2: Send prompt to Codex via terminal"
             echo "   Copy the output and paste to Codex in your terminal session"
@@ -86,9 +86,10 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
             echo "   - Keep iterating with Codex until you get APPROVED"
             echo ""
             echo "   Step 4: ONLY after Codex approves, add to commit message:"
-            printf '   git commit -m "%s\n' "$commit_msg"
+            # Use %s to safely display commit message (prevents shell injection if copy-pasted)
+            printf '   git commit -m %s\n' "$(printf '%q' "$commit_msg")"
             echo ""
-            echo "   Codex Approved\""
+            echo "   (append: Codex Approved)"
             echo ""
             echo "   ⚠️  CRITICAL: Do NOT add 'Codex Approved' without actual Codex approval!"
             echo "   ⚠️  You must see Codex explicitly say 'APPROVED' or 'LGTM'"

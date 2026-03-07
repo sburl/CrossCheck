@@ -71,7 +71,7 @@ For each task:
 
 1. **Create feature branch:** `git checkout -b feat/{task-slug}`
 2. **Enter plan mode if complex** (>3 files or unclear approach)
-3. **Implement the task** following all CLAUDE.md conventions
+3. **Implement the task** following all CODEX.md conventions
 4. **Write tests alongside code** (zero trust)
 5. **Run tests** - must pass before proceeding
 6. **Submit PR:** INVOKE `/submit-pr`
@@ -145,7 +145,7 @@ Currently using session cookies. Need stateless auth for mobile app support.
 2. **If a task is unclear, SKIP it.** Move to `do-work/done/SKIP-{name}.md` and add a comment at the top explaining what's unclear. Don't guess.
 3. **If a task fails 3 times, SKIP it.** Move to `do-work/done/SKIP-{name}.md` with error details at the top.
 4. **Respect the `user-content/` directory.** Never modify files in `user-content/` even if a task mentions it.
-5. **Follow all CLAUDE.md conventions.** do-work doesn't bypass any quality gates.
+5. **Follow all CODEX.md conventions.** do-work doesn't bypass any quality gates.
 6. **Don't create the do-work/ folder automatically.** If it doesn't exist, tell the user.
 7. **Numbering: 001-099 = human, 100+ = agent.** Never reuse a number. Check existing files first.
 
@@ -167,7 +167,7 @@ EOF
 
 ## Integration with Autonomous Sessions
 
-For long autonomous sessions, combine with the 15-minute status update rule from CLAUDE.md:
+For long autonomous sessions, combine with the 15-minute status update rule from CODEX.md:
 
 ```text
 Every 15min: Update TODO.md with:

@@ -33,7 +33,7 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
   cp ~/.crosscheck/skill-sources/*.md ~/.codex/commands/
 ```
 
-## Available Skills (30 total)
+## Available Skills (36 total)
 
 ### PR Workflow (9)
 - `/submit-pr` - Automated PR submission with checks

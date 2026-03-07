@@ -10,7 +10,7 @@ This document defines the source-of-truth for each artifact type and the enforce
 
 | Artifact | Canonical Location | Mirrors | Enforcement |
 |----------|-------------------|---------|-------------|
-| Skills (`.md`) | `skill-sources/` | `claude/skill-sources/`, `codex/skill-sources/`, `gemini/skill-sources/`, `codex/skills/*/SKILL.md` | CI: filename parity + normalized content drift check |
+| Skills (`.md`) | `skill-sources/` | `claude/skill-sources/`, `codex/skill-sources/`, `gemini/skill-sources/`, `codex/skills/*/SKILL.md` | CI: filename parity + normalized content drift check (skill-sources only; `codex/skills/` checked by filename parity, not content drift) |
 | Scripts (`.sh`) | `scripts/` | `claude/scripts/`, `codex/scripts/` | CI: `check-script-mirrors.sh` (presence + exec bit) |
 | Workflow docs | `CLAUDE.md`, `CODEX.md` | `claude/CLAUDE.md`, `codex/CODEX.md`, `gemini/GEMINI.md` | **Intentional delta** — each surface customizes escalation, agent refs |
 | AGENTS.md | Per-surface | `claude/AGENTS.md`, `codex/AGENTS.md` | **Intentional delta** — skill list format differs (flat vs folder) |

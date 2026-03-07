@@ -184,7 +184,7 @@ cd CrossCheck
 ```
 
 This installs:
-- Skills to `~/.codex/commands/` via symlinks (and `~/.claude/commands/` if present)
+- Skills to `~/.codex/skills/` as folder-based commands (and `~/.claude/commands/` if present)
 - Global `CODEX.md` symlinked in your projects folder (full workflow, updates on `git pull`)
 - Agent settings with proper permissions
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
@@ -224,7 +224,7 @@ CrossCheck uses a **single source of truth** pattern:
 │   ├── CODEX.md             # Source of truth for global workflow
 │   ├── QUICK-REFERENCE.md    # Supporting reference (36 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history, memory)
-│   ├── skill-sources/        # 36 skills (symlinked to ~/.codex/commands/)
+│   ├── skill-sources/        # 36 skills (installed to ~/.codex/skills/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
@@ -302,7 +302,7 @@ git reset HEAD test.txt && rm test.txt
 
 ```bash
 # Check skills installed
-ls ~/.codex/commands/ | wc -l
+ls ~/.codex/skills/ | wc -l
 # Should show: 36 skills
 
 # Start Codex

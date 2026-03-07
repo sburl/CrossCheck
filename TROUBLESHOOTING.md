@@ -472,12 +472,12 @@ This is intentional. The command is blocked by your permissions settings.
 Skills aren't installed. Install them:
 
 ```bash
-# Copy skills from CrossCheck repo
-cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.claude/commands/
+# Run bootstrap to symlink skills into ~/.claude/commands/
+bash ~/Documents/Developer/CrossCheck/scripts/bootstrap-crosscheck.sh
 
 # Verify installation
 ls ~/.claude/commands/ | wc -l
-# Should show 28 files (27 skills + INSTALL.md)
+# Should show 36 skills
 
 # Restart Claude Code
 # Skills should now be available

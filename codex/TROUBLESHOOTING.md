@@ -472,12 +472,12 @@ This is intentional. The command is blocked by your permissions settings.
 Skills aren't installed. Install them:
 
 ```bash
-# Copy skills from CrossCheck repo
-cp -R ~/Documents/Developer/CrossCheck/codex/skills/* ~/.codex/skills/
+# Run bootstrap to symlink skills into ~/.codex/commands/
+bash ~/Documents/Developer/CrossCheck/scripts/bootstrap-crosscheck.sh
 
 # Verify installation
-find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
-# Should show 27 skills
+ls ~/.codex/commands/ | wc -l
+# Should show 36 skills
 
 # Restart Codex
 # Skills should now be available

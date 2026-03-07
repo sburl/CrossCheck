@@ -210,7 +210,7 @@ claude "Build user authentication"
 # Claude creates feature branch, writes code + tests, gets reviewer feedback, ships
 ```
 
-**That's it!** All 27 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
+**That's it!** All 36 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
 
 ---
 
@@ -227,9 +227,9 @@ CrossCheck uses a **single source of truth** pattern:
 ├── CrossCheck/                # 🎯 Source repository
 │   ├── CLAUDE.md            # Source of truth for global workflow
 │   ├── CODEX.md             # Workflow for Codex agent (codex/CODEX.md)
-│   ├── QUICK-REFERENCE.md    # Supporting reference (27 skills, tables)
+│   ├── QUICK-REFERENCE.md    # Supporting reference (36 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history, memory)
-│   ├── skill-sources/        # 27 skills (symlinked to ~/.claude/commands/)
+│   ├── skill-sources/        # 36 skills (symlinked to ~/.claude/commands/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
@@ -308,7 +308,7 @@ git reset HEAD test.txt && rm test.txt
 ```bash
 # Check skills installed
 ls ~/.codex/commands/ | wc -l
-# Should show: 27 skills
+# Should show: 36 skills
 
 # Start Codex
 codex

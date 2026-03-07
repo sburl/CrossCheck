@@ -26,7 +26,12 @@ fi
 
 # Reset counter if last commit was >2 hours ago (new session)
 if [ -f "$COUNTER_FILE" ]; then
-    counter_age=$(($(date +%s) - $(stat -c %Y "$COUNTER_FILE" 2>/dev/null || stat -f %m "$COUNTER_FILE" 2>/dev/null || echo 0)))
+    file_mtime=$(stat -c %Y "$COUNTER_FILE" 2>/dev/null || stat -f %m "$COUNTER_FILE" 2>/dev/null || echo "")
+    if [ -n "$file_mtime" ]; then
+        counter_age=$(($(date +%s) - file_mtime))
+    else
+        counter_age=0  # Can't determine age, don't reset
+    fi
     if [ "$counter_age" -gt 7200 ]; then
         echo "0" > "$COUNTER_FILE"
     fi
@@ -35,7 +40,9 @@ fi
 session_commits=$(< "$COUNTER_FILE")
 case "$session_commits" in ''|*[!0-9]*) session_commits=0 ;; esac
 session_commits=$((session_commits + 1))
-echo "$session_commits" > "$COUNTER_FILE"
+# Atomic write via temp file + rename to avoid race with concurrent commits
+_tmp_counter="${COUNTER_FILE}.$$"
+echo "$session_commits" > "$_tmp_counter" && mv "$_tmp_counter" "$COUNTER_FILE"
 
 if [ "$session_commits" -ge 5 ] && [ "$(( session_commits % 5 ))" -eq 0 ]; then
     echo ""

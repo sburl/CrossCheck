@@ -101,7 +101,9 @@ if [ "${new_commits:-0}" -gt 0 ]; then
     pr_count=$(< "$PR_COUNTER_FILE")
     case "$pr_count" in ''|*[!0-9]*) pr_count=0 ;; esac
     pr_count=$((pr_count + 1))
-    echo "$pr_count" > "$PR_COUNTER_FILE"
+    # Atomic write via temp file + rename to avoid race with concurrent merges
+    _tmp_counter="${PR_COUNTER_FILE}.$$"
+    echo "$pr_count" > "$_tmp_counter" && mv "$_tmp_counter" "$PR_COUNTER_FILE"
 else
     pr_count=$(< "$PR_COUNTER_FILE")
     case "$pr_count" in ''|*[!0-9]*) pr_count=0 ;; esac
@@ -111,12 +113,12 @@ if [ "$pr_count" -ge 3 ]; then
     echo ""
     echo "📊 Assessment waterfall due (3 PRs merged). Run in order -- fix findings before moving to next step:"
     echo ""
-    echo "   Step 1: /repo-assessment    ← Claude comprehensive quality review"
+    echo "   Step 1: /repo-assessment    ← Codex comprehensive quality review"
     echo "   Step 2: /bug-review         ← Systematic failure mode audit"
     echo "   Step 3: /security-review    ← Full security audit"
     echo "   Step 4: /redteam            ← Active exploit verification (Critical/High only)"
     echo ""
-    echo "   Process each like a Claude review loop: run skill, address findings, verify, then next step."
+    echo "   Process each like a Codex review loop: run skill, address findings, verify, then next step."
     echo ""
     echo "0" > "$PR_COUNTER_FILE"
 fi

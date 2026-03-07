@@ -34,7 +34,7 @@ if [ "$branch_checkout" = "1" ]; then
         wait "$lsof_pid" 2>/dev/null || true
         kill "$timer_pid" 2>/dev/null || true
         wait "$timer_pid" 2>/dev/null || true
-        pids=$(awk 'NR>1 && ($1 ~ /^(pytest|jest|vitest|npm|node|python)/) {print $2}' "$lsof_out" | sort -u || true)
+        pids="$(awk 'NR>1 && ($1 ~ /^(pytest|jest|vitest|npm|node|python)/) {print $2}' "$lsof_out" | sort -u || true)"
         rm -f "$lsof_out"
         if [ -n "$pids" ]; then
             while IFS= read -r pid; do

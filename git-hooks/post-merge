@@ -101,7 +101,9 @@ if [ "${new_commits:-0}" -gt 0 ]; then
     pr_count=$(< "$PR_COUNTER_FILE")
     case "$pr_count" in ''|*[!0-9]*) pr_count=0 ;; esac
     pr_count=$((pr_count + 1))
-    echo "$pr_count" > "$PR_COUNTER_FILE"
+    # Atomic write via temp file + rename to avoid race with concurrent merges
+    _tmp_counter="${PR_COUNTER_FILE}.$$"
+    echo "$pr_count" > "$_tmp_counter" && mv "$_tmp_counter" "$PR_COUNTER_FILE"
 else
     pr_count=$(< "$PR_COUNTER_FILE")
     case "$pr_count" in ''|*[!0-9]*) pr_count=0 ;; esac

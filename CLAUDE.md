@@ -24,6 +24,9 @@ Apply it silently — don't announce it, just let it inform your behavior. See `
 5. **Skill-First** - Use skills for common workflows (see CrossCheck/QUICK-REFERENCE.md)
 6. **Clean Up After Yourself** - Delete worktrees, temp branches, and scratch directories when done.
 7. **Hard Cutover** - Never implement backward compatibility. Make the breaking change directly.
+8. **Exec, Don't Instruct** - When told to involve Codex/Gemini/Claude, run the tool yourself. NEVER tell the user to run another agent manually or give CLI commands to copy-paste.
+9. **Merge Gating** - NEVER merge without review approval. Run `/pr-review` first. No exceptions.
+10. **Test-Fix Loops** - When tests fail, fix and re-run up to 5x before escalating. Don't stop after one attempt.
 
 ---
 

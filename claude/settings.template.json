@@ -97,7 +97,7 @@
       "Bash(vercel*)",
       "Bash(launchctl*)",
 
-      "Bash(claude*)",
+      "Bash(codex*)",
       "Bash(dailybrief*)",
 
       "Bash(cd * && find *)",
@@ -222,7 +222,17 @@
       "Bash(curl*--data-urlencode*)",
       "Bash(curl*-X DELETE*)",
       "Bash(git config*core.hooksPath*)",
+      "Bash(git -c core.hooksPath*)",
+      "Bash(git -c*core.hooksPath*)",
       "Bash(git config*alias*)",
+      "Bash(unlink *)",
+      "Bash(find*-delete*)",
+      "Bash(git push*:main)",
+      "Bash(git push*:master)",
+      "Bash(git push*--delete*main*)",
+      "Bash(git push*--delete*master*)",
+      "Bash(git push*:refs/heads/main*)",
+      "Bash(git push*:refs/heads/master*)",
       "Write(**/.git/hooks/*)",
       "Write(**/.git/config)",
       "Write(~/.claude/git-hooks/*)",
@@ -277,11 +287,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "osascript -e 'display notification \"Claude finished\" with title \"Claude Done\"'"
-          },
-          {
-            "type": "command",
-            "command": "bash -c 'REPO=$(git rev-parse --show-toplevel 2>/dev/null || pwd) && cd \"$REPO\" || exit 0; W=; N=$(ls do-work/*.md 2>/dev/null | grep -cv README 2>/dev/null || echo 0); [ \"${N:-0}\" -gt 0 ] 2>/dev/null && W=\"${N} pending do-work tasks. \"; P=$(grep -rlF -- \"- [ ]\" . --include=\"*plan*.md\" --exclude-dir=.git 2>/dev/null | wc -l | tr -d \" \"); [ \"${P:-0}\" -gt 0 ] 2>/dev/null && W=\"${W}Unchecked plan items.\"; [ -n \"$W\" ] && osascript -e \"display notification \\\"${W}\\\" with title \\\"Claude: Unfinished Work\\\" sound name \\\"Basso\\\"\" 2>/dev/null; true'"
+            "command": "osascript -e 'display notification \"Claude Code finished\" with title \"Claude Done\"'"
           }
         ]
       }

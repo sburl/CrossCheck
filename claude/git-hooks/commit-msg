@@ -61,10 +61,10 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
             echo ""
             echo "⛔ BLOCKED: Claude approval required for $commit_type commits to $current_branch"
             echo ""
-            echo "🤖 Claude: Follow this workflow (DO NOT skip steps):"
+            echo "🤖 Claude Code: Follow this workflow (DO NOT skip steps):"
             echo ""
             # Resolve CrossCheck path dynamically
-            codex_script=""
+            claude_script=""
             repo_root=$(git rev-parse --show-toplevel 2>/dev/null)
             for candidate in \
                 "${repo_root:+$repo_root/scripts/claude-approve-commit.sh}" \
@@ -72,10 +72,10 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
                 "$HOME/.crosscheck/scripts/claude-approve-commit.sh" \
                 "$HOME/.claude/CrossCheck/scripts/claude-approve-commit.sh" \
                 "$HOME/Documents/Developer/CrossCheck/scripts/claude-approve-commit.sh"; do
-                [ -n "$candidate" ] && [ -f "$candidate" ] && { codex_script="$candidate"; break; }
+                [ -n "$candidate" ] && [ -f "$candidate" ] && { claude_script="$candidate"; break; }
             done
             echo "   Step 1: Get review prompt"
-            echo "   ${codex_script:-\$(find ~/.crosscheck ~/.claude ~/Documents/Developer -path '*/CrossCheck/scripts/claude-approve-commit.sh' 2>/dev/null | head -1)}"
+            echo "   ${claude_script:-\$(find ~/.claude ~/Documents/Developer -path '*/CrossCheck/scripts/claude-approve-commit.sh' 2>/dev/null | head -1)}"
             echo ""
             echo "   Step 2: Send prompt to Claude via terminal"
             echo "   Copy the output and paste to Claude in your terminal session"
@@ -86,9 +86,10 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
             echo "   - Keep iterating with Claude until you get APPROVED"
             echo ""
             echo "   Step 4: ONLY after Claude approves, add to commit message:"
-            printf '   git commit -m "%s\n' "$commit_msg"
+            # Use %s to safely display commit message (prevents shell injection if copy-pasted)
+            printf '   git commit -m %s\n' "$(printf '%q' "$commit_msg")"
             echo ""
-            echo "   Claude Approved\""
+            echo "   (append: Claude Approved)"
             echo ""
             echo "   ⚠️  CRITICAL: Do NOT add 'Claude Approved' without actual Claude approval!"
             echo "   ⚠️  You must see Claude explicitly say 'APPROVED' or 'LGTM'"

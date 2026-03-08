@@ -18,4 +18,4 @@ jobs:
 
       - name: Run repository secret scan (repo + history + logs)
         run: |
-          bash scripts/scan-secrets.sh --all
+          bash scripts/scan-leaks.sh --all

@@ -1,13 +1,13 @@
 #!/bin/bash
-# scan-secrets.sh - Deterministic secret scanner for repos and agent logs
+# scan-leaks.sh - Deterministic secret scanner for repos and agent logs
 # Part of /security-review skill. Can also run standalone.
 #
 # Usage:
-#   ./scan-secrets.sh              # Scan repo working tree
-#   ./scan-secrets.sh --history    # Also scan git history
-#   ./scan-secrets.sh --logs       # Also scan agent conversation logs
-#   ./scan-secrets.sh --all        # Everything
-#   ./scan-secrets.sh --soft-fail   # Exit 0 even if secrets found
+#   ./scan-leaks.sh              # Scan repo working tree
+#   ./scan-leaks.sh --history    # Also scan git history
+#   ./scan-leaks.sh --logs       # Also scan agent conversation logs
+#   ./scan-leaks.sh --all        # Everything
+#   ./scan-leaks.sh --soft-fail   # Exit 0 even if secrets found
 
 set -e
 
@@ -107,7 +107,7 @@ if command -v rg >/dev/null 2>&1; then
     # Use anchored paths (not broad substrings) so real secrets in similarly-named files are caught
     matches=$(rg -n --no-heading -g '!.git' -g '!node_modules' -g '!*.lock' -g '!*.min.js' \
         -g '!skill-sources/security-review.md' \
-        -g '!scripts/scan-secrets.sh' -g '!claude/scripts/scan-secrets.sh' -g '!codex/scripts/scan-secrets.sh' \
+        -g '!scripts/scan-leaks.sh' -g '!claude/scripts/scan-leaks.sh' -g '!codex/scripts/scan-leaks.sh' \
         -g '!scripts/test-hook-behavior.sh' -g '!claude/scripts/test-hook-behavior.sh' -g '!codex/scripts/test-hook-behavior.sh' \
         "$COMBINED" . 2>/dev/null || true)
 else
@@ -117,9 +117,9 @@ else
         --include='*.env*' --include='*.md' --include='*.sh' \
         -E "$COMBINED" . 2>/dev/null | grep -v '.git/' \
         | grep -Fv './skill-sources/security-review.md' \
-        | grep -Fv './scripts/scan-secrets.sh' \
-        | grep -Fv './claude/scripts/scan-secrets.sh' \
-        | grep -Fv './codex/scripts/scan-secrets.sh' \
+        | grep -Fv './scripts/scan-leaks.sh' \
+        | grep -Fv './claude/scripts/scan-leaks.sh' \
+        | grep -Fv './codex/scripts/scan-leaks.sh' \
         | grep -Fv './scripts/test-hook-behavior.sh' \
         | grep -Fv './claude/scripts/test-hook-behavior.sh' \
         | grep -Fv './codex/scripts/test-hook-behavior.sh' || true)
@@ -166,7 +166,7 @@ if [ "$SCAN_HISTORY" = true ]; then
         found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline -- \
             ':!skill-sources/security-review.md' ':!claude/skill-sources/security-review.md' ':!codex/skill-sources/security-review.md' ':!codex/skills/security-review/SKILL.md' \
             ':!commands/security-review.md' \
-            ':!scripts/scan-secrets.sh' ':!claude/scripts/scan-secrets.sh' ':!codex/scripts/scan-secrets.sh' \
+            ':!scripts/scan-leaks.sh' ':!claude/scripts/scan-leaks.sh' ':!codex/scripts/scan-leaks.sh' \
             2>/dev/null | head -5 || true)
         if [ -n "$found" ]; then
             history_matches="$history_matches\n  Pattern '$pattern' found in deleted history:\n$found"
@@ -222,18 +222,64 @@ if [ "$SCAN_LOGS" = true ]; then
         fi
     fi
 
+    # Codex conversation logs
+    CODEX_DIR="$HOME/.codex"
+    if [ -d "$CODEX_DIR" ]; then
+        codex_hits=$(grep -rl -E "$COMBINED" "$CODEX_DIR" 2>/dev/null | head -20 || true)
+        if [ -n "$codex_hits" ]; then
+            verified_hits=""
+            while IFS= read -r f; do
+                real=$(grep -E "$COMBINED" "$f" 2>/dev/null | filter_false_positives || true)
+                if [ -n "$real" ]; then
+                    verified_hits="${verified_hits}${f}
+"
+                fi
+            done <<< "$codex_hits"
+            if [ -n "$verified_hits" ]; then
+                log_matches="$log_matches\n  Codex logs with secrets:"
+                while IFS= read -r f; do
+                    [ -z "$f" ] && continue
+                    log_matches="$log_matches\n     $f"
+                done <<< "$verified_hits"
+            fi
+        fi
+    fi
+
+    # Gemini conversation logs
+    GEMINI_DIR="$HOME/.gemini"
+    if [ -d "$GEMINI_DIR" ]; then
+        gemini_hits=$(grep -rl -E "$COMBINED" "$GEMINI_DIR" 2>/dev/null | head -20 || true)
+        if [ -n "$gemini_hits" ]; then
+            verified_hits=""
+            while IFS= read -r f; do
+                real=$(grep -E "$COMBINED" "$f" 2>/dev/null | filter_false_positives || true)
+                if [ -n "$real" ]; then
+                    verified_hits="${verified_hits}${f}
+"
+                fi
+            done <<< "$gemini_hits"
+            if [ -n "$verified_hits" ]; then
+                log_matches="$log_matches\n  Gemini logs with secrets:"
+                while IFS= read -r f; do
+                    [ -z "$f" ] && continue
+                    log_matches="$log_matches\n     $f"
+                done <<< "$verified_hits"
+            fi
+        fi
+    fi
+
     # Codex review log
-    CODEX_LOG="$HOME/.claude/codex-commit-reviews.log"
+    CODEX_LOG="$HOME/.codex/codex-commit-reviews.log"
     if [ -f "$CODEX_LOG" ]; then
         if grep -qE "$COMBINED" "$CODEX_LOG" 2>/dev/null; then
             log_matches="$log_matches\n  Codex review log contains secrets: $CODEX_LOG"
         fi
     fi
 
-    # Temp files from Codex debugging
+    # Temp files from agent debugging
     for tmpfile in /tmp/question.txt /tmp/reply.txt; do
         if [ -f "$tmpfile" ] && grep -qE "$COMBINED" "$tmpfile" 2>/dev/null; then
-            log_matches="$log_matches\n  Codex temp file contains secrets: $tmpfile"
+            log_matches="$log_matches\n  Agent temp file contains secrets: $tmpfile"
         fi
     done
 

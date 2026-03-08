@@ -607,13 +607,13 @@ For Categories 1-2, use the deterministic scanner:
 
 ```bash
 # Quick: repo working tree only
-scripts/scan-secrets.sh
+scripts/scan-leaks.sh
 
 # Full: also scan git history
-scripts/scan-secrets.sh --history
+scripts/scan-leaks.sh --history
 
 # Everything: repo + history + agent conversation logs
-scripts/scan-secrets.sh --all
+scripts/scan-leaks.sh --all
 ```
 
 This script uses exact regex patterns for all major providers (OpenAI, Anthropic, Google, AWS, GitHub, Stripe, Slack, etc.) and scans Codex/Claude log files at `~/.codex/projects/`. No false negatives for known key formats.
@@ -629,7 +629,7 @@ Pattern-matching finds possibilities; red teaming confirms realities.
 
 - `/redteam` -- Active exploit verification (confirms or disproves findings from this review)
 - `docs/rules/trust-model.md` -- Trust boundaries and zero-trust philosophy
-- `scripts/scan-secrets.sh` -- Deterministic secret scanner (standalone)
+- `scripts/scan-leaks.sh` -- Deterministic secret scanner (standalone)
 - `/repo-assessment` -- General code quality (runs at the same cadence)
 - Pre-push hook -- Runs lightweight Category 1-2 checks on every push
 - `.github/dependabot.yml` -- Automated dependency updates (Category 1 prevention)

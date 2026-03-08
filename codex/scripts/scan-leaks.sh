@@ -1,13 +1,13 @@
 #!/bin/bash
-# scan-secrets.sh - Deterministic secret scanner for repos and agent logs
+# scan-leaks.sh - Deterministic secret scanner for repos and agent logs
 # Part of /security-review skill. Can also run standalone.
 #
 # Usage:
-#   ./scan-secrets.sh              # Scan repo working tree
-#   ./scan-secrets.sh --history    # Also scan git history
-#   ./scan-secrets.sh --logs       # Also scan agent conversation logs
-#   ./scan-secrets.sh --all        # Everything
-#   ./scan-secrets.sh --soft-fail   # Exit 0 even if secrets found
+#   ./scan-leaks.sh              # Scan repo working tree
+#   ./scan-leaks.sh --history    # Also scan git history
+#   ./scan-leaks.sh --logs       # Also scan agent conversation logs
+#   ./scan-leaks.sh --all        # Everything
+#   ./scan-leaks.sh --soft-fail   # Exit 0 even if secrets found
 
 set -e
 
@@ -106,8 +106,8 @@ if command -v rg >/dev/null 2>&1; then
     # Exclude specific scanner/doc files to avoid self-referential false positives
     # Use anchored paths (not broad substrings) so real secrets in similarly-named files are caught
     matches=$(rg -n --no-heading -g '!.git' -g '!node_modules' -g '!*.lock' -g '!*.min.js' \
-        -g '!skill-sources/security-review.md' \
-        -g '!scripts/scan-secrets.sh' -g '!claude/scripts/scan-secrets.sh' -g '!codex/scripts/scan-secrets.sh' \
+        -g '!skills/security-review/SKILL.md' -g '!skill-sources/security-review.md' \
+        -g '!scripts/scan-leaks.sh' -g '!claude/scripts/scan-leaks.sh' -g '!codex/scripts/scan-leaks.sh' \
         -g '!scripts/test-hook-behavior.sh' -g '!claude/scripts/test-hook-behavior.sh' -g '!codex/scripts/test-hook-behavior.sh' \
         "$COMBINED" . 2>/dev/null || true)
 else
@@ -116,10 +116,11 @@ else
         --include='*.yml' --include='*.yaml' --include='*.json' --include='*.toml' \
         --include='*.env*' --include='*.md' --include='*.sh' \
         -E "$COMBINED" . 2>/dev/null | grep -v '.git/' \
+        | grep -Fv './skills/security-review/SKILL.md' \
         | grep -Fv './skill-sources/security-review.md' \
-        | grep -Fv './scripts/scan-secrets.sh' \
-        | grep -Fv './claude/scripts/scan-secrets.sh' \
-        | grep -Fv './codex/scripts/scan-secrets.sh' \
+        | grep -Fv './scripts/scan-leaks.sh' \
+        | grep -Fv './claude/scripts/scan-leaks.sh' \
+        | grep -Fv './codex/scripts/scan-leaks.sh' \
         | grep -Fv './scripts/test-hook-behavior.sh' \
         | grep -Fv './claude/scripts/test-hook-behavior.sh' \
         | grep -Fv './codex/scripts/test-hook-behavior.sh' || true)
@@ -162,11 +163,12 @@ if [ "$SCAN_HISTORY" = true ]; then
     echo "📜 Scanning git history (this may take a moment)..."
     history_matches=""
     for pattern in "sk-proj-" "sk-ant-" "AKIA" "ghp_" "sk_live_" "AIza"; do
-        # Exclude security-review.md from history results (contains example patterns)
+        # Exclude security review skill docs from history results (contains example patterns)
         found=$(git log --all -p -S "$pattern" --diff-filter=D --oneline -- \
-            ':!skill-sources/security-review.md' ':!claude/skill-sources/security-review.md' ':!codex/skill-sources/security-review.md' ':!codex/skills/security-review/SKILL.md' \
-            ':!commands/security-review.md' \
-            ':!scripts/scan-secrets.sh' ':!claude/scripts/scan-secrets.sh' ':!codex/scripts/scan-secrets.sh' \
+            ':!skills/security-review/SKILL.md' ':!skill-sources/security-review.md' \
+            ':!claude/skill-sources/security-review.md' ':!codex/skill-sources/security-review.md' \
+            ':!codex/skills/security-review/SKILL.md' ':!commands/security-review.md' \
+            ':!scripts/scan-leaks.sh' ':!claude/scripts/scan-leaks.sh' ':!codex/scripts/scan-leaks.sh' \
             2>/dev/null | head -5 || true)
         if [ -n "$found" ]; then
             history_matches="$history_matches\n  Pattern '$pattern' found in deleted history:\n$found"
@@ -197,8 +199,8 @@ if [ "$SCAN_LOGS" = true ]; then
 
     log_matches=""
 
-    # Claude conversation logs
-    CLAUDE_PROJECTS="$HOME/.claude/projects"
+    # Codex conversation logs
+    CLAUDE_PROJECTS="$HOME/.codex/projects"
     if [ -d "$CLAUDE_PROJECTS" ]; then
         claude_hits=$(grep -rl -E "$COMBINED" "$CLAUDE_PROJECTS" 2>/dev/null | head -20 || true)
         if [ -n "$claude_hits" ]; then
@@ -213,7 +215,7 @@ if [ "$SCAN_LOGS" = true ]; then
                 fi
             done <<< "$claude_hits"
             if [ -n "$verified_hits" ]; then
-                log_matches="$log_matches\n  Claude conversation logs with secrets:"
+                log_matches="$log_matches\n  Codex conversation logs with secrets:"
                 while IFS= read -r f; do
                     [ -z "$f" ] && continue
                     log_matches="$log_matches\n     $f"
@@ -222,18 +224,18 @@ if [ "$SCAN_LOGS" = true ]; then
         fi
     fi
 
-    # Claude review log
-    CODEX_LOG="$HOME/.claude/claude-commit-reviews.log"
+    # Codex review log
+    CODEX_LOG="$HOME/.codex/codex-commit-reviews.log"
     if [ -f "$CODEX_LOG" ]; then
         if grep -qE "$COMBINED" "$CODEX_LOG" 2>/dev/null; then
-            log_matches="$log_matches\n  Claude review log contains secrets: $CODEX_LOG"
+            log_matches="$log_matches\n  Codex review log contains secrets: $CODEX_LOG"
         fi
     fi
 
-    # Temp files from Claude debugging
+    # Temp files from Codex debugging
     for tmpfile in /tmp/question.txt /tmp/reply.txt; do
         if [ -f "$tmpfile" ] && grep -qE "$COMBINED" "$tmpfile" 2>/dev/null; then
-            log_matches="$log_matches\n  Claude temp file contains secrets: $tmpfile"
+            log_matches="$log_matches\n  Codex temp file contains secrets: $tmpfile"
         fi
     done
 
@@ -246,7 +248,7 @@ if [ "$SCAN_LOGS" = true ]; then
         echo "     2. These secrets were sent to AI provider APIs"
         echo "     3. They are stored in plaintext on your disk"
         echo "     4. Delete affected .jsonl files after rotation"
-        echo "     5. Add sensitive paths to ~/.claude/settings.json deny list"
+        echo "     5. Add sensitive paths to ~/.codex/settings.json deny list"
         FOUND=$((FOUND + 1))
     else
         echo "  ✅ Agent logs clean"

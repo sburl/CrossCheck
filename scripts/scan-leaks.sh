@@ -167,6 +167,7 @@ if [ "$SCAN_HISTORY" = true ]; then
             ':!skill-sources/security-review.md' ':!claude/skill-sources/security-review.md' ':!codex/skill-sources/security-review.md' ':!codex/skills/security-review/SKILL.md' \
             ':!commands/security-review.md' \
             ':!scripts/scan-leaks.sh' ':!claude/scripts/scan-leaks.sh' ':!codex/scripts/scan-leaks.sh' \
+            ':!scripts/scan-secrets.sh' ':!claude/scripts/scan-secrets.sh' ':!codex/scripts/scan-secrets.sh' \
             2>/dev/null | head -5 || true)
         if [ -n "$found" ]; then
             history_matches="$history_matches\n  Pattern '$pattern' found in deleted history:\n$found"
@@ -268,8 +269,8 @@ if [ "$SCAN_LOGS" = true ]; then
         fi
     fi
 
-    # Codex review log
-    CODEX_LOG="$HOME/.codex/codex-commit-reviews.log"
+    # Codex review log (hook writes to ~/.claude/, not ~/.codex/)
+    CODEX_LOG="$HOME/.claude/codex-commit-reviews.log"
     if [ -f "$CODEX_LOG" ]; then
         if grep -qE "$COMBINED" "$CODEX_LOG" 2>/dev/null; then
             log_matches="$log_matches\n  Codex review log contains secrets: $CODEX_LOG"

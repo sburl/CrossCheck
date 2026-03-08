@@ -61,7 +61,7 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
             echo ""
             echo "⛔ BLOCKED: Codex approval required for $commit_type commits to $current_branch"
             echo ""
-            echo "🤖 Claude Code: Follow this workflow (DO NOT skip steps):"
+            echo "🤖 Codex: Follow this workflow (DO NOT skip steps):"
             echo ""
             # Resolve CrossCheck path dynamically
             codex_script=""

@@ -231,6 +231,8 @@
       "Bash(git push*:master)",
       "Bash(git push*--delete*main*)",
       "Bash(git push*--delete*master*)",
+      "Bash(git push*:refs/heads/main*)",
+      "Bash(git push*:refs/heads/master*)",
       "Write(**/.git/hooks/*)",
       "Write(**/.git/config)",
       "Write(~/.codex/git-hooks/*)",

@@ -60,6 +60,20 @@ causes and follow-up items into your analysis:
 
 Copy the complete Codex response when ready.
 
+### Step 4.5: /simplify the assessment (claude code)
+
+If you are running this inside Claude Code (or another surface that supports it), run:
+
+```bash
+/simplify
+```
+
+Goal: compress the raw assessment into an actionable plan (top issues, proposed PRs, and the single highest-leverage fix).
+
+Keep both versions:
+- **raw** Codex output (for traceability)
+- **simplified** version (for execution)
+
 ## Step 5: Codex Refactor Planning
 
 Tell the user:

@@ -43,10 +43,35 @@ trim() {
   printf '%s' "$value"
 }
 
+parse_map_entry() {
+  local entry="$1"
+  local actor="$2"
+  local separator="" bot_name="" human_name=""
+
+  if [[ "$entry" == *"->"* ]]; then
+    separator="->"
+  elif [[ "$entry" == *"="* ]]; then
+    separator="="
+  elif [[ "$entry" == *":"* ]]; then
+    separator=":"
+  else
+    return 1
+  fi
+
+  bot_name="$(trim "${entry%%$separator*}")"
+  human_name="$(trim "${entry#*$separator}")"
+
+  if [ -n "$bot_name" ] && [ -n "$human_name" ] && [ "$bot_name" = "$actor" ] && [ "$bot_name" != "$human_name" ]; then
+    printf '%s' "$human_name"
+    return 0
+  fi
+  return 1
+}
+
 resolve_map_reviewer() {
   local map_value="$1"
   local actor="$2"
-  local entry bot_name human_name separator
+  local entry=""
 
   while IFS= read -r entry; do
     entry="$(trim "$entry")"
@@ -55,24 +80,9 @@ resolve_map_reviewer() {
       \#*) continue ;;
     esac
 
-    separator=""
-    if [[ "$entry" == *"->"* ]]; then
-      separator="->"
-    elif [[ "$entry" == *"="* ]]; then
-      separator="="
-    elif [[ "$entry" == *":"* ]]; then
-      separator=":"
-    else
-      continue
-    fi
-
-    bot_name="${entry%%$separator*}"
-    human_name="${entry#*$separator}"
-    bot_name="$(trim "$bot_name")"
-    human_name="$(trim "$human_name")"
-
-    if [ -n "$bot_name" ] && [ -n "$human_name" ] && [ "$bot_name" = "$actor" ] && [ "$bot_name" != "$human_name" ]; then
-      printf '%s' "$human_name"
+    local parsed_name=""
+    if parsed_name="$(parse_map_entry "$entry" "$actor")" && [ -n "$parsed_name" ]; then
+      printf '%s' "$parsed_name"
       return 0
     fi
   done <<< "$map_value"

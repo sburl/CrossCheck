@@ -12,6 +12,7 @@ if [ ! -f "$TARGET_SCRIPT" ]; then
 fi
 
 # Source the target script to access functions
+# shellcheck source=scripts/request-pr-reviewer.sh
 source "$TARGET_SCRIPT"
 
 PASSED=0

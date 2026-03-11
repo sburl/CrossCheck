@@ -9,16 +9,6 @@ TMPFILES=()
 cleanup_tmpfiles() { for f in "${TMPFILES[@]}"; do rm -f "$f"; done; }
 trap cleanup_tmpfiles EXIT
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
-cd "$REPO_ROOT"
-
-fixed=0
-already_ok=0
-errors=0
-
-echo "🔧 Fixing missing timestamps in markdown files..."
-echo ""
-
 # inject_after_line: insert text after a specific line number (handles multi-line text)
 # Usage: inject_after_line <file> <line_number> <text_to_insert>
 inject_after_line() {
@@ -56,6 +46,18 @@ prepend_to_file() {
     printf '%s\n\n' "$text" | cat - "$file" > "$tmp_file"
     mv "$tmp_file" "$file"
 }
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+
+fixed=0
+already_ok=0
+errors=0
+
+echo "🔧 Fixing missing timestamps in markdown files..."
+echo ""
 
 while IFS= read -r -d '' file; do
     # Skip symlinks — can't inject metadata into link targets
@@ -153,4 +155,6 @@ if [ "$errors" -gt 0 ]; then
     echo ""
     echo "⚠️  $errors file(s) could not be auto-fixed. Edit manually."
     exit 1
+fi
+
 fi

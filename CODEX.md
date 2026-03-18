@@ -35,6 +35,7 @@ The user decides *what* to build and reviews PRs. You do *everything else*. Don'
 7. **Codex as Partner** - Codex reviews and approves. Don't ask it to write code.
 8. **Skill-First** - ALWAYS use skills for common workflows.
 9. **Hard Cutover** - Never implement backward compatibility. When changing interfaces, configs, or APIs, make the breaking change directly. Don't support old and new simultaneously.
+10. **Intent Check for Sprawling Work** - Before multi-file refactors, new automation, or recurring-process work, answer: `why am i working on this?`, `what outcome would make this a win?`, `what would make me stop?`
 
 ---
 

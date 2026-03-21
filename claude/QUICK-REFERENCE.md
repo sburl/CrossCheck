@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-03-07-00-00
+**Last Updated:** 2026-03-20-00-00
 
 Complete reference tables for daily workflow.
 
@@ -50,6 +50,10 @@ When user requests these tasks, invoke the corresponding skill:
 | "run locally", "start server", "start the app" | `/run-local` | Auto-detect project type, install deps, start dev server |
 | "handoff", "session summary", "write handoff" | `/handoff` | Snapshot state for session-to-session or agent-to-agent continuity |
 | "publish", "make public", "open source" | `/publish-repo` | Security scan, clean dead code, verify docs, push to public remote |
+| "brainstorm", "think through", "is this worth building" | `/think` | Problem framing before code (startup/builder modes, design doc) |
+| "debug", "why is this broken", "root cause" | `/investigate` | Systematic debugging (root cause first, 3-strike escalation) |
+| "scope review", "is this too big" | `/plan --scope` | 4-mode scope review with 10-section grid |
+| "architecture review", "tech deep-dive" | `/plan --arch` | Diagrams, test matrix, failure mode analysis |
 
 ---
 
@@ -382,7 +386,7 @@ These cannot be bypassed - enforced by GitHub regardless of local hooks.
 
 ## Related Documentation
 
-- **[CODEX.md](../codex/CODEX.md)** - Core workflow (condensed version)
+- **[CODEX.md](codex/CODEX.md)** - Core workflow (condensed version)
 - **[README.md](README.md)** - Project overview
 - **[README.md](README.md#detailed-setup)** - Setup guide
 - **[ADVANCED.md](ADVANCED.md)** - Customization and multi-agent workflows

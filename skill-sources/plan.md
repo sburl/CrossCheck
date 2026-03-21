@@ -1,10 +1,13 @@
 ---
 name: plan
-description: Enter plan mode for complex tasks (pour energy into the plan for 1-shot implementation)
+description: |
+  Enter plan mode for complex tasks (pour energy into the plan for 1-shot implementation).
+  Supports --scope (scope review with 4 modes and 10-section grid) and --arch (architecture
+  review with diagrams, test matrix, and failure mode analysis).
 ---
 
 **Created:** 2026-02-02-12-00
-**Last Updated:** 2026-02-23-01-00
+**Last Updated:** 2026-03-20-00-00
 
 # Plan Mode - Design Before Implementation
 
@@ -458,9 +461,133 @@ to design a comprehensive approach.
 
 > **When stuck:** "The moment something goes sideways, they jump to plan mode, write a 1-pager on what went wrong, and ask Codex to propose 3 alternative approaches."
 
+## Scope Review Mode (`/plan --scope`)
+
+*Inspired by [gstack plan-ceo-review](https://github.com/garrytan/gstack).*
+
+Use when questioning scope, ambition, or direction of a plan. Helps decide whether to
+expand, hold, or reduce scope before implementation.
+
+### Step 1: Choose Scope Mode
+
+Ask the user via AskUserQuestion:
+
+> How should I review scope for this plan?
+>
+> - **Expansion** — Dream big. What's the 10-star version? Where could this be more ambitious?
+> - **Selective Expansion** — Hold current scope but cherry-pick 1-2 high-value expansions
+> - **Hold Scope** — Maximum rigor on current scope. No additions, find what to cut.
+> - **Reduction** — Strip to absolute essentials. What's the smallest thing worth shipping?
+
+### Step 2: 10-Section Review Grid
+
+Run each section against the current plan. Be specific — cite plan sections, not generalities.
+
+| # | Dimension | Question |
+|---|-----------|----------|
+| 1 | Problem framing | Is this the right problem? Could a different framing yield something better? |
+| 2 | User value | Does the end user actually care about this? What's the evidence? |
+| 3 | Scope | Too big? Too small? Right-sized for the chosen scope mode? |
+| 4 | Ambition | Could this be thinking bigger? (Expansion mode) Or is it overreaching? (Reduction mode) |
+| 5 | Dependencies | What needs to exist first? Are any missing from the plan? |
+| 6 | Risks | What could kill this? Technical, product, or organizational risks? |
+| 7 | Alternatives | What else could solve the same problem with less effort or more impact? |
+| 8 | Effort/impact | Is the ratio favorable? What's the highest-leverage subset? |
+| 9 | Integration | How does this fit with existing code, systems, and workflows? |
+| 10 | Success criteria | How do we know it worked? Are the criteria measurable and observable? |
+
+### Step 3: Output
+
+```
+SCOPE REVIEW: [Expansion/Selective Expansion/Hold Scope/Reduction]
+
+[For each dimension with findings:]
+  #N [Dimension]: [Finding]
+    Recommendation: [specific action]
+
+SUMMARY:
+  Expand: [list items to add, if any]
+  Cut: [list items to remove, if any]
+  Keep: [list items that are right-sized]
+  Verdict: [1-sentence recommendation]
+```
+
+Present via AskUserQuestion. Update the plan based on user decisions.
+
+---
+
+## Architecture Review Mode (`/plan --arch`)
+
+*Inspired by [gstack plan-eng-review](https://github.com/garrytan/gstack).*
+
+Use for technical deep-dive on a plan's architecture. Produces diagrams, test matrices,
+and failure mode analysis.
+
+### Data Flow Diagram
+
+Draw an ASCII diagram showing how data moves through the system:
+
+```
+User Input → API Handler → Validation → Service Layer → Database
+                                ↓
+                          Error Response
+```
+
+Include: entry points, transformations, storage, external calls, error paths.
+
+### State Machine (if applicable)
+
+If the feature involves state transitions (e.g., order status, auth flow, job processing),
+draw the state machine:
+
+```
+[idle] --start--> [running] --complete--> [done]
+                      |
+                    --fail--> [error] --retry--> [running]
+```
+
+Include: all states, transitions, guards/conditions, terminal states.
+
+### Test Matrix
+
+| Layer | What to Test | How | Priority |
+|-------|-------------|-----|----------|
+| Unit | Individual functions, edge cases | Jest/pytest/etc. | High |
+| Integration | Service interactions, DB queries | Test DB, mocked externals | High |
+| E2E | Full user flows | Playwright/Cypress or CLI tests | Medium |
+| Contract | API shape, response formats | Schema validation | Medium |
+
+For each row, list specific test cases relevant to the plan.
+
+### Failure Mode Analysis
+
+| Failure | Detection | Impact | Recovery |
+|---------|-----------|--------|----------|
+| [What breaks] | [How we know] | [Severity: Low/Med/High] | [What happens / how to fix] |
+
+Cover at minimum: network failures, invalid input, concurrent access, resource exhaustion,
+dependency unavailability.
+
+### Security Concerns
+
+Scan the plan for:
+- User input that reaches DB queries, shell commands, or file paths
+- Authentication/authorization gaps
+- Secrets handling (API keys, tokens, credentials)
+- Trust boundaries (LLM output, external API responses, user-supplied data)
+
+### Output
+
+Present the full architecture review as a single document. Ask via AskUserQuestion:
+- A) Approve architecture — proceed with implementation
+- B) Revise — specify concerns (loop back to update plan)
+
+---
+
 ## Related Commands
 
 - `CODEX.md` - Global workflow (auto-loaded, includes planning guidance)
+- `/think` - Problem framing before planning (use before `/plan`)
 - `/submit-pr` - After implementation (should reference plan)
 - Create worktree for planning: `/create-worktree plan-feature-name`
 

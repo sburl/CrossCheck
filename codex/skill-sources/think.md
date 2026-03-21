@@ -245,7 +245,8 @@ Write the design document.
 mkdir -p ~/.crosscheck/designs
 ```
 
-Write to `~/.crosscheck/designs/{repo-name}-{branch}-{date}.md`:
+Write to `~/.crosscheck/designs/{repo-name}-{branch}-{date}.md` (sanitize branch name:
+replace `/` with `-` to avoid creating nested directories):
 
 ### Startup mode template:
 

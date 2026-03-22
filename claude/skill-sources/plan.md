@@ -56,6 +56,16 @@ Automatically runs `EnterPlanMode` tool, which:
 
 ### Step 2: Intensive Planning Process
 
+**Start with the drift-prevention triad:**
+
+Before diving into requirements or architecture, write down and answer these 3 questions in plain language:
+
+1. **Why am I working on this?**
+2. **What outcome would make this a win?**
+3. **What would make me stop?**
+
+This is not bureaucracy. It is a cheap anti-sprawl check for tasks that can balloon, especially multi-file refactors, new automation, and recurring-process work.
+
 **With User:**
 1. Clarify requirements - Ask "obvious" questions
 2. Define MVP - What's the minimum viable solution?

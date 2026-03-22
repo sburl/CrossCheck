@@ -73,15 +73,18 @@ Automatically runs `EnterPlanMode` tool, which:
 
 **Plan should include:**
 
-1. **Intent** - Why we're doing this (the problem, not the feature)
-2. **Success criteria** - Observable, measurable definition of done
-3. **Key assumptions** - What we're taking as true that could be wrong
-4. **Requirements** - What we're building (explicit, verbose)
-5. **Approach** - How we'll build it (step-by-step)
-6. **Files to change** - Specific files and why
-7. **Tests needed** - How we'll verify it works
-8. **Edge cases** - What could go wrong
-9. **Alternatives considered** - Why we chose this approach
+1. **Why now** - Why we're doing this now, not later
+2. **Win condition** - Observable, measurable definition of success
+3. **Stop condition** - What would tell us to stop, cut scope, or abandon the approach
+4. **Intent** - Why we're doing this (the problem, not the feature)
+5. **Success criteria** - Observable, measurable definition of done
+6. **Key assumptions** - What we're taking as true that could be wrong
+7. **Requirements** - What we're building (explicit, verbose)
+8. **Approach** - How we'll build it (step-by-step)
+9. **Files to change** - Specific files and why
+10. **Tests needed** - How we'll verify it works
+11. **Edge cases** - What could go wrong
+12. **Alternatives considered** - Why we chose this approach
 
 ### Step 4: Exit Plan Mode
 

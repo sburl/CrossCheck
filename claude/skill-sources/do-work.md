@@ -70,14 +70,15 @@ Any gotchas, constraints, or preferences.
 For each task:
 
 1. **Create feature branch:** `git checkout -b feat/{task-slug}`
-2. **Enter plan mode if complex** (>3 files or unclear approach)
-3. **Implement the task** following all CLAUDE.md conventions
-4. **Write tests alongside code** (zero trust)
-5. **Run tests** - must pass before proceeding
-6. **Submit PR:** INVOKE `/submit-pr`
-7. **Mark task done:** Move file to `do-work/done/` (e.g. `mv do-work/001-foo.md do-work/done/`)
-8. **Return to main:** `git checkout main && git pull`
-9. **Move to next task**
+2. **Run the drift-prevention triad** for any task that could sprawl: `why am i working on this?`, `what outcome would make this a win?`, `what would make me stop?`
+3. **Enter plan mode if complex** (>3 files or unclear approach)
+4. **Implement the task** following all CLAUDE.md conventions
+5. **Write tests alongside code** (zero trust)
+6. **Run tests** - must pass before proceeding
+7. **Submit PR:** INVOKE `/submit-pr`
+8. **Mark task done:** Move file to `do-work/done/` (e.g. `mv do-work/001-foo.md do-work/done/`)
+9. **Return to main:** `git checkout main && git pull`
+10. **Move to next task**
 
 ### Step 4: Report Results
 

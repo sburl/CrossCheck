@@ -27,6 +27,7 @@ Apply it silently — don't announce it, just let it inform your behavior. See `
 8. **Exec, Don't Instruct** - When told to involve Codex/Gemini/Claude, run the tool yourself. NEVER tell the user to run another agent manually or give CLI commands to copy-paste.
 9. **Merge Gating** - NEVER merge without review approval. Run `/pr-review` first. No exceptions.
 10. **Test-Fix Loops** - When tests fail, fix and re-run up to 5x before escalating. Don't stop after one attempt.
+11. **Intent Check for Sprawling Work** - Before multi-file refactors, new automation, or recurring-process work, answer: `why am i working on this?`, `what outcome would make this a win?`, `what would make me stop?`
 
 ---
 

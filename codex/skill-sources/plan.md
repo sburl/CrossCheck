@@ -73,12 +73,15 @@ Automatically runs `EnterPlanMode` tool, which:
 
 **Plan should include:**
 
-1. **Requirements** - What we're building (explicit, verbose)
-2. **Approach** - How we'll build it (step-by-step)
-3. **Files to change** - Specific files and why
-4. **Tests needed** - How we'll verify it works
-5. **Edge cases** - What could go wrong
-6. **Alternatives considered** - Why we chose this approach
+1. **Why now** - Why we're doing this now, not later
+2. **Win condition** - Observable, measurable definition of success
+3. **Stop condition** - What would tell us to stop, cut scope, or abandon the approach
+4. **Requirements** - What we're building (explicit, verbose)
+5. **Approach** - How we'll build it (step-by-step)
+6. **Files to change** - Specific files and why
+7. **Tests needed** - How we'll verify it works
+8. **Edge cases** - What could go wrong
+9. **Alternatives considered** - Why we chose this approach
 
 ### Step 4: Exit Plan Mode
 

@@ -34,6 +34,7 @@ The user decides *what* to build and reviews PRs. You do *everything else*. Don'
 6. **Test-First** - Write tests ALONGSIDE code, not after.
 7. **Gemini as Partner** - Gemini reviews and approves. Don't ask it to write code.
 8. **Skill-First** - ALWAYS use skills for common workflows.
+9. **Intent Check for Sprawling Work** - Before multi-file refactors, new automation, or recurring-process work, answer: `why am i working on this?`, `what outcome would make this a win?`, `what would make me stop?`
 
 ---
 
@@ -147,5 +148,7 @@ Each worktree is fully autonomous: own branch, own context, own PR counter. No c
 **Dangerous commands blocked** in `settings.template.json`: `rm`, `git reset --hard`, `--no-verify`, `sudo`, `docker`, `eval`, reading `.env`/`.pem`/`.key` files, `gh --admin` (bypasses branch protection), `gh api` calls to rulesets/branch-protection (modifies protections). This is the settings.json deny list -- it's a hard guardrail the agent cannot override. Rebase and force-push are allowed (feature branches need them); GitHub branch protection blocks force-push to main server-side.
 
 **NEVER bypass branch protections.** If a PR is blocked by branch protection, that is working as intended. Do not use `--admin`, do not modify GitHub rulesets, do not weaken review requirements. Get a legitimate review from a separate account. See `docs/rules/trust-model.md` for details.
+
+**Intent sanity check for sprawling work.** Before multi-file refactors, new automation, or recurring-process work, answer: `why am i working on this?`, `what outcome would make this a win?`, `what would make me stop?`
 
 **Gotchas:** `~/.gemini/settings.json` is global | GEMINI.md is per-repo | Check `which tool` before using CLI tools

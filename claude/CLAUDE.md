@@ -34,6 +34,7 @@ The user decides *what* to build and reviews PRs. You do *everything else*. Don'
 6. **Test-First** - Write tests ALONGSIDE code, not after.
 7. **Claude as Partner** - Claude reviews and approves. Don't ask it to write code.
 8. **Skill-First** - ALWAYS use skills for common workflows.
+9. **Intent Check for Sprawling Work** - Before multi-file refactors, new automation, or recurring-process work, answer: `why am i working on this?`, `what outcome would make this a win?`, `what would make me stop?`
 
 ---
 

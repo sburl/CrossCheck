@@ -4,7 +4,7 @@ description: Initiate autonomous PR review process with Codex agent
 ---
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-03-20-00-00
 
 # PR Review with Codex Agent
 
@@ -30,6 +30,83 @@ Before starting the review:
    ```
 
 If checklist incomplete, stop and complete it first.
+
+## Step 1.5: Structured Diff Review
+
+*Checklist patterns inspired by [gstack review](https://github.com/garrytan/gstack).*
+
+Before sending to Codex, run your own two-pass review of `git diff origin/main`.
+Be specific — cite `file:line` and suggest fixes. Skip anything that's fine.
+
+### Pass 1 — Critical
+
+**SQL & Data Safety**
+- String interpolation in SQL — even `.to_i`/`.to_f` values. Use parameterized queries.
+  (Rails: `sanitize_sql_array`/Arel; Node: prepared statements; Python: parameterized queries)
+- TOCTOU races: check-then-set patterns that should be atomic `WHERE` + `update_all`
+- Bypassing model validations via direct DB writes (Rails: `update_column`; Django: `QuerySet.update()`; Prisma: raw queries)
+- N+1 queries: missing eager loading for associations used in loops/views
+
+**Race Conditions & Concurrency**
+- Read-check-write without uniqueness constraint or duplicate key handling
+- Find-or-create without unique DB index — concurrent calls create duplicates
+- Status transitions without atomic `WHERE old_status = ? UPDATE SET new_status`
+- Unsafe HTML rendering on user-controlled data (`.html_safe`, `dangerouslySetInnerHTML`, `v-html`, `|safe`)
+
+**LLM Output Trust Boundary**
+- LLM-generated values (emails, URLs, names) written to DB without format validation
+- Structured tool output accepted without type/shape checks before database writes
+
+**Enum & Value Completeness**
+When the diff introduces a new enum value, status string, or type constant:
+- Trace it through every consumer. Use Grep to find all references to sibling values.
+  Read each match. Does the consumer handle the new value?
+- Check allowlists/filter arrays containing sibling values — is the new value included?
+- Check `case`/`if-elsif` chains — does the new value fall through to a wrong default?
+- This step requires reading code OUTSIDE the diff.
+
+### Pass 2 — Informational
+
+**Conditional Side Effects**
+- Code paths that branch on a condition but forget to apply a side effect on one branch
+- Log messages that claim an action happened but the action was conditionally skipped
+
+**Magic Numbers & String Coupling**
+- Bare numeric literals used in multiple files — should be named constants
+- Error message strings used as query filters elsewhere
+
+**Dead Code & Consistency**
+- Variables assigned but never read
+- Version mismatch between PR title and VERSION/CHANGELOG files
+- Comments/docstrings that describe old behavior after the code changed
+
+**LLM Prompt Issues**
+- 0-indexed lists in prompts (LLMs reliably return 1-indexed)
+- Prompt text listing tools/capabilities that don't match what's wired up
+- Word/token limits stated in multiple places that could drift
+
+### Output Format
+
+```
+Pre-Landing Review: N issues (X critical, Y informational)
+
+AUTO-FIXED:
+- [file:line] Problem → fix applied
+
+NEEDS INPUT:
+- [file:line] Problem description
+  Recommended fix: suggested fix
+```
+
+If no issues: `Pre-Landing Review: No issues found.`
+
+Fix obvious mechanical issues automatically. Batch genuinely ambiguous issues into a
+single AskUserQuestion for the user.
+
+Then proceed to Step 2 (Codex review) — include the checklist findings in the Codex
+prompt so the reviewer has context on what was already caught.
+
+---
 
 ## IMPORTANT: What "Codex Review" Means
 

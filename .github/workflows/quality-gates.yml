@@ -166,6 +166,21 @@ jobs:
       - name: Run hook behavior test suite
         run: bash scripts/test-hook-behavior.sh
 
+      - name: Run function unit tests
+        run: |
+          FAILED=0
+          for test_script in scripts/test-*-functions.sh; do
+            [ -f "$test_script" ] || continue
+            echo "Running $test_script..."
+            if ! bash "$test_script"; then
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          if [ "$FAILED" -gt 0 ]; then
+            echo "❌ $FAILED function test script(s) failed"
+            exit 1
+          fi
+
   doc-metadata:
     name: Documentation Metadata
     runs-on: ubuntu-latest

@@ -27,12 +27,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Source the utility functions (the script should be wrapped in a main guard)
+# Source the utility functions (the script is wrapped in a main guard,
+# so only function definitions are loaded — no set -e or trap side effects)
 source "$CROSSCHECK_DIR/scripts/fix-timestamps.sh"
-
-# fix-timestamps.sh sets its own EXIT trap which overwrites ours.
-# We must re-establish a combined trap to ensure both cleanups run.
-trap 'cleanup; cleanup_tmpfiles' EXIT
 
 pass() {
     PASSED=$((PASSED + 1))
@@ -74,7 +71,7 @@ EOF
     # grep -z with string patterns matches entire string with null bytes. But here we have normal files.
     # We can use tr to compare.
     actual=$(cat "$file")
-    expected=$(printf 'INJECTED\n\nLine 1\nLine 2')
+    expected=$(printf 'INJECTED\nLine 1\nLine 2')
     if [ "$actual" = "$expected" ]; then
         pass "Inject before line 1 works correctly"
     else
@@ -96,7 +93,7 @@ EOF
     inject_before_line "$file" 2 "INJECTED"
 
     actual=$(cat "$file")
-    expected=$(printf 'Line 1\nINJECTED\n\nLine 2\nLine 3')
+    expected=$(printf 'Line 1\nINJECTED\nLine 2\nLine 3')
     if [ "$actual" = "$expected" ]; then
         pass "Inject before middle line works correctly"
     else
@@ -117,7 +114,7 @@ EOF
     inject_before_line "$file" 2 "INJECTED"
 
     actual=$(cat "$file")
-    expected=$(printf 'Line 1\nINJECTED\n\nLine 2')
+    expected=$(printf 'Line 1\nINJECTED\nLine 2')
     if [ "$actual" = "$expected" ]; then
         pass "Inject before last line works correctly"
     else
@@ -137,7 +134,7 @@ EOF
     inject_before_line "$file" 1 "INJECTED"
 
     actual=$(cat "$file")
-    expected=$(printf 'INJECTED\n\nLine 1')
+    expected=$(printf 'INJECTED\nLine 1')
     if [ "$actual" = "$expected" ]; then
         pass "Inject before line 1 in single-line file works"
     else

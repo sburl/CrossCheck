@@ -2,14 +2,13 @@
 # Fix missing timestamps in markdown files using git history
 # Called by pre-push hook when .md files are missing Created/Last Updated metadata
 
-set -e
-
 # Clean up temp files on exit/interrupt
 TMPFILES=()
 cleanup_tmpfiles() { for f in "${TMPFILES[@]}"; do rm -f "$f"; done; }
-trap cleanup_tmpfiles EXIT
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+set -e
+trap cleanup_tmpfiles EXIT
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
@@ -42,7 +41,7 @@ inject_before_line() {
     if [ "$line_num" -gt 1 ]; then
         head -n "$((line_num - 1))" "$file" > "$tmp_file"
     fi
-    printf '%s\n\n' "$text" >> "$tmp_file"
+    printf '%s\n' "$text" >> "$tmp_file"
     tail -n +"$line_num" "$file" >> "$tmp_file"
     mv "$tmp_file" "$file"
 }

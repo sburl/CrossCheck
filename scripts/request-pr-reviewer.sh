@@ -80,6 +80,8 @@ resolve_map_reviewer() {
   return 1
 }
 
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --pr|--pr-number)
@@ -195,3 +197,5 @@ fi
 
 echo "⚠️  Review request could not be added right now. Verify reviewer exists and has repo access."
 exit 1
+
+fi

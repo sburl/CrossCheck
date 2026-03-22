@@ -66,15 +66,14 @@ KNOWN_FPS=(
 filter_false_positives() {
     while IFS= read -r line; do
         [ -z "$line" ] && continue
-        # Extract actual matched tokens from this line
-        local tokens
-        tokens=$(echo "$line" | grep -oE "$COMBINED" 2>/dev/null || true)
-        if [ -z "$tokens" ]; then
-            echo "$line"
-            continue
-        fi
+
+        local text="$line"
         local has_real=false
-        while IFS= read -r token; do
+        local match_found=false
+
+        while [[ $text =~ $COMBINED ]]; do
+            match_found=true
+            local token="${BASH_REMATCH[0]}"
             local is_fp=false
             for fp in "${KNOWN_FPS[@]}"; do
                 if [ "$token" = "$fp" ]; then
@@ -86,8 +85,13 @@ filter_false_positives() {
                 has_real=true
                 break
             fi
-        done <<< "$tokens"
-        if [ "$has_real" = true ]; then
+            # advance text past the token
+            text="${text#*"$token"}"
+        done
+
+        if [ "$match_found" = false ]; then
+            echo "$line"
+        elif [ "$has_real" = true ]; then
             echo "$line"
         fi
     done

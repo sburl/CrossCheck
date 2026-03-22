@@ -33,24 +33,34 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Create a fresh test repo with hooks installed
-# Uses a feature branch to avoid Codex approval gate on main
-setup_test_repo() {
+# Core repository initialization shared between local and remote test setups
+_init_test_repo() {
     local name="$1"
     TEST_DIR="/tmp/hook-behavior-test-$name-$$"
     rm -rf "$TEST_DIR" 2>/dev/null || true
     mkdir -p "$TEST_DIR"
     cd "$TEST_DIR"
     git init -q
+
+    # Pre-push hook checks expect 'main' as the default branch in this suite
+    git symbolic-ref HEAD refs/heads/main
+
     git config user.email "test@test.com"
     git config user.name "Test"
 
-    # Install CrossCheck hooks directly (no prompts)
+    # Install CrossCheck commit hooks directly (no prompts)
     mkdir -p .git/hooks
     for hook in pre-commit commit-msg; do
         cp "$CROSSCHECK_DIR/git-hooks/$hook" ".git/hooks/$hook"
         chmod +x ".git/hooks/$hook"
     done
+}
+
+# Create a fresh test repo with hooks installed
+# Uses a feature branch to avoid Codex approval gate on main
+setup_test_repo() {
+    local name="$1"
+    _init_test_repo "$name"
 
     # Initial commit on main (needed for diff operations)
     echo "initial" > README.md
@@ -404,33 +414,23 @@ echo ""
 
 setup_test_repo_with_remote() {
     local name="$1"
-    TEST_DIR="/tmp/hook-behavior-test-$name-$$"
+
+    # 1. Base local repo setup using shared helper
+    _init_test_repo "$name"
+
+    # 2. Remote setup
     local REMOTE_DIR="/tmp/hook-behavior-test-${name}-remote-$$"
-    rm -rf "$TEST_DIR" "$REMOTE_DIR" 2>/dev/null || true
+    rm -rf "$REMOTE_DIR" 2>/dev/null || true
 
     # Create bare remote
     mkdir -p "$REMOTE_DIR"
-    cd "$REMOTE_DIR"
-    git init -q --bare
+    git init -q --bare "$REMOTE_DIR"
 
-    # Create local repo
-    mkdir -p "$TEST_DIR"
+    # Configure local repo to use the remote
     cd "$TEST_DIR"
-    git init -q
-    git symbolic-ref HEAD refs/heads/main
-    git config user.email "test@test.com"
-    git config user.name "Test"
     git remote add origin "$REMOTE_DIR"
 
-    # Install commit hooks only (pre-push installed AFTER initial push to avoid
-    # the pre-check gate that blocks pushes to main without /techdebt marker)
-    mkdir -p .git/hooks
-    for hook in pre-commit commit-msg; do
-        cp "$CROSSCHECK_DIR/git-hooks/$hook" ".git/hooks/$hook"
-        chmod +x ".git/hooks/$hook"
-    done
-
-    # Initial commit and push (no pre-push hook yet)
+    # 3. Initial commit and push (no pre-push hook yet)
     # Include timestamps in README.md to satisfy pre-push timestamp check
     cat > README.md << 'READMEEOF'
 # Test
@@ -442,11 +442,11 @@ READMEEOF
     git commit -m "chore: initial commit" -q --no-verify
     git push -u origin main -q 2>/dev/null
 
-    # NOW install pre-push hook (after initial main push)
+    # 4. NOW install pre-push hook (after initial main push)
     cp "$CROSSCHECK_DIR/git-hooks/pre-push" ".git/hooks/pre-push"
     chmod +x ".git/hooks/pre-push"
 
-    # Switch to feature branch
+    # 5. Switch to feature branch
     git checkout -q -b feat/test
 }
 

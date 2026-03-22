@@ -152,6 +152,76 @@ test_inject_before_single_line_file
 echo ""
 
 # ============================================================
+# inject_after_line
+# ============================================================
+echo "📋 Category: inject_after_line"
+echo ""
+
+test_inject_after_single_line() {
+    local file
+    file=$(setup_test_file "inject_after_single" << 'EOF'
+Line 1
+Line 2
+Line 3
+EOF
+)
+    inject_after_line "$file" 2 "Inserted Line"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Line 1\nLine 2\n\nInserted Line\nLine 3')
+    if [ "$actual" = "$expected" ]; then
+        pass "Injects a single line after line 2 correctly"
+    else
+        fail "Failed to inject single line after line 2. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_inject_after_multi_line() {
+    local file
+    file=$(setup_test_file "inject_after_multi" << 'EOF'
+Line 1
+Line 2
+Line 3
+EOF
+)
+    inject_after_line "$file" 1 "$(printf 'Inserted 1\nInserted 2')"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Line 1\n\nInserted 1\nInserted 2\nLine 2\nLine 3')
+    if [ "$actual" = "$expected" ]; then
+        pass "Injects multi-line text correctly"
+    else
+        fail "Failed to inject multi-line text. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_inject_after_last_line() {
+    local file
+    file=$(setup_test_file "inject_after_last" << 'EOF'
+Line 1
+Line 2
+EOF
+)
+    inject_after_line "$file" 2 "Inserted at end"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Line 1\nLine 2\n\nInserted at end')
+    if [ "$actual" = "$expected" ]; then
+        pass "Injects correctly after the last line"
+    else
+        fail "Failed to inject after last line. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_inject_after_single_line
+test_inject_after_multi_line
+test_inject_after_last_line
+echo ""
+
+# ============================================================
 # Summary
 # ============================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

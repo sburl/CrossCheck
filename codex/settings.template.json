@@ -97,9 +97,6 @@
       "Bash(vercel*)",
       "Bash(launchctl*)",
 
-      "Bash(codex*)",
-      "Bash(dailybrief*)",
-
       "Bash(cd * && find *)",
       "Bash(find * | xargs *)",
       "Bash(* | head *)",

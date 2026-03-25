@@ -27,6 +27,10 @@ has_item() {
 # Collect files
 ROOT_FILES=()
 while IFS= read -r file; do
+  # Exclude self from mirror requirements
+  if [ "$file" = "check-script-mirrors.sh" ]; then
+    continue
+  fi
   ROOT_FILES+=("$file")
 done < <(find "$ROOT_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f -exec basename {} \; | sort)
 

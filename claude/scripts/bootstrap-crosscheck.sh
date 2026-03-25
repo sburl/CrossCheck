@@ -114,8 +114,17 @@ if [ ! -f "$HOME/.claude/settings.json" ]; then
     echo "   Creating ~/.claude/settings.json from template..."
     mkdir -p "$HOME/.claude"  # Ensure directory exists
     cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.claude/settings.json"
-    echo "   ⚠️  TODO: Edit ~/.claude/settings.json to customize for your stack"
-    echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
+    echo "   💡 Settings created. You can customize ~/.claude/settings.json to add commands for your stack."
+    echo "      (e.g., 'Bash(rails*)', 'Bash(cargo*)', 'Bash(docker*)')"
+
+    # Prompt for customization if running in an interactive terminal
+    if [ -t 0 ]; then
+        read -p "   Would you like to customize ~/.claude/settings.json now? (y/N) " -n 1 -r < /dev/tty
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            ${EDITOR:-vi} "$HOME/.claude/settings.json"
+        fi
+    fi
 else
     echo "   ✅ Settings already exist at ~/.claude/settings.json"
 

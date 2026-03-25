@@ -110,14 +110,23 @@ fi
 
 # 3. Copy settings template if needed
 echo "📝 Step 3: Configure settings..."
-if [ ! -f "$HOME/.claude/settings.json" ]; then
-    echo "   Creating ~/.claude/settings.json from template..."
-    mkdir -p "$HOME/.claude"  # Ensure directory exists
-    cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.claude/settings.json"
-    echo "   ⚠️  TODO: Edit ~/.claude/settings.json to customize for your stack"
-    echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
+if [ ! -f "$HOME/.codex/settings.json" ]; then
+    echo "   Creating ~/.codex/settings.json from template..."
+    mkdir -p "$HOME/.codex"  # Ensure directory exists
+    cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.codex/settings.json"
+    echo "   💡 Settings created. You can customize ~/.codex/settings.json to add commands for your stack."
+    echo "      (e.g., 'Bash(rails*)', 'Bash(cargo*)', 'Bash(docker*)')"
+
+    # Prompt for customization if running in an interactive terminal
+    if [ -t 0 ]; then
+        read -p "   Would you like to customize ~/.codex/settings.json now? (y/N) " -n 1 -r < /dev/tty
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            ${EDITOR:-vi} "$HOME/.codex/settings.json"
+        fi
+    fi
 else
-    echo "   ✅ Settings already exist at ~/.claude/settings.json"
+    echo "   ✅ Settings already exist at ~/.codex/settings.json"
 
     # Sync critical deny rules even when settings exist
     echo "   Checking critical deny rules..."

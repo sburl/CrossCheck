@@ -97,6 +97,7 @@ filter_false_positives() {
     done
 }
 
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 FOUND=0
 
 echo "🔒 Secret Scanner"
@@ -309,4 +310,5 @@ echo "━━━━━━━━━━━━━━━━━━"
 echo "🔒 Scan complete"
 if [ "$SOFT_FAIL" = false ] && [ "$FOUND" -gt 0 ]; then
     exit 1
+fi
 fi

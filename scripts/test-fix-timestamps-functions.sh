@@ -145,10 +145,33 @@ EOF
     fi
 }
 
+test_inject_before_multi_line() {
+    local file
+    file=$(setup_test_file "inject_before_multi" << 'EOF'
+Line 1
+Line 2
+Line 3
+EOF
+)
+    inject_before_line "$file" 2 "$(printf 'Inserted 1\nInserted 2')"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Line 1\nInserted 1\nInserted 2\nLine 2\nLine 3')
+    if [ "$actual" = "$expected" ]; then
+        pass "Injects multi-line text before line 2 correctly"
+    else
+        fail "Injects multi-line text before line 2 failed. Actual content:"
+        cat "$file" | sed 's/^/    /'
+        echo "    --- HEX ---"
+        od -c "$file" | sed 's/^/    /'
+    fi
+}
+
 test_inject_before_first_line
 test_inject_before_middle_line
 test_inject_before_last_line
 test_inject_before_single_line_file
+test_inject_before_multi_line
 echo ""
 
 # ============================================================
@@ -219,6 +242,72 @@ EOF
 test_inject_after_single_line
 test_inject_after_multi_line
 test_inject_after_last_line
+echo ""
+
+# ============================================================
+# prepend_to_file
+# ============================================================
+echo "📋 Category: prepend_to_file"
+echo ""
+
+test_prepend_to_file_single_line() {
+    local file
+    file=$(setup_test_file "prepend_to_file_single" << 'EOF'
+Line 1
+Line 2
+EOF
+)
+    prepend_to_file "$file" "Inserted Line"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Inserted Line\n\nLine 1\nLine 2')
+    if [ "$actual" = "$expected" ]; then
+        pass "Prepends a single line to the file correctly"
+    else
+        fail "Failed to prepend single line to file. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_prepend_to_file_multi_line() {
+    local file
+    file=$(setup_test_file "prepend_to_file_multi" << 'EOF'
+Line 1
+Line 2
+EOF
+)
+    prepend_to_file "$file" "$(printf 'Inserted 1\nInserted 2')"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Inserted 1\nInserted 2\n\nLine 1\nLine 2')
+    if [ "$actual" = "$expected" ]; then
+        pass "Prepends multi-line text to the file correctly"
+    else
+        fail "Failed to prepend multi-line text to file. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_prepend_to_file_empty_file() {
+    local file
+    file=$(setup_test_file "prepend_to_file_empty" < /dev/null)
+    prepend_to_file "$file" "Inserted Line"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Inserted Line\n\n')
+    if [ "$actual" = "$expected" ]; then
+        pass "Prepends text to an empty file correctly"
+    else
+        fail "Failed to prepend text to empty file. Actual content:"
+        cat "$file" | sed 's/^/    /'
+        echo "    --- HEX ---"
+        od -c "$file" | sed 's/^/    /'
+    fi
+}
+
+test_prepend_to_file_single_line
+test_prepend_to_file_multi_line
+test_prepend_to_file_empty_file
 echo ""
 
 # ============================================================

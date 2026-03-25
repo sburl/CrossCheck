@@ -222,6 +222,90 @@ test_inject_after_last_line
 echo ""
 
 # ============================================================
+# prepend_to_file
+# ============================================================
+echo "📋 Category: prepend_to_file"
+echo ""
+
+test_prepend_single_line() {
+    local file
+    file=$(setup_test_file "prepend_single" << 'EOF'
+Line 1
+Line 2
+EOF
+)
+    prepend_to_file "$file" "Inserted at top"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Inserted at top\n\nLine 1\nLine 2')
+    if [ "$actual" = "$expected" ]; then
+        pass "Prepends single line correctly"
+    else
+        fail "Failed to prepend single line. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_prepend_multi_line() {
+    local file
+    file=$(setup_test_file "prepend_multi" << 'EOF'
+Line 1
+Line 2
+EOF
+)
+    prepend_to_file "$file" "$(printf 'Inserted 1\nInserted 2')"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Inserted 1\nInserted 2\n\nLine 1\nLine 2')
+    if [ "$actual" = "$expected" ]; then
+        pass "Prepends multi-line text correctly"
+    else
+        fail "Failed to prepend multi-line text. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_prepend_empty_file() {
+    local file
+    file=$(setup_test_file "prepend_empty" < /dev/null)
+    prepend_to_file "$file" "Inserted at top"
+
+    actual=$(cat "$file")
+    # Using printf to preserve exactly what's expected for an empty file, which should be the text plus 2 newlines
+    expected=$(printf 'Inserted at top\n\n')
+    if [ "$actual" = "$expected" ]; then
+        pass "Prepends to empty file correctly"
+    else
+        fail "Failed to prepend to empty file. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_prepend_single_line_file() {
+    local file
+    file=$(setup_test_file "prepend_single_file" << 'EOF'
+Line 1
+EOF
+)
+    prepend_to_file "$file" "Inserted at top"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Inserted at top\n\nLine 1')
+    if [ "$actual" = "$expected" ]; then
+        pass "Prepends to single-line file correctly"
+    else
+        fail "Failed to prepend to single-line file. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_prepend_single_line
+test_prepend_multi_line
+test_prepend_empty_file
+test_prepend_single_line_file
+echo ""
+
+# ============================================================
 # Summary
 # ============================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

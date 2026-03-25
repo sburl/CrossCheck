@@ -7,21 +7,12 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CROSSCHECK_DIR="${CROSSCHECK_DIR:-$SCRIPT_DIR}"
 
-# Parse flags
-YES=false
-INSTALL_MODE=""
-for arg in "$@"; do
-    case $arg in
-        --yes|-y) YES=true ;;
-        --global) INSTALL_MODE="global" ;;
-    esac
-done
-
 # Helper: prompt user or auto-accept with --yes
 confirm() {
     local prompt="$1" default="${2:-N}"
-    if [ "$YES" = true ]; then return 0; fi
-    read -p "$prompt" -n 1 -r < /dev/tty
+    local tty="${CONFIRM_TTY:-/dev/tty}"
+    if [ "${YES:-false}" = true ]; then return 0; fi
+    read -p "$prompt" -n 1 -r < "$tty"
     echo
     if [ "$default" = "Y" ]; then
         [[ ! $REPLY =~ ^[Nn]$ ]]
@@ -30,7 +21,18 @@ confirm() {
     fi
 }
 
-echo "🔧 Installing Codex git hooks..."
+main() {
+    # Parse flags
+    YES=false
+    INSTALL_MODE=""
+    for arg in "$@"; do
+        case $arg in
+            --yes|-y) YES=true ;;
+            --global) INSTALL_MODE="global" ;;
+        esac
+    done
+
+    echo "🔧 Installing Codex git hooks..."
 
 # Verify CrossCheck source exists
 if [ ! -d "$CROSSCHECK_DIR/git-hooks" ] || [ ! -d "$CROSSCHECK_DIR/scripts" ]; then
@@ -175,3 +177,8 @@ fi
 echo ""
 echo "📝 View Codex reviews: tail -f ~/.claude/codex-commit-reviews.log"
 echo "🔇 Skip hook once: SKIP_CODEX_REVIEW=1 git commit -m \"message\""
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

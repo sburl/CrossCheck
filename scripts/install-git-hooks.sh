@@ -7,21 +7,12 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CROSSCHECK_DIR="${CROSSCHECK_DIR:-$SCRIPT_DIR}"
 
-# Parse flags
-YES=false
-INSTALL_MODE=""
-for arg in "$@"; do
-    case $arg in
-        --yes|-y) YES=true ;;
-        --global) INSTALL_MODE="global" ;;
-    esac
-done
-
 # Helper: prompt user or auto-accept with --yes
 confirm() {
     local prompt="$1" default="${2:-N}"
-    if [ "$YES" = true ]; then return 0; fi
-    read -p "$prompt" -n 1 -r < /dev/tty
+    local tty="${CONFIRM_TTY:-/dev/tty}"
+    if [ "${YES:-false}" = true ]; then return 0; fi
+    read -p "$prompt" -n 1 -r < "$tty"
     echo
     if [ "$default" = "Y" ]; then
         [[ ! $REPLY =~ ^[Nn]$ ]]
@@ -30,7 +21,18 @@ confirm() {
     fi
 }
 
-echo "🎣 Installing CrossCheck git hooks..."
+main() {
+    # Parse flags
+    YES=false
+    INSTALL_MODE=""
+    for arg in "$@"; do
+        case $arg in
+            --yes|-y) YES=true ;;
+            --global) INSTALL_MODE="global" ;;
+        esac
+    done
+
+    echo "🎣 Installing CrossCheck git hooks..."
 echo ""
 
 # Verify CrossCheck source exists (for both global and local modes)
@@ -182,3 +184,8 @@ echo "  • Permission blocks → 0 (branch cleanup automated)"
 echo "  • Background failures → 0 (post-checkout cleanup)"
 echo "  • Timestamp lag → 0 (pre-commit enforcement)"
 echo "  • Manual pre-PR steps → automated (pre-push verification)"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

@@ -157,6 +157,44 @@ echo ""
 echo "📋 Category: inject_after_line"
 echo ""
 
+test_inject_after_first_line() {
+    local file
+    file=$(setup_test_file "inject_after_first" << 'EOF'
+Line 1
+Line 2
+Line 3
+EOF
+)
+    inject_after_line "$file" 1 "Inserted after line 1"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Line 1\n\nInserted after line 1\nLine 2\nLine 3')
+    if [ "$actual" = "$expected" ]; then
+        pass "Injects correctly after the first line"
+    else
+        fail "Failed to inject after first line. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_inject_after_single_line_file() {
+    local file
+    file=$(setup_test_file "inject_after_single_file" << 'EOF'
+Line 1
+EOF
+)
+    inject_after_line "$file" 1 "Inserted after line 1"
+
+    actual=$(cat "$file")
+    expected=$(printf 'Line 1\n\nInserted after line 1')
+    if [ "$actual" = "$expected" ]; then
+        pass "Injects correctly after the first line in single-line file"
+    else
+        fail "Failed to inject after first line in single-line file. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
 test_inject_after_single_line() {
     local file
     file=$(setup_test_file "inject_after_single" << 'EOF'
@@ -216,9 +254,57 @@ EOF
     fi
 }
 
+test_inject_after_first_line
+test_inject_after_single_line_file
 test_inject_after_single_line
 test_inject_after_multi_line
 test_inject_after_last_line
+echo ""
+
+# ============================================================
+# prepend_to_file
+# ============================================================
+echo "📋 Category: prepend_to_file"
+echo ""
+
+test_prepend_to_multi_line_file() {
+    local file
+    file=$(setup_test_file "prepend_multi_line" << 'EOF'
+Line 1
+Line 2
+EOF
+)
+    prepend_to_file "$file" "PREPENDED"
+
+    actual=$(cat "$file")
+    expected=$(printf 'PREPENDED\n\nLine 1\nLine 2')
+    if [ "$actual" = "$expected" ]; then
+        pass "Prepends correctly to a multi-line file"
+    else
+        fail "Failed to prepend to multi-line file. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_prepend_to_empty_file() {
+    local file
+    file=$(setup_test_file "prepend_empty")
+    # File is empty because we don't pass any content via heredoc
+
+    prepend_to_file "$file" "PREPENDED"
+
+    actual=$(cat "$file")
+    expected=$(printf 'PREPENDED\n\n')
+    if [ "$actual" = "$expected" ]; then
+        pass "Prepends correctly to an empty file"
+    else
+        fail "Failed to prepend to empty file. Actual content:"
+        cat "$file" | sed 's/^/    /'
+    fi
+}
+
+test_prepend_to_multi_line_file
+test_prepend_to_empty_file
 echo ""
 
 # ============================================================

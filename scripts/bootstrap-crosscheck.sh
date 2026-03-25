@@ -114,8 +114,15 @@ if [ ! -f "$HOME/.claude/settings.json" ]; then
     echo "   Creating ~/.claude/settings.json from template..."
     mkdir -p "$HOME/.claude"  # Ensure directory exists
     cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.claude/settings.json"
-    echo "   ⚠️  TODO: Edit ~/.claude/settings.json to customize for your stack"
-    echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
+    if command -v jq >/dev/null 2>&1; then
+        jq '.permissions.allow -= ["Bash(codex*)", "Bash(dailybrief*)"]' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json.tmp" \
+            && mv "$HOME/.claude/settings.json.tmp" "$HOME/.claude/settings.json"
+        echo "   ✅ Automatically removed default personal commands from settings"
+        echo "   💡 Edit ~/.claude/settings.json to customize commands for your stack"
+    else
+        echo "   ⚠️  TODO: Edit ~/.claude/settings.json to customize for your stack"
+        echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
+    fi
 else
     echo "   ✅ Settings already exist at ~/.claude/settings.json"
 

@@ -49,15 +49,15 @@ COMBINED=$(IFS='|'; echo "${PATTERNS[*]}")
 # Known false-positive tokens: documentation examples, placeholder keys
 # These appear in security-review.md, test files, and conversation logs
 # Uses exact token matching (not substring) to avoid suppressing real secrets
-KNOWN_FPS=(
-    AKIAIOSFODNN7EXAMPLE    # AWS official example key ID
-    sk-proj-abcdef          # doc placeholder
-    sk-proj-abc123          # doc placeholder
-    sk-proj-test            # doc placeholder
-    sk-proj-xxxx            # doc placeholder
-    sk-ant-xxxx             # doc placeholder
-    sk_live_xxxx            # doc placeholder
-    ghp_xxxx                # doc placeholder
+declare -A KNOWN_FPS_MAP=(
+    [AKIAIOSFODNN7EXAMPLE]=1    # AWS official example key ID
+    [sk-proj-abcdef]=1          # doc placeholder
+    [sk-proj-abc123]=1          # doc placeholder
+    [sk-proj-test]=1            # doc placeholder
+    [sk-proj-xxxx]=1            # doc placeholder
+    [sk-ant-xxxx]=1             # doc placeholder
+    [sk_live_xxxx]=1            # doc placeholder
+    [ghp_xxxx]=1                # doc placeholder
 )
 
 # Filter false positives by extracting matched tokens and checking exact match.
@@ -74,14 +74,7 @@ filter_false_positives() {
         while [[ $text =~ $COMBINED ]]; do
             match_found=true
             local token="${BASH_REMATCH[0]}"
-            local is_fp=false
-            for fp in "${KNOWN_FPS[@]}"; do
-                if [ "$token" = "$fp" ]; then
-                    is_fp=true
-                    break
-                fi
-            done
-            if [ "$is_fp" = false ]; then
+            if [[ -z "${KNOWN_FPS_MAP[$token]:-}" ]]; then
                 has_real=true
                 break
             fi

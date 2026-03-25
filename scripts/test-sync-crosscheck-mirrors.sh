@@ -5,7 +5,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TARGET_SCRIPT="$SCRIPT_DIR/sync-crosscheck-mirrors.sh"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 PASSED=0
 FAILED=0
@@ -151,8 +150,6 @@ test_env_vars() {
     echo "📋 Testing environment variables handling..."
     local target_dir1
     target_dir1="$(create_temp_dir)"
-    local target_dir2
-    target_dir2="$(create_temp_dir)"
 
     # Run the script with NO arguments (should use env vars)
     # We must mock HOME so we don't sync to the actual ~/.crosscheck or ~/.claude/CrossCheck

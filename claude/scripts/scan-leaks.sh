@@ -207,16 +207,7 @@ if [ "$SCAN_LOGS" = true ]; then
     if [ -d "$CLAUDE_PROJECTS" ]; then
         claude_hits=$(grep -rl -E "$COMBINED" "$CLAUDE_PROJECTS" 2>/dev/null | head -20 || true)
         if [ -n "$claude_hits" ]; then
-            verified_hits=""
-            while IFS= read -r f; do
-                # Re-check each file: filter out known false positives
-                # (documentation examples, placeholder keys loaded into conversation context)
-                real=$(grep -E "$COMBINED" "$f" 2>/dev/null | filter_false_positives || true)
-                if [ -n "$real" ]; then
-                    verified_hits="${verified_hits}${f}
-"
-                fi
-            done <<< "$claude_hits"
+            verified_hits=$(echo "$claude_hits" | tr '\n' '\0' | xargs -0 -r grep -H -E "$COMBINED" 2>/dev/null | filter_false_positives | cut -d: -f1 | sort -u || true)
             if [ -n "$verified_hits" ]; then
                 log_matches="$log_matches\n  Claude conversation logs with secrets:"
                 while IFS= read -r f; do

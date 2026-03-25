@@ -95,7 +95,7 @@ if [ "${#missing_timestamps[@]}" -gt 0 ]; then
         fi
     done
 
-    echo "  🤖 Claude Code: Run this to auto-fix:"
+    echo "  🤖 AI Agent: Run this to auto-fix:"
     echo ""
     if [ -n "$fix_script" ]; then
         echo "     bash \"$fix_script\""
@@ -117,7 +117,7 @@ fi
 if [ -n "$diff_base" ]; then
     echo "  🔍 Checking for development markers..."
     # Use ^\+[^+] to exclude diff metadata lines (+++ b/file)
-    # Exception: TODO.md is Claude's session scratchpad filename - allow references to it
+    # Exception: TODO.md is AI's session scratchpad filename - allow references to it
     # Exception: exclude lines that define the pattern we're searching for (meta)
     marked_lines=$(git diff "${diff_base}..HEAD" 2>/dev/null | grep -E '^\+[^+]' | grep -E '\b(TODO|FIXME|WIP|XXX|HACK)\b' | grep -v 'TODO\.md' | grep -v '(TODO|FIXME' || true)
     if [ -n "$marked_lines" ]; then
@@ -147,7 +147,7 @@ if [ -n "$diff_base" ]; then
     fi
 fi
 
-# 4. Pre-PR quality checks (integrates with Claude Code workflow)
+# 4. Pre-PR quality checks (integrates with AI workflow)
 # Check if pre-checks were run recently (within last hour)
 # Cross-platform hash (md5sum on Linux, md5 on macOS)
 if command -v md5sum >/dev/null 2>&1; then
@@ -182,7 +182,7 @@ if [ ! -f "$PRE_CHECK_MARKER" ] && ([ "$current_branch" = "main" ] || [ "$curren
     echo ""
     echo "  ⛔ BLOCKED: Pre-push quality checks required before pushing to $current_branch"
     echo ""
-    echo "  🤖 Claude Code: Run these commands:"
+    echo "  🤖 AI Agent: Run these commands:"
     echo ""
     echo "     /techdebt && /pre-pr-check && touch $PRE_CHECK_MARKER && git push"
     echo ""

@@ -50,18 +50,18 @@ if echo "$commit_msg" | head -1 | grep -q "!:"; then
     echo "   Ensure this is documented in commit body"
 fi
 
-# Check for Codex approval when committing code changes to main
+# Check for AI approval when committing code changes to main
 current_branch=$(git branch --show-current 2>/dev/null)
 commit_type=$(echo "$commit_msg" | grep -oE '^[a-z]+' | head -1)
 
-# Require Codex approval for feat/fix/refactor commits to main
+# Require AI approval for feat/fix/refactor commits to main
 if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
     if echo "$commit_type" | grep -qE '^(feat|fix|refactor)$'; then
-        if ! echo "$commit_msg" | grep -qi "Codex Approved"; then
+        if ! echo "$commit_msg" | grep -qiE "(AI|Claude|Codex) Approved"; then
             echo ""
-            echo "⛔ BLOCKED: Codex approval required for $commit_type commits to $current_branch"
+            echo "⛔ BLOCKED: AI approval required for $commit_type commits to $current_branch"
             echo ""
-            echo "🤖 Claude Code: Follow this workflow (DO NOT skip steps):"
+            echo "🤖 AI Agent: Follow this workflow (DO NOT skip steps):"
             echo ""
             # Resolve CrossCheck path dynamically
             codex_script=""
@@ -77,30 +77,30 @@ if [ "$current_branch" = "main" ] || [ "$current_branch" = "master" ]; then
             echo "   Step 1: Get review prompt"
             echo "   ${codex_script:-\$(find ~/.claude ~/Documents/Developer -path '*/CrossCheck/scripts/codex-approve-commit.sh' 2>/dev/null | head -1)}"
             echo ""
-            echo "   Step 2: Send prompt to Codex via terminal"
-            echo "   Copy the output and paste to Codex in your terminal session"
+            echo "   Step 2: Send prompt to AI via terminal"
+            echo "   Copy the output and paste to AI in your terminal session"
             echo ""
-            echo "   Step 3: Review Codex feedback"
-            echo "   - If Codex says APPROVED: Proceed to Step 4"
-            echo "   - If Codex requests changes: Fix issues and restart from Step 1"
-            echo "   - Keep iterating with Codex until you get APPROVED"
+            echo "   Step 3: Review AI feedback"
+            echo "   - If AI says APPROVED: Proceed to Step 4"
+            echo "   - If AI requests changes: Fix issues and restart from Step 1"
+            echo "   - Keep iterating with AI until you get APPROVED"
             echo ""
-            echo "   Step 4: ONLY after Codex approves, add to commit message:"
+            echo "   Step 4: ONLY after AI approves, add to commit message:"
             # Use %s to safely display commit message (prevents shell injection if copy-pasted)
             printf '   git commit -m %s\n' "$(printf '%q' "$commit_msg")"
             echo ""
-            echo "   (append: Codex Approved)"
+            echo "   (append: AI Approved)"
             echo ""
-            echo "   ⚠️  CRITICAL: Do NOT add 'Codex Approved' without actual Codex approval!"
-            echo "   ⚠️  You must see Codex explicitly say 'APPROVED' or 'LGTM'"
+            echo "   ⚠️  CRITICAL: Do NOT add 'AI Approved' without actual AI approval!"
+            echo "   ⚠️  You must see AI explicitly say 'APPROVED' or 'LGTM'"
             echo ""
             echo "👤 If you're human:"
-            echo "   Same process - get actual Codex approval before adding to message"
+            echo "   Same process - get actual AI approval before adding to message"
             echo ""
             echo "Note: --no-verify is blocked by permissions (policy enforcement)"
             exit 1
         else
-            echo "✅ Codex approval confirmed"
+            echo "✅ AI approval confirmed"
         fi
     fi
 fi

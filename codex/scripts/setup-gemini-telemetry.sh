@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# setup-gemini-telemetry.sh
-# Delegates to the shared CrossCheck script in root scripts/.
-
 set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SCRIPT_DIR/../../scripts/setup-gemini-telemetry.sh"
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  exec "$SCRIPT_DIR/../../scripts/setup-gemini-telemetry.sh" "$@"
+else
+  source "$SCRIPT_DIR/../../scripts/setup-gemini-telemetry.sh" "$@"
+fi

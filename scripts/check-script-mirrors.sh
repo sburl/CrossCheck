@@ -13,6 +13,13 @@ CLAUDE_ONLY=(
   "install-claude-hooks.sh"
 )
 
+# Scripts that live in root but shouldn't be mirrored
+EXCLUDED_FROM_MIRRORS=(
+  "fix-git-author.sh"
+  "test-request-pr-reviewer-functions.sh"
+  "test-request-pr-reviewer.sh"
+)
+
 has_item() {
   local needle="$1"
   shift
@@ -51,6 +58,10 @@ exec_mode_mismatch=0
 
 # Check 1: every root script should exist in codex mirror; warn if missing from claude mirror.
 for file in "${ROOT_FILES[@]}"; do
+  if has_item "$file" "${EXCLUDED_FROM_MIRRORS[@]}"; then
+    continue
+  fi
+
   ROOT_FILE="$ROOT_SCRIPTS_DIR/$file"
   CODEX_FILE="$CODEX_SCRIPTS_DIR/$file"
   CLAUDE_FILE="$CLAUDE_SCRIPTS_DIR/$file"

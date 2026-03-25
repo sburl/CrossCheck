@@ -1,0 +1,1 @@
+../../scripts/test-request-pr-reviewer.sh

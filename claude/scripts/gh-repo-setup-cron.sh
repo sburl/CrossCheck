@@ -74,34 +74,58 @@ elif [ -n "$RULESET_FILE" ]; then
   echo "WARNING: ruleset payload exists but contains invalid JSON: $RULESET_FILE"
 fi
 
-REPOS_JSON=$(gh repo list "$OWNER" --no-archived --limit 300 --json nameWithOwner,createdAt,viewerPermission)
+# shellcheck disable=SC2016
+GRAPHQL_QUERY='
+  query($owner: String!, $endCursor: String) {
+    repositoryOwner(login: $owner) {
+      repositories(first: 100, isArchived: false, after: $endCursor) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          nameWithOwner
+          createdAt
+          viewerPermission
+          rulesets(first: 100) {
+            nodes {
+              name
+            }
+          }
+        }
+      }
+    }
+  }
+'
 
+REPOS_JSON=$(gh api graphql --paginate --slurp -F owner="$OWNER" -f query="$GRAPHQL_QUERY" 2>/dev/null || echo "[]")
+
+# If viewerPermission is missing or empty, it means the token doesn't have access to see it
 HAS_VIEWER_PERMISSION="true"
-if ! jq -e '. | length == 0 or (.[0] | has("viewerPermission"))' >/dev/null 2>&1 <<< "$REPOS_JSON"; then
+if ! jq -e '.[0] | .data.repositoryOwner.repositories.nodes | length == 0 or (.[0] | has("viewerPermission"))' >/dev/null 2>&1 <<< "$REPOS_JSON"; then
   HAS_VIEWER_PERMISSION="false"
 fi
 
-if [ -z "$REPOS_JSON" ] || [ "$REPOS_JSON" = "null" ]; then
+if [ -z "$REPOS_JSON" ] || [ "$REPOS_JSON" = "null" ] || [ "$REPOS_JSON" = "[]" ]; then
   echo "No repositories found for owner '$OWNER'. Exiting."
   exit 0
 fi
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) — repo-setup-cron starting"
 
-echo "$REPOS_JSON" | jq -r '.[] | "\(.nameWithOwner)\t\(.createdAt)\t\(.viewerPermission // "")"' |
-  while IFS=$'\t' read -r REPO CREATED_AT VIEWER_PERMISSION; do
+while IFS=$'\t' read -r REPO CREATED_AT VIEWER_PERMISSION HAS_RULESET; do
   if [ -z "$REPO" ]; then
     continue
   fi
 
   echo "--- $REPO ---"
   CAN_ADMIN="false"
+  DID_MUTATE="false"
   if [ "$HAS_VIEWER_PERMISSION" = "true" ] && [ -n "$VIEWER_PERMISSION" ]; then
     if [ "$VIEWER_PERMISSION" = "admin" ] || [ "$VIEWER_PERMISSION" = "ADMIN" ]; then
       CAN_ADMIN="true"
     fi
   elif [ "$HAS_VIEWER_PERMISSION" = "true" ]; then
-    # Fallback in case viewerPermission is unexpectedly omitted for a specific repo.
     CAN_ADMIN="$(gh api "repos/$REPO" --jq '.permissions.admin // false' 2>/dev/null || echo false)"
   else
     CAN_ADMIN="$(gh api "repos/$REPO" --jq '.permissions.admin // false' 2>/dev/null || echo false)"
@@ -110,15 +134,13 @@ echo "$REPOS_JSON" | jq -r '.[] | "\(.nameWithOwner)\t\(.createdAt)\t\(.viewerPe
   if [ "$CAN_ADMIN" != "true" ]; then
     echo "  Ruleset: skipped (token lacks repo admin permission)"
   else
-    EXISTING=$(gh api "repos/$REPO/rulesets" --paginate --jq \
-      ".[] | select(.name == \"$RULESET_NAME\") | .id" 2>/dev/null | head -n 1 || true)
-
-    if [ -n "$EXISTING" ]; then
+    if [ "$HAS_RULESET" = "true" ]; then
       echo "  Ruleset: OK"
     elif [ -n "$PAYLOAD_FILE" ]; then
       if gh api "repos/$REPO/rulesets" --method POST --input "$PAYLOAD_FILE" \
           > /dev/null 2>&1; then
         echo "  Ruleset: created"
+        DID_MUTATE="true"
       else
         echo "  Ruleset: FAILED"
       fi
@@ -136,14 +158,24 @@ echo "$REPOS_JSON" | jq -r '.[] | "\(.nameWithOwner)\t\(.createdAt)\t\(.viewerPe
     elif gh api "repos/$REPO/collaborators/$BOT_USER" --method PUT -f permission="$BOT_PERMISSION" \
         > /dev/null 2>&1; then
       echo "  Collaborator: invited"
+      DID_MUTATE="true"
     else
       echo "  Collaborator: FAILED"
     fi
   fi
 
-  # Pace API calls to stay within GitHub rate limits (max ~5000/hour).
-  # 1-second sleep between repos keeps a 300-repo run well under the cap.
-  sleep 1
-done
+  # Pace API calls to stay within GitHub rate limits. We only sleep if we actually mutated something.
+  # The batched query saves reading API calls, so if everything is OK, we don't need to sleep here.
+  if [ "$DID_MUTATE" = "true" ]; then
+    sleep 1
+  fi
+done < <(echo "$REPOS_JSON" | jq -r '
+  .[].data.repositoryOwner.repositories.nodes[]? | [
+    .nameWithOwner,
+    .createdAt,
+    (.viewerPermission // ""),
+    (if .rulesets.nodes then (any(.rulesets.nodes[]; .name == "'"$RULESET_NAME"'") | tostring) else "false" end)
+  ] | @tsv
+')
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) — repo-setup-cron finished"

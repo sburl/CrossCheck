@@ -22,6 +22,7 @@ export CONFIRM_TTY="$TEST_TTY_FILE"
 
 # Source the script to get the confirm() function
 # The execution guard prevents main() from running
+# shellcheck source=./install-git-hooks.sh
 source "$INSTALL_SCRIPT"
 
 pass() {
@@ -45,7 +46,7 @@ run_confirm_test() {
 
     # Temporarily disable set -e for the test
     set +e
-    YES=$is_yes
+    export YES=$is_yes
     confirm "Test prompt: " "$default_arg" >/dev/null
     local actual_result=$?
     set -e

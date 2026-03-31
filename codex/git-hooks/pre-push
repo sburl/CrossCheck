@@ -95,7 +95,7 @@ if [ "${#missing_timestamps[@]}" -gt 0 ]; then
         fi
     done
 
-    echo "  🤖 Codex: Run this to auto-fix:"
+    echo "  🤖 Claude Code: Run this to auto-fix:"
     echo ""
     if [ -n "$fix_script" ]; then
         echo "     bash \"$fix_script\""
@@ -117,7 +117,7 @@ fi
 if [ -n "$diff_base" ]; then
     echo "  🔍 Checking for development markers..."
     # Use ^\+[^+] to exclude diff metadata lines (+++ b/file)
-    # Exception: TODO.md is Codex's session scratchpad filename - allow references to it
+    # Exception: TODO.md is Claude's session scratchpad filename - allow references to it
     # Exception: exclude lines that define the pattern we're searching for (meta)
     marked_lines=$(git diff "${diff_base}..HEAD" 2>/dev/null | grep -E '^\+[^+]' | grep -E '\b(TODO|FIXME|WIP|XXX|HACK)\b' | grep -v 'TODO\.md' | grep -v '(TODO|FIXME' || true)
     if [ -n "$marked_lines" ]; then
@@ -147,7 +147,7 @@ if [ -n "$diff_base" ]; then
     fi
 fi
 
-# 4. Pre-PR quality checks (integrates with Codex workflow)
+# 4. Pre-PR quality checks (integrates with Claude Code workflow)
 # Check if pre-checks were run recently (within last hour)
 # Cross-platform hash (md5sum on Linux, md5 on macOS)
 if command -v md5sum >/dev/null 2>&1; then
@@ -182,7 +182,7 @@ if [ ! -f "$PRE_CHECK_MARKER" ] && ([ "$current_branch" = "main" ] || [ "$curren
     echo ""
     echo "  ⛔ BLOCKED: Pre-push quality checks required before pushing to $current_branch"
     echo ""
-    echo "  🤖 Codex: Run these commands:"
+    echo "  🤖 Claude Code: Run these commands:"
     echo ""
     echo "     /techdebt && /pre-pr-check && touch $PRE_CHECK_MARKER && git push"
     echo ""
@@ -235,7 +235,8 @@ if [ -n "$diff_base" ]; then
     fi
 
     # Provider-specific token formats (zero false-positive patterns)
-    if git diff "$diff_base"..HEAD | grep -E '^\+[^+]' | grep -qE '(ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|ghu_[A-Za-z0-9]{36}|ghs_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[A-Za-z0-9]{24,}|pk_live_[A-Za-z0-9]{24,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{35}|SG\.[A-Za-z0-9_-]{22}\.)'; then
+    # Exclude scan-leaks.sh files — they legitimately contain example tokens for FP matching
+    if git diff "$diff_base"..HEAD -- ':!scripts/scan-leaks.sh' ':!claude/scripts/scan-leaks.sh' ':!codex/scripts/scan-leaks.sh' | grep -E '^\+[^+]' | grep -qE '(ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|ghu_[A-Za-z0-9]{36}|ghs_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[A-Za-z0-9]{24,}|pk_live_[A-Za-z0-9]{24,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{35}|SG\.[A-Za-z0-9_-]{22}\.)'; then
         echo "  ❌ Provider-specific API token detected in changes being pushed"
         exit 1
     fi

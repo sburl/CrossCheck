@@ -49,16 +49,20 @@ COMBINED=$(IFS='|'; echo "${PATTERNS[*]}")
 # Known false-positive tokens: documentation examples, placeholder keys
 # These appear in security-review.md, test files, and conversation logs
 # Uses exact token matching (not substring) to avoid suppressing real secrets
-declare -A KNOWN_FPS_MAP=(
-    [AKIAIOSFODNN7EXAMPLE]=1    # AWS official example key ID
-    [sk-proj-abcdef]=1          # doc placeholder
-    [sk-proj-abc123]=1          # doc placeholder
-    [sk-proj-test]=1            # doc placeholder
-    [sk-proj-xxxx]=1            # doc placeholder
-    [sk-ant-xxxx]=1             # doc placeholder
-    [sk_live_xxxx]=1            # doc placeholder
-    [ghp_xxxx]=1                # doc placeholder
-)
+# Note: uses case statement instead of declare -A for bash 3.2 compatibility (macOS)
+is_known_fp() {
+    case "$1" in
+        AKIAIOSFODNN7EXAMPLE) return 0 ;;   # AWS official example key ID
+        sk-proj-abcdef) return 0 ;;          # doc placeholder
+        sk-proj-abc123) return 0 ;;          # doc placeholder
+        sk-proj-test) return 0 ;;            # doc placeholder
+        sk-proj-xxxx) return 0 ;;            # doc placeholder
+        sk-ant-xxxx) return 0 ;;             # doc placeholder
+        sk_live_xxxx) return 0 ;;            # doc placeholder
+        ghp_xxxx) return 0 ;;                # doc placeholder
+        *) return 1 ;;
+    esac
+}
 
 # Filter false positives by extracting matched tokens and checking exact match.
 # Unlike substring grep -v, this won't suppress "sk-proj-test-real-prod-key-abc"
@@ -74,7 +78,7 @@ filter_false_positives() {
         while [[ $text =~ $COMBINED ]]; do
             match_found=true
             local token="${BASH_REMATCH[0]}"
-            if [[ -z "${KNOWN_FPS_MAP[$token]:-}" ]]; then
+            if ! is_known_fp "$token"; then
                 has_real=true
                 break
             fi

@@ -49,16 +49,20 @@ COMBINED=$(IFS='|'; echo "${PATTERNS[*]}")
 # Known false-positive tokens: documentation examples, placeholder keys
 # These appear in security-review.md, test files, and conversation logs
 # Uses exact token matching (not substring) to avoid suppressing real secrets
-declare -A KNOWN_FPS_MAP=(
-    [AKIAIOSFODNN7EXAMPLE]=1    # AWS official example key ID
-    [sk-proj-abcdef]=1          # doc placeholder
-    [sk-proj-abc123]=1          # doc placeholder
-    [sk-proj-test]=1            # doc placeholder
-    [sk-proj-xxxx]=1            # doc placeholder
-    [sk-ant-xxxx]=1             # doc placeholder
-    [sk_live_xxxx]=1            # doc placeholder
-    [ghp_xxxx]=1                # doc placeholder
-)
+# Note: uses case statement instead of declare -A for bash 3.2 compatibility (macOS)
+is_known_fp() {
+    case "$1" in
+        AKIAIOSFODNN7EXAMPLE) return 0 ;;   # AWS official example key ID
+        sk-proj-abcdef) return 0 ;;          # doc placeholder
+        sk-proj-abc123) return 0 ;;          # doc placeholder
+        sk-proj-test) return 0 ;;            # doc placeholder
+        sk-proj-xxxx) return 0 ;;            # doc placeholder
+        sk-ant-xxxx) return 0 ;;             # doc placeholder
+        sk_live_xxxx) return 0 ;;            # doc placeholder
+        ghp_xxxx) return 0 ;;                # doc placeholder
+        *) return 1 ;;
+    esac
+}
 
 # Filter false positives by extracting matched tokens and checking exact match.
 # Unlike substring grep -v, this won't suppress "sk-proj-test-real-prod-key-abc"
@@ -74,7 +78,7 @@ filter_false_positives() {
         while [[ $text =~ $COMBINED ]]; do
             match_found=true
             local token="${BASH_REMATCH[0]}"
-            if [[ -z "${KNOWN_FPS_MAP[$token]:-}" ]]; then
+            if ! is_known_fp "$token"; then
                 has_real=true
                 break
             fi
@@ -195,7 +199,7 @@ if [ "$SCAN_LOGS" = true ]; then
 
     log_matches=""
 
-    # Claude conversation logs
+    # Claude Code conversation logs
     CLAUDE_PROJECTS="$HOME/.claude/projects"
     if [ -d "$CLAUDE_PROJECTS" ]; then
         claude_hits=$(grep -rl -E "$COMBINED" "$CLAUDE_PROJECTS" 2>/dev/null | head -20 || true)
@@ -220,18 +224,64 @@ if [ "$SCAN_LOGS" = true ]; then
         fi
     fi
 
-    # Claude review log
-    CODEX_LOG="$HOME/.claude/claude-commit-reviews.log"
-    if [ -f "$CODEX_LOG" ]; then
-        if grep -qE "$COMBINED" "$CODEX_LOG" 2>/dev/null; then
-            log_matches="$log_matches\n  Claude review log contains secrets: $CODEX_LOG"
+    # Codex conversation logs
+    CODEX_DIR="$HOME/.codex"
+    if [ -d "$CODEX_DIR" ]; then
+        codex_hits=$(grep -rl -E "$COMBINED" "$CODEX_DIR" 2>/dev/null | head -20 || true)
+        if [ -n "$codex_hits" ]; then
+            verified_hits=""
+            while IFS= read -r f; do
+                real=$(grep -E "$COMBINED" "$f" 2>/dev/null | filter_false_positives || true)
+                if [ -n "$real" ]; then
+                    verified_hits="${verified_hits}${f}
+"
+                fi
+            done <<< "$codex_hits"
+            if [ -n "$verified_hits" ]; then
+                log_matches="$log_matches\n  Codex logs with secrets:"
+                while IFS= read -r f; do
+                    [ -z "$f" ] && continue
+                    log_matches="$log_matches\n     $f"
+                done <<< "$verified_hits"
+            fi
         fi
     fi
 
-    # Temp files from Claude debugging
+    # Gemini conversation logs
+    GEMINI_DIR="$HOME/.gemini"
+    if [ -d "$GEMINI_DIR" ]; then
+        gemini_hits=$(grep -rl -E "$COMBINED" "$GEMINI_DIR" 2>/dev/null | head -20 || true)
+        if [ -n "$gemini_hits" ]; then
+            verified_hits=""
+            while IFS= read -r f; do
+                real=$(grep -E "$COMBINED" "$f" 2>/dev/null | filter_false_positives || true)
+                if [ -n "$real" ]; then
+                    verified_hits="${verified_hits}${f}
+"
+                fi
+            done <<< "$gemini_hits"
+            if [ -n "$verified_hits" ]; then
+                log_matches="$log_matches\n  Gemini logs with secrets:"
+                while IFS= read -r f; do
+                    [ -z "$f" ] && continue
+                    log_matches="$log_matches\n     $f"
+                done <<< "$verified_hits"
+            fi
+        fi
+    fi
+
+    # Codex review log (hook writes to ~/.claude/, not ~/.codex/)
+    CODEX_LOG="$HOME/.claude/codex-commit-reviews.log"
+    if [ -f "$CODEX_LOG" ]; then
+        if grep -qE "$COMBINED" "$CODEX_LOG" 2>/dev/null; then
+            log_matches="$log_matches\n  Codex review log contains secrets: $CODEX_LOG"
+        fi
+    fi
+
+    # Temp files from agent debugging
     for tmpfile in /tmp/question.txt /tmp/reply.txt; do
         if [ -f "$tmpfile" ] && grep -qE "$COMBINED" "$tmpfile" 2>/dev/null; then
-            log_matches="$log_matches\n  Claude temp file contains secrets: $tmpfile"
+            log_matches="$log_matches\n  Agent temp file contains secrets: $tmpfile"
         fi
     done
 

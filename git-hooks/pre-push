@@ -226,6 +226,28 @@ if [ -f "requirements.txt" ] && command -v pip-audit >/dev/null 2>&1; then
     fi
 fi
 
+# Supply chain protection (version pinning, blocklist, age quarantine)
+sc_script=""
+for candidate in \
+    "$repo_root/scripts/scan-supply-chain.sh" \
+    "${CROSSCHECK_DIR:-}/scripts/scan-supply-chain.sh" \
+    "$HOME/.crosscheck/scripts/scan-supply-chain.sh" \
+    "$HOME/.claude/CrossCheck/scripts/scan-supply-chain.sh" \
+    "$HOME/Documents/Developer/CrossCheck/scripts/scan-supply-chain.sh"; do
+    if [ -f "$candidate" ]; then
+        sc_script="$candidate"
+        break
+    fi
+done
+if [ -n "$sc_script" ]; then
+    if ! bash "$sc_script" --pre-push; then
+        echo "  ❌ Supply chain check failed — push blocked"
+        echo "     Fix issues above, then push again"
+        echo "     Age quarantine override: SUPPLY_CHAIN_SKIP_AGE=1 git push"
+        exit 1
+    fi
+fi
+
 # Re-scan for secrets in all changes since diff base
 if [ -n "$diff_base" ]; then
     if git diff "$diff_base"..HEAD | grep -E '^\+[^+]' | grep -qiE '(api_key|apikey|password|secret|token)(\s*[=:]\s*)['"'"'"]?(sk-|pk-|[a-zA-Z0-9_-]{20,})['"'"'"]?'; then

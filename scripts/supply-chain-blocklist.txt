@@ -1,0 +1,35 @@
+# Supply Chain Blocklist — Known Malicious Packages
+# Part of CrossCheck supply chain protection.
+#
+# Format: ecosystem:package-name  # reason (date)
+# Lines starting with # are comments. Blank lines ignored.
+#
+# Ecosystems: npm, pip, gem, go, cargo, composer
+# Add entries as threats emerge. Run /update-crosscheck to propagate.
+
+# NPM — axios supply chain attack (2026-03-31)
+npm:plain-crypto-js        # RAT dropper injected via axios@1.14.1, axios@0.30.4
+
+# NPM — historical incidents
+npm:event-stream           # Bitcoin wallet stealer via flatmap-stream (2018-11)
+npm:flatmap-stream         # Malicious dep of event-stream (2018-11)
+npm:ua-parser-js           # Cryptominer injection via hijacked maintainer (2021-10)
+npm:coa                    # Hijacked maintainer account (2021-11)
+npm:rc                     # Hijacked maintainer account (2021-11)
+npm:colors                 # Maintainer sabotage — infinite loop (2022-01)
+npm:faker                  # Maintainer sabotage — wiped package (2022-01)
+npm:node-ipc               # Protestware — file overwrite (2022-03)
+npm:peacenotwar            # Protestware dependency of node-ipc (2022-03)
+
+# Python/pip
+pip:ctx                    # Credential stealer — hijacked abandoned package (2022-05)
+pip:colourama              # Typosquat of colorama (2019)
+pip:python3-dateutil       # Typosquat of python-dateutil — stealer (2019)
+pip:jeIlyfish              # Typosquat of jellyfish (capital I not l) (2019)
+pip:libpeshnern            # Typosquat credential stealer (2023)
+pip:coloramma              # Typosquat of colorama (2023)
+
+# Ruby gems
+gem:rest-client            # Backdoored version 1.6.13 (2019-08)
+gem:strong_password        # Backdoored — credential stealer (2019-07)
+gem:bootstrap-sass         # Backdoored version 3.2.0.3 (2019-04)

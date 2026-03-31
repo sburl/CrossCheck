@@ -67,6 +67,33 @@ if echo "$CACHED_DIFF_CONTENT" | grep -E '^\+[^+]' | grep -qE '(ghp_[A-Za-z0-9]{
     exit 1
 fi
 
+# 3.5. Supply chain: blocklist + version pinning (fast, no network)
+if echo "$CACHED_NAMES_ACM" | grep -qE '(package\.json|requirements\.txt|pyproject\.toml|Gemfile|Cargo\.toml|composer\.json|go\.mod)'; then
+    echo "  📦 Checking supply chain..."
+    sc_script=""
+    _sc_repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+    for candidate in \
+        "$_sc_repo_root/scripts/scan-supply-chain.sh" \
+        "${CROSSCHECK_DIR:-}/scripts/scan-supply-chain.sh" \
+        "$HOME/.crosscheck/scripts/scan-supply-chain.sh" \
+        "$HOME/.claude/CrossCheck/scripts/scan-supply-chain.sh" \
+        "$HOME/Documents/Developer/CrossCheck/scripts/scan-supply-chain.sh"; do
+        if [ -f "$candidate" ]; then
+            sc_script="$candidate"
+            break
+        fi
+    done
+    if [ -n "$sc_script" ]; then
+        sc_exit=0
+        bash "$sc_script" --pre-commit 2>&1 || sc_exit=$?
+        if [ "$sc_exit" -eq 2 ]; then
+            echo "  ❌ Malicious package detected — commit blocked"
+            exit 1
+        fi
+        # Exit 1 (unpinned warnings) — don't block commits, only pushes
+    fi
+fi
+
 # 4. Check for debug statements
 echo "  🐛 Checking for debug code..."
 # Exclude common non-debug uses: logging.print, println, printf, fprintf, sprint, print!, eprint

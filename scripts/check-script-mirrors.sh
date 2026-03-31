@@ -120,7 +120,6 @@ for file in "${ROOT_FILES[@]}"; do
   for mirror_dir in "$CODEX_SCRIPTS_DIR" "$CLAUDE_SCRIPTS_DIR"; do
     mirror_file="$mirror_dir/$file"
     [ -f "$mirror_file" ] || continue
-    surface="$(basename "$(dirname "$mirror_dir")")"
 
     if is_exec_proxy "$mirror_file"; then
       proxy_count=$((proxy_count + 1))

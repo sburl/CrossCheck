@@ -64,7 +64,14 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
    - Check for `.github/dependabot.yml` or `renovate.json`
    - Verify it covers all ecosystems in use
 
-**Critical finding:** Known critical CVE in a direct dependency. Stop and alert.
+7. **Supply chain protection (CrossCheck automated)**
+   - Run: `bash scripts/scan-supply-chain.sh` (also runs automatically via pre-commit/pre-push hooks)
+   - Checks: version pinning, known malicious packages, package age quarantine (7-day), lock file enforcement
+   - Blocklist: `scripts/supply-chain-blocklist.txt` — add entries as new threats emerge
+   - Ecosystems: npm, pip, Ruby gems, Go, Rust, PHP (auto-detected)
+   - Override age quarantine: `SUPPLY_CHAIN_SKIP_AGE=1`
+
+**Critical finding:** Known critical CVE in a direct dependency, or blocklisted malicious package. Stop and alert.
 
 ---
 
@@ -133,28 +140,28 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
 
 7. **Secrets in AI agent logs (CRITICAL -- often overlooked)**
 
-   Users paste secrets into Codex/Claude conversations. Agents read `.env` files into context. These get persisted in plaintext log files on disk.
+   Users paste secrets into Claude/Codex conversations. Agents read `.env` files into context. These get persisted in plaintext log files on disk.
 
-   **Codex conversation logs:**
+   **Claude Code conversation logs:**
    ```bash
-   # Codex stores full conversation history as JSONL
-   # Location: ~/.codex/projects/<project-hash>/*.jsonl
-   # Also: ~/.codex/projects/<project-hash>/subagents/*.jsonl
+   # Claude stores full conversation history as JSONL
+   # Location: ~/.claude/projects/<project-hash>/*.jsonl
+   # Also: ~/.claude/projects/<project-hash>/subagents/*.jsonl
 
    # Scan for provider-specific patterns in all conversation logs
    grep -rn 'sk-proj-\|sk-ant-\|AKIA\|ghp_\|sk_live_\|AIza' \
-     ~/.codex/projects/ 2>/dev/null | head -20
+     ~/.claude/projects/ 2>/dev/null | head -20
 
    # Scan for generic secret patterns
    grep -rn 'api_key.*=\|password.*=\|secret.*=\|token.*=' \
-     ~/.codex/projects/ 2>/dev/null | grep -v '"type"' | head -20
+     ~/.claude/projects/ 2>/dev/null | grep -v '"type"' | head -20
    ```
 
    **Codex review logs:**
    ```bash
    # Codex review history
    grep -n 'sk-proj-\|sk-ant-\|AKIA\|ghp_\|sk_live_' \
-     ~/.codex/codex-commit-reviews.log 2>/dev/null
+     ~/.claude/codex-commit-reviews.log 2>/dev/null
    ```
 
    **Codex file-based debugging:**
@@ -168,7 +175,7 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
    - **STOP immediately.** This is Critical severity.
    - **Tell the user:** "Secret detected in conversation logs. Rotate this key immediately. The key has been sent to the AI provider's API and is stored in plaintext on disk."
    - **Recommend:** Delete the affected `.jsonl` files after rotation.
-   - **Recommend:** Add sensitive paths to `~/.codex/settings.json` deny list to prevent future reads.
+   - **Recommend:** Add sensitive paths to `~/.claude/settings.json` deny list to prevent future reads.
 
 **Critical finding:** Any real secret in HEAD, history, or agent logs. Stop and alert immediately.
 
@@ -397,7 +404,7 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
 
 1. **Agent permission scope**
    - What files can the agent read/write? Are production secrets accessible?
-   - Check `~/.codex/settings.json` deny list -- is it comprehensive?
+   - Check `~/.claude/settings.json` deny list -- is it comprehensive?
    - Are `.env` files, credential stores, SSH keys accessible to the agent?
    - Can the agent execute arbitrary commands? What's blocked?
 
@@ -427,7 +434,7 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
    - Can the agent bypass git hooks (`--no-verify`)?
    - Can the agent force-push to main?
    - Can the agent delete branches, files, or data?
-   - Can the agent modify its own configuration (CODEX.md, settings)?
+   - Can the agent modify its own configuration (CLAUDE.md, settings)?
 
 ---
 
@@ -497,7 +504,7 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
    - Auto-merge for patch versions?
 
 6. **Settings and deny list**
-   - Verify `~/.codex/settings.json` blocks dangerous commands
+   - Verify `~/.claude/settings.json` blocks dangerous commands
    - Verify git hooks are installed and executable
    - Verify pre-commit hook catches secrets
 
@@ -616,7 +623,7 @@ scripts/scan-leaks.sh --history
 scripts/scan-leaks.sh --all
 ```
 
-This script uses exact regex patterns for all major providers (OpenAI, Anthropic, Google, AWS, GitHub, Stripe, Slack, etc.) and scans Codex/Claude log files at `~/.codex/projects/`. No false negatives for known key formats.
+This script uses exact regex patterns for all major providers (OpenAI, Anthropic, Google, AWS, GitHub, Stripe, Slack, etc.) and scans Claude/Codex log files at `~/.claude/projects/`. No false negatives for known key formats.
 
 The pre-push hook runs a lightweight version of this on every push. The full script runs as part of the periodic security review.
 
@@ -631,6 +638,7 @@ Pattern-matching finds possibilities; red teaming confirms realities.
 - `docs/rules/trust-model.md` -- Trust boundaries and zero-trust philosophy
 - `scripts/scan-leaks.sh` -- Deterministic secret scanner (standalone)
 - `/repo-assessment` -- General code quality (runs at the same cadence)
-- Pre-push hook -- Runs lightweight Category 1-2 checks on every push
+- Pre-commit hook -- Blocks malicious packages, warns on unpinned versions (Category 1)
+- Pre-push hook -- Full supply chain scan + lightweight Category 1-2 checks on every push
 - `.github/dependabot.yml` -- Automated dependency updates (Category 1 prevention)
 - `.github/CODEOWNERS` -- Code ownership enforcement (Category 10)

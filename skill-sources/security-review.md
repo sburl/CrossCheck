@@ -64,7 +64,14 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
    - Check for `.github/dependabot.yml` or `renovate.json`
    - Verify it covers all ecosystems in use
 
-**Critical finding:** Known critical CVE in a direct dependency. Stop and alert.
+7. **Supply chain protection (CrossCheck automated)**
+   - Run: `bash scripts/scan-supply-chain.sh` (also runs automatically via pre-commit/pre-push hooks)
+   - Checks: version pinning, known malicious packages, package age quarantine (7-day), lock file enforcement
+   - Blocklist: `scripts/supply-chain-blocklist.txt` — add entries as new threats emerge
+   - Ecosystems: npm, pip, Ruby gems, Go, Rust, PHP (auto-detected)
+   - Override age quarantine: `SUPPLY_CHAIN_SKIP_AGE=1`
+
+**Critical finding:** Known critical CVE in a direct dependency, or blocklisted malicious package. Stop and alert.
 
 ---
 
@@ -631,6 +638,7 @@ Pattern-matching finds possibilities; red teaming confirms realities.
 - `docs/rules/trust-model.md` -- Trust boundaries and zero-trust philosophy
 - `scripts/scan-leaks.sh` -- Deterministic secret scanner (standalone)
 - `/repo-assessment` -- General code quality (runs at the same cadence)
-- Pre-push hook -- Runs lightweight Category 1-2 checks on every push
+- Pre-commit hook -- Blocks malicious packages, warns on unpinned versions (Category 1)
+- Pre-push hook -- Full supply chain scan + lightweight Category 1-2 checks on every push
 - `.github/dependabot.yml` -- Automated dependency updates (Category 1 prevention)
 - `.github/CODEOWNERS` -- Code ownership enforcement (Category 10)

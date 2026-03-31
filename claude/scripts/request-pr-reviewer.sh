@@ -1,4 +1,2 @@
-#!/usr/bin/env bash
-set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SCRIPT_DIR/../../scripts/request-pr-reviewer.sh"
+#!/bin/bash
+exec "$(cd "$(dirname "$0")/../../scripts" && pwd)/$(basename "$0")" "$@"

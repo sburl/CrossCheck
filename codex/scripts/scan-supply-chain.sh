@@ -159,6 +159,7 @@ check_version_pinning() {
                     unpinned_pyp=$(sed -n '/\[project\]/,/^\[/p; /\[tool\.poetry\.dependencies\]/,/^\[/p' pyproject.toml 2>/dev/null \
                         | grep -E '(>=|~=|\^|>)' \
                         | grep -vE '^\s*#' \
+                        | grep -vE 'requires-python' \
                         | sed 's/^/        /' || true)
                     if [ -n "$unpinned_pyp" ]; then
                         echo "        ⚠️  pip: unpinned versions in pyproject.toml:"
@@ -306,7 +307,9 @@ check_blocklist() {
 
             # Only check files matching the blocklist entry's ecosystem
             if [ "$file_eco" = "$eco_prefix" ]; then
-                if grep -q "$pkg_name" "$file_path" 2>/dev/null; then
+                # Word-boundary match to avoid substring false positives
+                # (e.g., "ctx" must not match "ctxlib" or "my-context")
+                if grep -qE "(^|[^a-zA-Z0-9_-])${pkg_name}([^a-zA-Z0-9_-]|$)" "$file_path" 2>/dev/null; then
                     local reason
                     reason=$(echo "$line" | sed 's/^[^#]*#//' | sed 's/^[[:space:]]*//')
                     echo "        ❌ MALICIOUS PACKAGE: $pkg_name found in $file_path"

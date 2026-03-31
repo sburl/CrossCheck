@@ -228,8 +228,9 @@ fi
 
 # Supply chain protection (version pinning, blocklist, age quarantine)
 sc_script=""
+_sc_repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
 for candidate in \
-    "$repo_root/scripts/scan-supply-chain.sh" \
+    "$_sc_repo_root/scripts/scan-supply-chain.sh" \
     "${CROSSCHECK_DIR:-}/scripts/scan-supply-chain.sh" \
     "$HOME/.crosscheck/scripts/scan-supply-chain.sh" \
     "$HOME/.claude/CrossCheck/scripts/scan-supply-chain.sh" \

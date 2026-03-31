@@ -136,6 +136,43 @@ EOF
     fi
 }
 
+test_blocklist_no_substring_false_positive() {
+    setup_test_dir "blocklist-no-substring"
+    # "ctxlib" should NOT trigger the "ctx" blocklist entry
+    cat > requirements.txt <<'EOF'
+ctxlib==1.0.0
+starlette-context==0.3.6
+EOF
+    local exit_code=0
+    bash "$SCANNER" --pre-commit > /dev/null 2>&1 || exit_code=$?
+    if [ "$exit_code" -eq 0 ]; then
+        pass "Substring of blocklisted name (ctxlib vs ctx) does NOT false-positive"
+    else
+        fail "ctxlib should not match ctx blocklist entry, got exit $exit_code"
+    fi
+}
+
+test_pyproject_requires_python_no_false_positive() {
+    setup_test_dir "pyproject-python-ver"
+    cat > pyproject.toml <<'EOF'
+[project]
+name = "demo"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "requests==2.32.3"
+]
+EOF
+    local exit_code=0
+    local output
+    output=$(SUPPLY_CHAIN_SKIP_AGE=1 bash "$SCANNER" --pre-push 2>&1) || exit_code=$?
+    if echo "$output" | grep -q "requires-python"; then
+        fail "requires-python should not trigger unpinned warning"
+    else
+        pass "requires-python is excluded from pyproject.toml pinning check"
+    fi
+}
+
 test_clean_package_passes() {
     setup_test_dir "blocklist-clean"
     cat > package.json <<'EOF'
@@ -161,6 +198,8 @@ test_blocklist_npm_blocks
 test_blocklist_pip_blocks
 test_blocklist_gem_blocks
 test_blocklist_lockfile_catches_transitive
+test_blocklist_no_substring_false_positive
+test_pyproject_requires_python_no_false_positive
 test_clean_package_passes
 echo ""
 

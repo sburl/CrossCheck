@@ -49,16 +49,20 @@ COMBINED=$(IFS='|'; echo "${PATTERNS[*]}")
 # Known false-positive tokens: documentation examples, placeholder keys
 # These appear in security-review.md, test files, and conversation logs
 # Uses exact token matching (not substring) to avoid suppressing real secrets
-KNOWN_FPS=(
-    AKIAIOSFODNN7EXAMPLE    # AWS official example key ID
-    sk-proj-abcdef          # doc placeholder
-    sk-proj-abc123          # doc placeholder
-    sk-proj-test            # doc placeholder
-    sk-proj-xxxx            # doc placeholder
-    sk-ant-xxxx             # doc placeholder
-    sk_live_xxxx            # doc placeholder
-    ghp_xxxx                # doc placeholder
-)
+# Note: uses case statement instead of declare -A for bash 3.2 compatibility (macOS)
+is_known_fp() {
+    case "$1" in
+        AKIAIOSFODNN7EXAMPLE) return 0 ;;   # AWS official example key ID
+        sk-proj-abcdef) return 0 ;;          # doc placeholder
+        sk-proj-abc123) return 0 ;;          # doc placeholder
+        sk-proj-test) return 0 ;;            # doc placeholder
+        sk-proj-xxxx) return 0 ;;            # doc placeholder
+        sk-ant-xxxx) return 0 ;;             # doc placeholder
+        sk_live_xxxx) return 0 ;;            # doc placeholder
+        ghp_xxxx) return 0 ;;                # doc placeholder
+        *) return 1 ;;
+    esac
+}
 
 # Filter false positives by extracting matched tokens and checking exact match.
 # Unlike substring grep -v, this won't suppress "sk-proj-test-real-prod-key-abc"
@@ -74,14 +78,7 @@ filter_false_positives() {
         while [[ $text =~ $COMBINED ]]; do
             match_found=true
             local token="${BASH_REMATCH[0]}"
-            local is_fp=false
-            for fp in "${KNOWN_FPS[@]}"; do
-                if [ "$token" = "$fp" ]; then
-                    is_fp=true
-                    break
-                fi
-            done
-            if [ "$is_fp" = false ]; then
+            if ! is_known_fp "$token"; then
                 has_real=true
                 break
             fi

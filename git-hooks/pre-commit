@@ -60,7 +60,9 @@ if echo "$CACHED_NAMES_ACM" | grep -qE '\.env$|\.env\.'; then
 fi
 
 # Provider-specific token formats (zero false-positive patterns)
-if echo "$CACHED_DIFF_CONTENT" | grep -E '^\+[^+]' | grep -qE '(ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|ghu_[A-Za-z0-9]{36}|ghs_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[A-Za-z0-9]{24,}|pk_live_[A-Za-z0-9]{24,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{35}|SG\.[A-Za-z0-9_-]{22}\.)'; then
+# Exclude scan-leaks.sh files — they legitimately contain example tokens for false-positive matching
+CACHED_DIFF_NO_SCANLEAKS=$(git diff --cached -p -- ':!scripts/scan-leaks.sh' ':!claude/scripts/scan-leaks.sh' ':!codex/scripts/scan-leaks.sh')
+if echo "$CACHED_DIFF_NO_SCANLEAKS" | grep -E '^\+[^+]' | grep -qE '(ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|ghu_[A-Za-z0-9]{36}|ghs_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[A-Za-z0-9]{24,}|pk_live_[A-Za-z0-9]{24,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{35}|SG\.[A-Za-z0-9_-]{22}\.)'; then
     echo "  ❌ Provider-specific API token detected in staged changes"
     echo "     Matched patterns: GitHub (ghp_/gho_/ghu_/ghs_/github_pat_), GitLab (glpat-),"
     echo "     Slack (xox[baprs]-), Stripe (sk_live_/pk_live_), AWS (AKIA), Google (AIza), SendGrid (SG.)"

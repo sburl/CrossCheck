@@ -11,18 +11,20 @@
 
 set -e
 
-SCAN_HISTORY=false
-SCAN_LOGS=false
-SOFT_FAIL=false
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    SCAN_HISTORY=false
+    SCAN_LOGS=false
+    SOFT_FAIL=false
 
-for arg in "$@"; do
-    case $arg in
-        --history) SCAN_HISTORY=true ;;
-        --logs) SCAN_LOGS=true ;;
-        --all) SCAN_HISTORY=true; SCAN_LOGS=true ;;
-        --soft-fail) SOFT_FAIL=true ;;
-    esac
-done
+    for arg in "$@"; do
+        case $arg in
+            --history) SCAN_HISTORY=true ;;
+            --logs) SCAN_LOGS=true ;;
+            --all) SCAN_HISTORY=true; SCAN_LOGS=true ;;
+            --soft-fail) SOFT_FAIL=true ;;
+        esac
+    done
+fi
 
 # Provider-specific patterns (high confidence, never false positives)
 PATTERNS=(
@@ -94,6 +96,7 @@ filter_false_positives() {
     done
 }
 
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 FOUND=0
 
 echo "🔒 Secret Scanner"
@@ -306,4 +309,5 @@ echo "━━━━━━━━━━━━━━━━━━"
 echo "🔒 Scan complete"
 if [ "$SOFT_FAIL" = false ] && [ "$FOUND" -gt 0 ]; then
     exit 1
+fi
 fi

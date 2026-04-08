@@ -33,6 +33,7 @@ QUARANTINE_DAYS="${SUPPLY_CHAIN_QUARANTINE_DAYS:-7}"
 CACHE_DIR="$HOME/.cache/CrossCheck/supply-chain-age"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BLOCKLIST_FILE="$SCRIPT_DIR/supply-chain-blocklist.txt"
+JQ_EXE=$(command -v jq 2>/dev/null || true)
 
 # Track worst exit code: 0=clean, 1=warnings, 2=malicious, 3=quarantine
 WORST_EXIT=0
@@ -93,6 +94,35 @@ npm_deps_grep() {
         || true
 }
 
+# --- Helper: get npm deps (cached) ---
+_NPM_DEPS_CACHED=false
+_CACHED_NPM_DEPS_PROD=""
+_CACHED_NPM_DEPS_DEV=""
+_ensure_npm_deps_cached() {
+    [ ! -f "package.json" ] && return
+    [ "$_NPM_DEPS_CACHED" = "true" ] && return
+
+    if [ -n "$JQ_EXE" ]; then
+        # Use a single jq call to extract both, separated by a unique marker
+        local all_deps
+        all_deps=$("$JQ_EXE" -r '
+            ((.dependencies // {}) | to_entries[] | "PROD \(.key) \(.value)"),
+            ((.devDependencies // {}) | to_entries[] | "DEV \(.key) \(.value)")
+        ' package.json 2>/dev/null || true)
+        _CACHED_NPM_DEPS_PROD=$(echo "$all_deps" | grep "^PROD " | sed 's/^PROD //' || true)
+        _CACHED_NPM_DEPS_DEV=$(echo "$all_deps" | grep "^DEV " | sed 's/^DEV //' || true)
+    else
+        # Fallback: npm_deps_grep returns both combined.
+        # We store in PROD and keep DEV empty for consistency in fallback mode.
+        _CACHED_NPM_DEPS_PROD=$(npm_deps_grep "package.json" \
+            | sed 's/[",]//g; s/^\s*//' \
+            | awk -F: '{gsub(/^[ \t]+|[ \t]+$/, "", $1); gsub(/^[ \t]+|[ \t]+$/, "", $2); print $1, $2}' \
+            || true)
+        _CACHED_NPM_DEPS_DEV=""
+    fi
+    _NPM_DEPS_CACHED=true
+}
+
 # ============================================================
 # CHECK 1: Version Pinning
 # ============================================================
@@ -106,20 +136,11 @@ check_version_pinning() {
         case "$eco" in
             npm)
                 if [ -f "package.json" ]; then
-                    local unpinned=""
-                    if command -v jq >/dev/null 2>&1; then
-                        unpinned=$(jq -r '
-                            [(.dependencies // {}), (.devDependencies // {})]
-                            | add // {}
-                            | to_entries[]
-                            | select(.value | test("^[\\^~]"))
-                            | "        \(.key): \(.value)"
-                        ' package.json 2>/dev/null || true)
-                    else
-                        unpinned=$(npm_deps_grep "package.json" \
-                            | grep -E '"[\^~]' \
-                            | sed 's/^/        /' || true)
-                    fi
+                    _ensure_npm_deps_cached
+                    local unpinned
+                    unpinned=$(printf "%s\n%s" "$_CACHED_NPM_DEPS_PROD" "$_CACHED_NPM_DEPS_DEV" \
+                        | awk '$2 ~ /^[\^~]/ { print "        " $1 ": " $2 }' || true)
+
                     if [ -n "$unpinned" ]; then
                         echo "        ⚠️  npm: unpinned versions in package.json:"
                         echo "$unpinned"
@@ -204,8 +225,8 @@ check_version_pinning() {
             composer)
                 if [ -f "composer.json" ]; then
                     local unpinned_comp=""
-                    if command -v jq >/dev/null 2>&1; then
-                        unpinned_comp=$(jq -r '
+                    if [ -n "$JQ_EXE" ]; then
+                        unpinned_comp=$("$JQ_EXE" -r '
                             [(.require // {}), (."require-dev" // {})]
                             | add // {}
                             | to_entries[]
@@ -430,15 +451,8 @@ check_age_quarantine() {
         case "$eco" in
             npm)
                 [ ! -f "package.json" ] && continue
-                local deps=""
-                if command -v jq >/dev/null 2>&1; then
-                    deps=$(jq -r '(.dependencies // {}) | to_entries[] | "\(.key) \(.value)"' package.json 2>/dev/null || true)
-                else
-                    deps=$(npm_deps_grep "package.json" \
-                        | sed 's/[",]//g; s/^\s*//' \
-                        | awk -F: '{gsub(/^[ \t]+|[ \t]+$/, "", $1); gsub(/^[ \t]+|[ \t]+$/, "", $2); print $1, $2}' \
-                        || true)
-                fi
+                _ensure_npm_deps_cached
+                local deps="$_CACHED_NPM_DEPS_PROD"
                 while IFS= read -r line; do
                     [ -z "$line" ] && continue
                     local pkg ver
@@ -529,8 +543,8 @@ check_package_age() {
             local response
             response=$(curl -s --max-time 5 "https://registry.npmjs.org/${pkg}" 2>/dev/null || true)
             if [ -n "$response" ]; then
-                if command -v jq >/dev/null 2>&1; then
-                    publish_time=$(echo "$response" | jq -r ".time[\"${ver}\"] // empty" 2>/dev/null || true)
+                if [ -n "$JQ_EXE" ]; then
+                    publish_time=$(echo "$response" | "$JQ_EXE" -r ".time[\"${ver}\"] // empty" 2>/dev/null || true)
                 else
                     publish_time=$(echo "$response" | grep -o "\"${ver}\":\"[^\"]*\"" | head -1 | sed 's/.*:"\(.*\)"/\1/' || true)
                 fi
@@ -540,8 +554,8 @@ check_package_age() {
             local response
             response=$(curl -s --max-time 5 "https://pypi.org/pypi/${pkg}/${ver}/json" 2>/dev/null || true)
             if [ -n "$response" ]; then
-                if command -v jq >/dev/null 2>&1; then
-                    publish_time=$(echo "$response" | jq -r '.urls[0].upload_time_iso_8601 // empty' 2>/dev/null || true)
+                if [ -n "$JQ_EXE" ]; then
+                    publish_time=$(echo "$response" | "$JQ_EXE" -r '.urls[0].upload_time_iso_8601 // empty' 2>/dev/null || true)
                 else
                     publish_time=$(echo "$response" | grep -o '"upload_time_iso_8601":"[^"]*"' | head -1 | sed 's/.*:"\(.*\)"/\1/' || true)
                 fi
@@ -551,8 +565,8 @@ check_package_age() {
             local response
             response=$(curl -s --max-time 5 "https://rubygems.org/api/v1/versions/${pkg}.json" 2>/dev/null || true)
             if [ -n "$response" ]; then
-                if command -v jq >/dev/null 2>&1; then
-                    publish_time=$(echo "$response" | jq -r ".[] | select(.number == \"${ver}\") | .created_at // empty" 2>/dev/null || true)
+                if [ -n "$JQ_EXE" ]; then
+                    publish_time=$(echo "$response" | "$JQ_EXE" -r ".[] | select(.number == \"${ver}\") | .created_at // empty" 2>/dev/null || true)
                 else
                     # Simplified: grab first created_at near the version string
                     publish_time=$(echo "$response" | grep -o "\"created_at\":\"[^\"]*\"" | head -1 | sed 's/.*:"\(.*\)"/\1/' || true)

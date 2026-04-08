@@ -43,6 +43,20 @@ update_exit() {
     fi
 }
 
+# --- Security helpers ---
+# urlencode <string>
+# Safely percent-encodes a string for use in URLs or filenames.
+urlencode() {
+    local length="${#1}"
+    for (( i = 0; i < length; i++ )); do
+        local c="${1:i:1}"
+        case "$c" in
+            [a-zA-Z0-9.~_-]) printf "%s" "$c" ;;
+            *) printf "%%%02X" "'$c" ;;
+        esac
+    done
+}
+
 # --- Ecosystem detection ---
 ECOSYSTEMS=()
 
@@ -500,8 +514,14 @@ check_age_quarantine() {
 check_package_age() {
     local eco="$1" pkg="$2" ver="$3"
 
+    # Sanitize inputs for file paths and URLs
+    local safe_pkg
+    safe_pkg=$(urlencode "$pkg")
+    local safe_ver
+    safe_ver=$(urlencode "$ver")
+
     # Check cache first
-    local cache_file="$CACHE_DIR/${eco}/${pkg}@${ver}.age"
+    local cache_file="$CACHE_DIR/${eco}/${safe_pkg}@${safe_ver}.age"
     mkdir -p "$CACHE_DIR/${eco}"
 
     if [ -f "$cache_file" ]; then
@@ -527,18 +547,21 @@ check_package_age() {
     case "$eco" in
         npm)
             local response
-            response=$(curl -s --max-time 5 "https://registry.npmjs.org/${pkg}" 2>/dev/null || true)
+            response=$(curl -s --max-time 5 "https://registry.npmjs.org/${safe_pkg}" 2>/dev/null || true)
             if [ -n "$response" ]; then
                 if command -v jq >/dev/null 2>&1; then
-                    publish_time=$(echo "$response" | jq -r ".time[\"${ver}\"] // empty" 2>/dev/null || true)
+                    publish_time=$(echo "$response" | jq --arg ver "$ver" -r '.time[$ver] // empty' 2>/dev/null || true)
                 else
-                    publish_time=$(echo "$response" | grep -o "\"${ver}\":\"[^\"]*\"" | head -1 | sed 's/.*:"\(.*\)"/\1/' || true)
+                    # Escape literal version for safe grep
+                    local escaped_ver
+                    escaped_ver=$(echo "$ver" | sed 's/[^^a-zA-Z0-9_]/\\&/g')
+                    publish_time=$(echo "$response" | grep -o "\"${escaped_ver}\":\"[^\"]*\"" | head -1 | sed 's/.*:"\(.*\)"/\1/' || true)
                 fi
             fi
             ;;
         pip)
             local response
-            response=$(curl -s --max-time 5 "https://pypi.org/pypi/${pkg}/${ver}/json" 2>/dev/null || true)
+            response=$(curl -s --max-time 5 "https://pypi.org/pypi/${safe_pkg}/${safe_ver}/json" 2>/dev/null || true)
             if [ -n "$response" ]; then
                 if command -v jq >/dev/null 2>&1; then
                     publish_time=$(echo "$response" | jq -r '.urls[0].upload_time_iso_8601 // empty' 2>/dev/null || true)
@@ -549,13 +572,15 @@ check_package_age() {
             ;;
         gem)
             local response
-            response=$(curl -s --max-time 5 "https://rubygems.org/api/v1/versions/${pkg}.json" 2>/dev/null || true)
+            response=$(curl -s --max-time 5 "https://rubygems.org/api/v1/versions/${safe_pkg}.json" 2>/dev/null || true)
             if [ -n "$response" ]; then
                 if command -v jq >/dev/null 2>&1; then
-                    publish_time=$(echo "$response" | jq -r ".[] | select(.number == \"${ver}\") | .created_at // empty" 2>/dev/null || true)
+                    publish_time=$(echo "$response" | jq --arg ver "$ver" -r '.[] | select(.number == $ver) | .created_at // empty' 2>/dev/null || true)
                 else
                     # Simplified: grab first created_at near the version string
-                    publish_time=$(echo "$response" | grep -o "\"created_at\":\"[^\"]*\"" | head -1 | sed 's/.*:"\(.*\)"/\1/' || true)
+                    local escaped_ver
+                    escaped_ver=$(echo "$ver" | sed 's/[^^a-zA-Z0-9_]/\\&/g')
+                    publish_time=$(echo "$response" | grep -o "\"${escaped_ver}\".*\"created_at\":\"[^\"]*\"" | head -1 | sed 's/.*:"\(.*\)"/\1/' || true)
                 fi
             fi
             ;;

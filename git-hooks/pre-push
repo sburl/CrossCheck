@@ -10,14 +10,16 @@ echo "🚀 Running pre-push checks..."
 # Git sends ref info on stdin: <local ref> <local sha> <remote ref> <remote sha>
 # Deletions have an all-zero local SHA — no code is being pushed, skip all checks
 ZERO_SHA="0000000000000000000000000000000000000000"
+saw_ref_line=false
 has_non_delete=false
 while read _local_ref local_sha _remote_ref _remote_sha; do
+    saw_ref_line=true
     if [ "$local_sha" != "$ZERO_SHA" ]; then
         has_non_delete=true
         break
     fi
 done
-if [ "$has_non_delete" = false ]; then
+if [ "$saw_ref_line" = true ] && [ "$has_non_delete" = false ]; then
     echo "  ℹ️  Delete-only push — skipping checks"
     exit 0
 fi

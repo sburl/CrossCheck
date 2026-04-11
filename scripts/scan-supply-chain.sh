@@ -45,63 +45,16 @@ update_exit() {
 
 # --- Ecosystem detection ---
 ECOSYSTEMS=()
-declare -A ECO_MANIFESTS
-declare -A ECO_LOCKFILES
 
 detect_ecosystems() {
-    # npm
-    if [ -f "package.json" ]; then
-        ECOSYSTEMS+=("npm")
-        ECO_MANIFESTS[npm]="package.json"
-        for f in package-lock.json yarn.lock pnpm-lock.yaml; do
-            [ -f "$f" ] && ECO_LOCKFILES[npm]="${ECO_LOCKFILES[npm]:-} $f"
-        done
-        ECO_LOCKFILES[npm]="${ECO_LOCKFILES[npm]:-}"
-        ECO_LOCKFILES[npm]="${ECO_LOCKFILES[npm]# }"
-    fi
-
-    # pip
-    local pip_manifests=""
-    for f in requirements.txt pyproject.toml Pipfile; do
-        [ -f "$f" ] && pip_manifests="$pip_manifests $f"
-    done
-    if [ -n "$pip_manifests" ]; then
+    [ -f "package.json" ] && ECOSYSTEMS+=("npm") || true
+    if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "Pipfile" ]; then
         ECOSYSTEMS+=("pip")
-        ECO_MANIFESTS[pip]="${pip_manifests# }"
-        for f in Pipfile.lock poetry.lock uv.lock requirements.lock pdm.lock; do
-            [ -f "$f" ] && ECO_LOCKFILES[pip]="${ECO_LOCKFILES[pip]:-} $f"
-        done
-        ECO_LOCKFILES[pip]="${ECO_LOCKFILES[pip]:-}"
-        ECO_LOCKFILES[pip]="${ECO_LOCKFILES[pip]# }"
     fi
-
-    # gem
-    if [ -f "Gemfile" ]; then
-        ECOSYSTEMS+=("gem")
-        ECO_MANIFESTS[gem]="Gemfile"
-        [ -f "Gemfile.lock" ] && ECO_LOCKFILES[gem]="Gemfile.lock"
-    fi
-
-    # go
-    if [ -f "go.mod" ]; then
-        ECOSYSTEMS+=("go")
-        ECO_MANIFESTS[go]="go.mod"
-        [ -f "go.sum" ] && ECO_LOCKFILES[go]="go.sum"
-    fi
-
-    # cargo
-    if [ -f "Cargo.toml" ]; then
-        ECOSYSTEMS+=("cargo")
-        ECO_MANIFESTS[cargo]="Cargo.toml"
-        [ -f "Cargo.lock" ] && ECO_LOCKFILES[cargo]="Cargo.lock"
-    fi
-
-    # composer
-    if [ -f "composer.json" ]; then
-        ECOSYSTEMS+=("composer")
-        ECO_MANIFESTS[composer]="composer.json"
-        [ -f "composer.lock" ] && ECO_LOCKFILES[composer]="composer.lock"
-    fi
+    [ -f "Gemfile" ] && ECOSYSTEMS+=("gem") || true
+    [ -f "go.mod" ] && ECOSYSTEMS+=("go") || true
+    [ -f "Cargo.toml" ] && ECOSYSTEMS+=("cargo") || true
+    [ -f "composer.json" ] && ECOSYSTEMS+=("composer") || true
 }
 
 detect_ecosystems
@@ -150,140 +103,123 @@ check_version_pinning() {
     for eco in "${ECOSYSTEMS[@]}"; do
         case "$eco" in
             npm)
-                local manifest="${ECO_MANIFESTS[$eco]}"
-                [ -z "$manifest" ] && continue
-
-                local unpinned=""
-                if command -v jq >/dev/null 2>&1; then
-                    unpinned=$(jq -r '
-                        [(.dependencies // {}), (.devDependencies // {})]
-                        | add // {}
-                        | to_entries[]
-                        | select(.value | test("^[\\^~]"))
-                        | "        \(.key): \(.value)"
-                    ' "$manifest" 2>/dev/null || true)
-                else
-                    while read -r pkg ver; do
-                        [ -z "$pkg" ] && continue
-                        if [[ "$ver" =~ ^[\^~] ]]; then
-                            unpinned="${unpinned:+$unpinned$'\n'}        $pkg: $ver"
-                        fi
-                    done <<< "$(npm_deps_grep "$manifest")"
-                fi
-
-                if [ -n "$unpinned" ]; then
-                    echo "        ⚠️  npm: unpinned versions in $manifest:"
-                    echo "$unpinned"
-                    echo "        Fix: Add save-exact=true to .npmrc"
-                    found_unpinned=true
-                fi
-                # Check .npmrc for save-exact
-                if [ -f ".npmrc" ]; then
-                    if ! grep -q "save-exact=true" .npmrc 2>/dev/null; then
-                        echo "        ⚠️  npm: .npmrc exists but missing save-exact=true"
+                if [ -f "package.json" ]; then
+                    local unpinned=""
+                    if command -v jq >/dev/null 2>&1; then
+                        unpinned=$(jq -r '
+                            [(.dependencies // {}), (.devDependencies // {})]
+                            | add // {}
+                            | to_entries[]
+                            | select(.value | test("^[\\^~]"))
+                            | "        \(.key): \(.value)"
+                        ' package.json 2>/dev/null || true)
+                    else
+                        unpinned=$(npm_deps_grep "package.json" \
+                            | grep -E '"[\^~]' \
+                            | sed 's/^/        /' || true)
+                    fi
+                    if [ -n "$unpinned" ]; then
+                        echo "        ⚠️  npm: unpinned versions in package.json:"
+                        echo "$unpinned"
+                        echo "        Fix: Add save-exact=true to .npmrc"
                         found_unpinned=true
                     fi
-                else
-                    echo "        ⚠️  npm: no .npmrc — add save-exact=true to pin future installs"
-                    found_unpinned=true
+                    # Check .npmrc for save-exact
+                    if [ -f ".npmrc" ]; then
+                        if ! grep -q "save-exact=true" .npmrc 2>/dev/null; then
+                            echo "        ⚠️  npm: .npmrc exists but missing save-exact=true"
+                            found_unpinned=true
+                        fi
+                    else
+                        echo "        ⚠️  npm: no .npmrc — add save-exact=true to pin future installs"
+                        found_unpinned=true
+                    fi
                 fi
                 ;;
             pip)
-                for manifest in ${ECO_MANIFESTS[$eco]}; do
-                    if [[ "$manifest" == "requirements.txt" ]]; then
-                        local unpinned_pip=""
-                        local line_num=0
-                        while IFS= read -r line; do
-                            line_num=$((line_num + 1))
-                            [[ "$line" =~ ^[[:space:]]*# ]] && continue
-                            [[ -z "$line" ]] && continue
-                            # Flag lines starting with a package name but without ==
-                            if [[ "$line" =~ ^[a-zA-Z0-9._-]+ ]] && [[ ! "$line" =~ == ]]; then
-                                unpinned_pip="${unpinned_pip:+$unpinned_pip$'\n'}        $line_num:$line"
-                            fi
-                        done < "$manifest"
-
-                        if [ -n "$unpinned_pip" ]; then
-                            echo "        ⚠️  pip: unpinned versions in $manifest:"
-                            echo "$unpinned_pip"
-                            echo "        Fix: Use == for exact pinning (e.g., requests==2.31.0)"
-                            found_unpinned=true
-                        fi
-                    elif [[ "$manifest" == "pyproject.toml" ]]; then
-                        local unpinned_pyp
-                        unpinned_pyp=$(sed -n '/\[project\]/,/^\[/p; /\[tool\.poetry\.dependencies\]/,/^\[/p' "$manifest" 2>/dev/null \
-                            | grep -E '(>=|~=|\^|>)' \
-                            | grep -vE '^\s*#' \
-                            | grep -vE 'requires-python' \
-                            | sed 's/^/        /' || true)
-                        if [ -n "$unpinned_pyp" ]; then
-                            echo "        ⚠️  pip: unpinned versions in $manifest:"
-                            echo "$unpinned_pyp"
-                            found_unpinned=true
-                        fi
+                # requirements.txt: flag lines without == pinning
+                if [ -f "requirements.txt" ]; then
+                    local unpinned_pip
+                    unpinned_pip=$(grep -nE '^[a-zA-Z]' requirements.txt \
+                        | grep -vE '==' \
+                        | grep -vE '^\s*#' \
+                        | sed 's/^/        /' || true)
+                    if [ -n "$unpinned_pip" ]; then
+                        echo "        ⚠️  pip: unpinned versions in requirements.txt:"
+                        echo "$unpinned_pip"
+                        echo "        Fix: Use == for exact pinning (e.g., requests==2.31.0)"
+                        found_unpinned=true
                     fi
-                done
+                fi
+                # pyproject.toml: flag >= ~= ^ ranges in dependencies
+                if [ -f "pyproject.toml" ]; then
+                    local unpinned_pyp
+                    unpinned_pyp=$(sed -n '/\[project\]/,/^\[/p; /\[tool\.poetry\.dependencies\]/,/^\[/p' pyproject.toml 2>/dev/null \
+                        | grep -E '(>=|~=|\^|>)' \
+                        | grep -vE '^\s*#' \
+                        | grep -vE 'requires-python' \
+                        | sed 's/^/        /' || true)
+                    if [ -n "$unpinned_pyp" ]; then
+                        echo "        ⚠️  pip: unpinned versions in pyproject.toml:"
+                        echo "$unpinned_pyp"
+                        found_unpinned=true
+                    fi
+                fi
                 ;;
             gem)
-                local manifest="${ECO_MANIFESTS[$eco]}"
-                [ -z "$manifest" ] && continue
-                # Flag gems with ~> (pessimistic) or no version constraint
-                local unpinned_gem=""
-                local no_version_gem=""
-                local line_num=0
-                while IFS= read -r line; do
-                    line_num=$((line_num + 1))
-                    [[ "$line" =~ ^[[:space:]]*# ]] && continue
-                    if [[ "$line" =~ ^[[:space:]]*gem[[:space:]]+ ]]; then
-                        if [[ "$line" =~ (~>|>=|>) ]]; then
-                            unpinned_gem="${unpinned_gem:+$unpinned_gem$'\n'}        $line_num:$line"
-                        elif [[ "$line" =~ ^[[:space:]]*gem[[:space:]]+[\'\"][^\'\"]+[\'\"][[:space:]]*$ ]]; then
-                            no_version_gem="${no_version_gem:+$no_version_gem$'\n'}        $line_num:$line"
-                        fi
+                if [ -f "Gemfile" ]; then
+                    # Flag gems with ~> (pessimistic) or no version constraint
+                    local unpinned_gem
+                    unpinned_gem=$(grep -nE "^\s*gem\s+" Gemfile \
+                        | grep -E "(~>|>=|>)" \
+                        | grep -vE '^\s*#' \
+                        | sed 's/^/        /' || true)
+                    local no_version_gem
+                    no_version_gem=$(grep -nE "^\s*gem\s+['\"][^'\"]+['\"]\\s*$" Gemfile \
+                        | grep -vE '^\s*#' \
+                        | sed 's/^/        /' || true)
+                    if [ -n "$unpinned_gem" ] || [ -n "$no_version_gem" ]; then
+                        echo "        ⚠️  gem: unpinned versions in Gemfile:"
+                        [ -n "$unpinned_gem" ] && echo "$unpinned_gem"
+                        [ -n "$no_version_gem" ] && echo "$no_version_gem" && echo "        (gems with no version constraint)"
+                        found_unpinned=true
                     fi
-                done < "$manifest"
-
-                if [ -n "$unpinned_gem" ] || [ -n "$no_version_gem" ]; then
-                    echo "        ⚠️  gem: unpinned versions in $manifest:"
-                    [ -n "$unpinned_gem" ] && echo "$unpinned_gem"
-                    [ -n "$no_version_gem" ] && echo "$no_version_gem" && echo "        (gems with no version constraint)"
-                    found_unpinned=true
                 fi
                 ;;
             cargo)
-                local manifest="${ECO_MANIFESTS[$eco]}"
-                [ -z "$manifest" ] && continue
-                local unpinned_cargo
-                unpinned_cargo=$(awk '/\[(dev-)?dependencies\]/,/^\[/ { if ($0 ~ /=[[:space:]]*"[\^~]/) { print "        " $0 } }' "$manifest" 2>/dev/null || true)
-                if [ -n "$unpinned_cargo" ]; then
-                    echo "        ⚠️  cargo: unpinned versions in $manifest:"
-                    echo "$unpinned_cargo"
-                    found_unpinned=true
+                if [ -f "Cargo.toml" ]; then
+                    local unpinned_cargo
+                    unpinned_cargo=$(sed -n '/\[dependencies\]/,/^\[/p; /\[dev-dependencies\]/,/^\[/p' Cargo.toml 2>/dev/null \
+                        | grep -E '=\s*"[\^~]' \
+                        | sed 's/^/        /' || true)
+                    if [ -n "$unpinned_cargo" ]; then
+                        echo "        ⚠️  cargo: unpinned versions in Cargo.toml:"
+                        echo "$unpinned_cargo"
+                        found_unpinned=true
+                    fi
                 fi
                 ;;
             composer)
-                local manifest="${ECO_MANIFESTS[$eco]}"
-                [ -z "$manifest" ] && continue
-                local unpinned_comp=""
-                if command -v jq >/dev/null 2>&1; then
-                    unpinned_comp=$(jq -r '
-                        [(.require // {}), (."require-dev" // {})]
-                        | add // {}
-                        | to_entries[]
-                        | select(.value | test("^[\\^~]"))
-                        | "        \(.key): \(.value)"
-                    ' "$manifest" 2>/dev/null || true)
-                else
-                    while IFS= read -r line; do
-                        if [[ "$line" =~ [\^~] ]] && [[ ! "$line" =~ \"(require|require-dev)\" ]]; then
-                             unpinned_comp="${unpinned_comp:+$unpinned_comp$'\n'}        ${line#*\"}"
-                        fi
-                    done < "$manifest"
-                fi
-                if [ -n "$unpinned_comp" ]; then
-                    echo "        ⚠️  composer: unpinned versions in $manifest:"
-                    echo "$unpinned_comp"
-                    found_unpinned=true
+                if [ -f "composer.json" ]; then
+                    local unpinned_comp=""
+                    if command -v jq >/dev/null 2>&1; then
+                        unpinned_comp=$(jq -r '
+                            [(.require // {}), (."require-dev" // {})]
+                            | add // {}
+                            | to_entries[]
+                            | select(.value | test("^[\\^~]"))
+                            | "        \(.key): \(.value)"
+                        ' composer.json 2>/dev/null || true)
+                    else
+                        unpinned_comp=$(grep -E '"[\^~]' composer.json \
+                            | grep -vE '"(require|require-dev)"' \
+                            | sed 's/^/        /' || true)
+                    fi
+                    if [ -n "$unpinned_comp" ]; then
+                        echo "        ⚠️  composer: unpinned versions in composer.json:"
+                        echo "$unpinned_comp"
+                        found_unpinned=true
+                    fi
                 fi
                 ;;
             go)
@@ -312,64 +248,76 @@ check_blocklist() {
     fi
 
     local found_malicious=false
-    declare -A ECO_REGEX
-    declare -A BLOCKLIST_REASONS
 
-    # Build combined regex per ecosystem
+    # Manifest and lock files to scan per ecosystem
+    local files_to_scan=()
+    for eco in "${ECOSYSTEMS[@]}"; do
+        case "$eco" in
+            npm)
+                [ -f "package.json" ] && files_to_scan+=("npm:package.json")
+                [ -f "package-lock.json" ] && files_to_scan+=("npm:package-lock.json")
+                [ -f "yarn.lock" ] && files_to_scan+=("npm:yarn.lock")
+                [ -f "pnpm-lock.yaml" ] && files_to_scan+=("npm:pnpm-lock.yaml")
+                ;;
+            pip)
+                [ -f "requirements.txt" ] && files_to_scan+=("pip:requirements.txt")
+                [ -f "pyproject.toml" ] && files_to_scan+=("pip:pyproject.toml")
+                [ -f "Pipfile" ] && files_to_scan+=("pip:Pipfile")
+                [ -f "Pipfile.lock" ] && files_to_scan+=("pip:Pipfile.lock")
+                [ -f "poetry.lock" ] && files_to_scan+=("pip:poetry.lock")
+                [ -f "uv.lock" ] && files_to_scan+=("pip:uv.lock")
+                ;;
+            gem)
+                [ -f "Gemfile" ] && files_to_scan+=("gem:Gemfile")
+                [ -f "Gemfile.lock" ] && files_to_scan+=("gem:Gemfile.lock")
+                ;;
+            go)
+                [ -f "go.mod" ] && files_to_scan+=("go:go.mod")
+                [ -f "go.sum" ] && files_to_scan+=("go:go.sum")
+                ;;
+            cargo)
+                [ -f "Cargo.toml" ] && files_to_scan+=("cargo:Cargo.toml")
+                [ -f "Cargo.lock" ] && files_to_scan+=("cargo:Cargo.lock")
+                ;;
+            composer)
+                [ -f "composer.json" ] && files_to_scan+=("composer:composer.json")
+                [ -f "composer.lock" ] && files_to_scan+=("composer:composer.lock")
+                ;;
+        esac
+    done
+
+    # Load blocklist entries (strip comments, blank lines, trailing whitespace)
     while IFS= read -r line; do
+        # Skip comments and blank lines
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ -z "${line// /}" ]] && continue
 
+        # Parse ecosystem:package
         local entry
         entry=$(echo "$line" | awk '{print $1}')
         local eco_prefix="${entry%%:*}"
         local pkg_name="${entry#*:}"
-        local reason
-        reason=$(echo "$line" | sed 's/^[^#]*#//' | sed 's/^[[:space:]]*//')
 
-        # Store reason for later reporting
-        BLOCKLIST_REASONS["$eco_prefix:$pkg_name"]="$reason"
+        # Check each relevant file
+        for scan_entry in "${files_to_scan[@]}"; do
+            local file_eco="${scan_entry%%:*}"
+            local file_path="${scan_entry#*:}"
 
-        # Escape pkg_name for regex
-        local escaped_pkg
-        escaped_pkg=$(echo "$pkg_name" | sed 's/[^a-zA-Z0-9]/\\&/g')
-        local pattern="(^|[^a-zA-Z0-9_-])${escaped_pkg}([^a-zA-Z0-9_-]|$)"
-
-        if [ -z "${ECO_REGEX[$eco_prefix]:-}" ]; then
-            ECO_REGEX[$eco_prefix]="$pattern"
-        else
-            ECO_REGEX[$eco_prefix]="${ECO_REGEX[$eco_prefix]}|$pattern"
-        fi
-    done < "$BLOCKLIST_FILE"
-
-    for eco in "${ECOSYSTEMS[@]}"; do
-        local regex="${ECO_REGEX[$eco]:-}"
-        [ -z "$regex" ] && continue
-
-        local files="${ECO_MANIFESTS[$eco]} ${ECO_LOCKFILES[$eco]}"
-        for file in $files; do
-            [ ! -f "$file" ] && continue
-
-            # Use grep -E for the combined regex
-            local matches
-            # The regex includes boundary characters. We need to strip at most one non-identifier character from both ends.
-            # Identification characters: a-z, A-Z, 0-9, _, -, @, /, .
-            matches=$(grep -oE "$regex" "$file" | sed -E 's/^[^a-zA-Z0-9_-]//; s/[^a-zA-Z0-9_-]$//' | sort -u || true)
-
-            if [ -n "$matches" ]; then
-                while IFS= read -r pkg_name; do
-                    # Double check it is exactly one of the packages for this ecosystem
-                    if [ -n "${BLOCKLIST_REASONS["$eco:$pkg_name"]+v}" ]; then
-                        local reason="${BLOCKLIST_REASONS["$eco:$pkg_name"]}"
-                        echo "        ❌ MALICIOUS PACKAGE: $pkg_name found in $file"
-                        [ -n "$reason" ] && echo "           Reason: $reason"
-                        echo "           Remove immediately and rotate all credentials"
-                        found_malicious=true
-                    fi
-                done <<< "$matches"
+            # Only check files matching the blocklist entry's ecosystem
+            if [ "$file_eco" = "$eco_prefix" ]; then
+                # Word-boundary match to avoid substring false positives
+                # (e.g., "ctx" must not match "ctxlib" or "my-context")
+                if grep -qE "(^|[^a-zA-Z0-9_-])${pkg_name}([^a-zA-Z0-9_-]|$)" "$file_path" 2>/dev/null; then
+                    local reason
+                    reason=$(echo "$line" | sed 's/^[^#]*#//' | sed 's/^[[:space:]]*//')
+                    echo "        ❌ MALICIOUS PACKAGE: $pkg_name found in $file_path"
+                    [ -n "$reason" ] && echo "           Reason: $reason"
+                    echo "           Remove immediately and rotate all credentials"
+                    found_malicious=true
+                fi
             fi
         done
-    done
+    done < "$BLOCKLIST_FILE"
 
     if [ "$found_malicious" = true ]; then
         update_exit 2
@@ -388,47 +336,48 @@ check_lock_files() {
     local missing_lock=false
 
     for eco in "${ECOSYSTEMS[@]}"; do
-        local manifests="${ECO_MANIFESTS[$eco]}"
-        local locks="${ECO_LOCKFILES[$eco]:-}"
-
         case "$eco" in
             npm)
-                if [[ "$manifests" == *"package.json"* ]] && [ -z "$locks" ]; then
-                    echo "        ⚠️  npm: package.json exists but no lock file found"
-                    echo "           Run: npm install to generate package-lock.json"
-                    missing_lock=true
+                if [ -f "package.json" ]; then
+                    if [ ! -f "package-lock.json" ] && [ ! -f "yarn.lock" ] && [ ! -f "pnpm-lock.yaml" ]; then
+                        echo "        ⚠️  npm: package.json exists but no lock file found"
+                        echo "           Run: npm install to generate package-lock.json"
+                        missing_lock=true
+                    fi
                 fi
                 ;;
             pip)
-                if [[ "$manifests" == *"pyproject.toml"* ]] && [ -z "$locks" ]; then
-                    echo "        ⚠️  pip: pyproject.toml exists but no lock file found"
-                    echo "           Consider using poetry.lock, uv.lock, or pip-compile"
-                    missing_lock=true
+                if [ -f "pyproject.toml" ]; then
+                    if [ ! -f "poetry.lock" ] && [ ! -f "uv.lock" ] && [ ! -f "pdm.lock" ] && [ ! -f "requirements.lock" ]; then
+                        echo "        ⚠️  pip: pyproject.toml exists but no lock file found"
+                        echo "           Consider using poetry.lock, uv.lock, or pip-compile"
+                        missing_lock=true
+                    fi
                 fi
                 ;;
             gem)
-                if [[ "$manifests" == *"Gemfile"* ]] && [ -z "$locks" ]; then
+                if [ -f "Gemfile" ] && [ ! -f "Gemfile.lock" ]; then
                     echo "        ⚠️  gem: Gemfile exists but Gemfile.lock not found"
                     echo "           Run: bundle install to generate Gemfile.lock"
                     missing_lock=true
                 fi
                 ;;
             go)
-                if [[ "$manifests" == *"go.mod"* ]] && [ -z "$locks" ]; then
+                if [ -f "go.mod" ] && [ ! -f "go.sum" ]; then
                     echo "        ⚠️  go: go.mod exists but go.sum not found"
                     echo "           Run: go mod tidy"
                     missing_lock=true
                 fi
                 ;;
             cargo)
-                if [[ "$manifests" == *"Cargo.toml"* ]] && [ -z "$locks" ]; then
+                if [ -f "Cargo.toml" ] && [ ! -f "Cargo.lock" ]; then
                     echo "        ⚠️  cargo: Cargo.toml exists but Cargo.lock not found"
                     echo "           Run: cargo generate-lockfile"
                     missing_lock=true
                 fi
                 ;;
             composer)
-                if [[ "$manifests" == *"composer.json"* ]] && [ -z "$locks" ]; then
+                if [ -f "composer.json" ] && [ ! -f "composer.lock" ]; then
                     echo "        ⚠️  composer: composer.json exists but composer.lock not found"
                     echo "           Run: composer install to generate composer.lock"
                     missing_lock=true
@@ -478,13 +427,15 @@ check_age_quarantine() {
     for eco in "${ECOSYSTEMS[@]}"; do
         case "$eco" in
             npm)
-                local manifest="${ECO_MANIFESTS[$eco]}"
-                [[ "$manifest" != *"package.json"* ]] && continue
+                [ ! -f "package.json" ] && continue
                 local deps=""
                 if command -v jq >/dev/null 2>&1; then
-                    deps=$(jq -r '(.dependencies // {}) | to_entries[] | "\(.key) \(.value)"' "$manifest" 2>/dev/null || true)
+                    deps=$(jq -r '(.dependencies // {}) | to_entries[] | "\(.key) \(.value)"' package.json 2>/dev/null || true)
                 else
-                    deps=$(npm_deps_grep "$manifest")
+                    deps=$(npm_deps_grep "package.json" \
+                        | sed 's/[",]//g; s/^\s*//' \
+                        | awk -F: '{gsub(/^[ \t]+|[ \t]+$/, "", $1); gsub(/^[ \t]+|[ \t]+$/, "", $2); print $1, $2}' \
+                        || true)
                 fi
                 while IFS= read -r line; do
                     [ -z "$line" ] && continue
@@ -502,8 +453,7 @@ check_age_quarantine() {
                 done <<< "$deps"
                 ;;
             pip)
-                for manifest in ${ECO_MANIFESTS[$eco]}; do
-                    [[ "$manifest" != "requirements.txt" ]] && continue
+                if [ -f "requirements.txt" ]; then
                     while IFS= read -r line; do
                         [[ "$line" =~ ^[[:space:]]*# ]] && continue
                         [ -z "$line" ] && continue
@@ -514,19 +464,26 @@ check_age_quarantine() {
                             ver="${BASH_REMATCH[2]}"
                             check_package_age "pip" "$pkg" "$ver"
                         fi
-                    done < "$manifest"
-                done
+                    done < requirements.txt
+                fi
                 ;;
             gem)
-                local lock="${ECO_LOCKFILES[$eco]}"
-                [[ "$lock" != *"Gemfile.lock"* ]] && continue
-                # Extract pinned gems from Gemfile.lock specs section
-                local gems
-                gems=$(awk '/^  specs:/ {in_specs=1; next} in_specs && /^[^ ]/ {in_specs=0} in_specs && /^[ ]{4}[a-zA-Z]/ { gsub(/[()]/, "", $2); print $1, $2 }' "$lock" 2>/dev/null || true)
-                while read -r pkg ver; do
-                    [ -z "$pkg" ] || [ -z "$ver" ] && continue
-                    check_package_age "gem" "$pkg" "$ver"
-                done <<< "$gems"
+                if [ -f "Gemfile.lock" ]; then
+                    # Extract pinned gems from Gemfile.lock specs section
+                    local gems
+                    gems=$(sed -n '/^  specs:/,/^[^ ]/p' Gemfile.lock 2>/dev/null \
+                        | grep -E '^\s{4}[a-zA-Z]' \
+                        | sed 's/^\s*//' \
+                        | awk '{gsub(/[()]/, "", $2); print $1, $2}' || true)
+                    while IFS= read -r line; do
+                        [ -z "$line" ] && continue
+                        local pkg ver
+                        pkg=$(echo "$line" | awk '{print $1}')
+                        ver=$(echo "$line" | awk '{print $2}')
+                        [ -z "$pkg" ] || [ -z "$ver" ] && continue
+                        check_package_age "gem" "$pkg" "$ver"
+                    done <<< "$gems"
+                fi
                 ;;
         esac
     done

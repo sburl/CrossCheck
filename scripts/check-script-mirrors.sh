@@ -39,18 +39,18 @@ is_exec_proxy() {
 # Collect files
 ROOT_FILES=()
 while IFS= read -r file; do
-  ROOT_FILES+=("$file")
-done < <(find "$ROOT_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f -exec basename {} \; | sort)
+  ROOT_FILES+=("${file##*/}")
+done < <(find "$ROOT_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f | sort)
 
 CODEX_FILES=()
 while IFS= read -r file; do
-  CODEX_FILES+=("$file")
-done < <(find "$CODEX_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f -exec basename {} \; | sort)
+  CODEX_FILES+=("${file##*/}")
+done < <(find "$CODEX_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f | sort)
 
 CLAUDE_FILES=()
 while IFS= read -r file; do
-  CLAUDE_FILES+=("$file")
-done < <(find "$CLAUDE_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f -exec basename {} \; | sort)
+  CLAUDE_FILES+=("${file##*/}")
+done < <(find "$CLAUDE_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f | sort)
 
 printf 'Root scripts:   %d\n' "${#ROOT_FILES[@]}"
 printf 'Codex scripts:  %d\n' "${#CODEX_FILES[@]}"

@@ -10,6 +10,7 @@ CROSSCHECK_DIR="${CROSSCHECK_DIR:-$SCRIPT_DIR}"
 # Parse flags
 YES=false
 INSTALL_MODE=""
+HOOK_NAMES=(pre-commit commit-msg post-commit post-checkout pre-push post-merge)
 for arg in "$@"; do
     case $arg in
         --yes|-y) YES=true ;;
@@ -58,7 +59,7 @@ if [ "$INSTALL_MODE" = "global" ]; then
 
     # Copy hooks
     CROSSCHECK_HOOKS="$CROSSCHECK_DIR/git-hooks"
-    for hook in pre-commit commit-msg post-commit post-checkout pre-push post-merge; do
+    for hook in "${HOOK_NAMES[@]}"; do
         if [ -f "$CROSSCHECK_HOOKS/$hook" ]; then
             # Remove symlink first if it exists (prevent overwriting target)
             if [ -L "$HOOKS_DIR/$hook" ]; then
@@ -112,9 +113,18 @@ elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         fi
     fi
 
+    # Pre-filter available hooks to avoid repeated filesystem checks
+    available_hooks=""
+    for hook in "${HOOK_NAMES[@]}"; do
+        if [ -f "$CROSSCHECK_HOOKS/$hook" ]; then
+            available_hooks="$available_hooks $hook"
+        fi
+    done
+
     # Check for existing hooks and offer to backup
     existing_hooks=""
-    for hook in pre-commit commit-msg post-commit post-checkout pre-push post-merge; do
+    # shellcheck disable=SC2086
+    for hook in $available_hooks; do
         if [ -f "$HOOKS_DIR/$hook" ] && [ ! -L "$HOOKS_DIR/$hook" ]; then
             existing_hooks="$existing_hooks $hook"
         fi
@@ -135,16 +145,15 @@ elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     fi
 
     # Install hooks
-    for hook in pre-commit commit-msg post-commit post-checkout pre-push post-merge; do
-        if [ -f "$CROSSCHECK_HOOKS/$hook" ]; then
-            # Remove symlink first if it exists (prevent overwriting target)
-            if [ -L "$HOOKS_DIR/$hook" ]; then
-                rm "$HOOKS_DIR/$hook"
-            fi
-            cp "$CROSSCHECK_HOOKS/$hook" "$HOOKS_DIR/$hook"
-            chmod +x "$HOOKS_DIR/$hook"
-            echo "  ✅ Installed $hook"
+    # shellcheck disable=SC2086
+    for hook in $available_hooks; do
+        # Remove symlink first if it exists (prevent overwriting target)
+        if [ -L "$HOOKS_DIR/$hook" ]; then
+            rm "$HOOKS_DIR/$hook"
         fi
+        cp "$CROSSCHECK_HOOKS/$hook" "$HOOKS_DIR/$hook"
+        chmod +x "$HOOKS_DIR/$hook"
+        echo "  ✅ Installed $hook"
     done
 
     echo ""
@@ -153,7 +162,8 @@ elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo ""
     echo "To disable a hook: chmod -x $HOOKS_DIR/<hook-name>"
     echo "Note: --no-verify is blocked by permissions (policy enforcement)"
-    echo "To remove: rm $HOOKS_DIR/{pre-commit,commit-msg,post-commit,post-checkout,pre-push,post-merge}"
+    # shellcheck disable=SC2016
+    echo 'To remove: rm '"$HOOKS_DIR"'/{'"$(IFS=,; echo "${HOOK_NAMES[*]}")"'}'
 
 else
     echo "❌ Error: Not in a git repository and --global flag not provided"

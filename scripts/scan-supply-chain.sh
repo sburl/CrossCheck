@@ -101,10 +101,8 @@ parse_iso_date() {
 npm_deps_grep() {
     local file="$1"
     # Extract dependencies and devDependencies blocks, then grab "name": "version" pairs
-    sed -n '/"dependencies"/,/}/p; /"devDependencies"/,/}/p' "$file" 2>/dev/null \
-        | grep -E '"[^"]+"\s*:\s*"[^"]+"' \
-        | grep -v '"dependencies"\|"devDependencies"' \
-        || true
+    # One-pass sed to extract name and version
+    sed -n -E '/"(dependencies|devDependencies)"/,/}/ s/^[[:space:]]*"([^"]+)"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1 \2/p' "$file" 2>/dev/null || true
 }
 
 # ============================================================
@@ -641,19 +639,17 @@ check_ci_config() {
 
     # GitHub Actions: check for bare install commands
     if [ -d ".github/workflows" ]; then
-        local workflow_files
-        workflow_files=$(find .github/workflows -name "*.yml" -o -name "*.yaml" 2>/dev/null || true)
-        for wf in $workflow_files; do
-            [ -f "$wf" ] || continue
-            # npm install/ci without --ignore-scripts
+        # Find all workflow files and check for bare npm install/ci in one pass where possible
+        while IFS= read -r wf; do
+            # npm install/ci without --ignore-scripts, skipping comments
             local bare_npm
-            bare_npm=$(grep -nE '(npm install|npm ci)' "$wf" | grep -v '\-\-ignore-scripts' | grep -v '^\s*#' || true)
+            bare_npm=$(awk '/(npm install|npm ci)/ && !/--ignore-scripts/ && !/^[[:space:]]*#/ { print NR ":" $0 }' "$wf" 2>/dev/null)
             if [ -n "$bare_npm" ]; then
                 echo "        ⚠️  $wf: npm install without --ignore-scripts"
                 echo "$bare_npm" | head -3 | sed 's/^/           /'
                 found_issue=true
             fi
-        done
+        done < <(find .github/workflows -type f \( -name "*.yml" -o -name "*.yaml" \) 2>/dev/null)
     fi
 
     if [ "$found_issue" = true ]; then

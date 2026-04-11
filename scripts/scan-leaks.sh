@@ -9,6 +9,7 @@
 #   ./scan-leaks.sh --all        # Everything
 #   ./scan-leaks.sh --soft-fail   # Exit 0 even if secrets found
 
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 set -e
 
 SCAN_HISTORY=false
@@ -23,6 +24,7 @@ for arg in "$@"; do
         --soft-fail) SOFT_FAIL=true ;;
     esac
 done
+fi
 
 # Provider-specific patterns (high confidence, never false positives)
 PATTERNS=(
@@ -94,6 +96,7 @@ filter_false_positives() {
     done
 }
 
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 FOUND=0
 
 echo "🔒 Secret Scanner"
@@ -306,4 +309,5 @@ echo "━━━━━━━━━━━━━━━━━━"
 echo "🔒 Scan complete"
 if [ "$SOFT_FAIL" = false ] && [ "$FOUND" -gt 0 ]; then
     exit 1
+fi
 fi

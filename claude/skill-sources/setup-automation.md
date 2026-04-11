@@ -121,7 +121,7 @@ if [ ! -f "do-work/README.md" ]; then
 # Task Queue
 
 Drop .md files here for the agent to process with /do-work.
-Numbers 001-099 are for humans. 100+ are for agents.
+Format: {priority}-{id}-{slug}.md (priority 0-4, ID 001-499 human, 500+ agent).
 See /do-work skill for full details.
 DOWORK
 fi

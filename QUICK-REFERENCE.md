@@ -30,6 +30,7 @@ When user requests these tasks, invoke the corresponding skill:
 | "show worktrees" | `/list-worktrees` | List active worktrees |
 | "cleanup worktrees" | `/cleanup-worktrees` | Remove merged worktrees |
 | "delete branches" | `/cleanup-branches` | Safe batch deletion |
+| "branch hygiene", "remote branch cleanup" | `scripts/report_branch_hygiene.py` | Classify remote branches into keep/review/delete |
 | "cleanup stashes", "review stashes" | `/cleanup-stashes` | Review and drop orphaned/stale stashes |
 | "full cleanup", "cleanup everything" | `/cleanup-all` | Worktrees + branches + stashes in sequence |
 | Modified .md file | `/doc-timestamp` | Update timestamps |
@@ -280,6 +281,7 @@ mv old-file.js garbage/
 | `/list-worktrees` | Check active worktrees | Shows all worktrees with status |
 | `/cleanup-worktrees` | Remove old worktrees | Deletes merged/abandoned worktrees |
 | `/cleanup-branches` | Delete old branches | Generates batch script for safe branch deletion |
+| `scripts/report_branch_hygiene.py` | Audit remote branches | Classifies remote branches, optionally deletes safe merged ones |
 | `/cleanup-stashes` | Review stashes | Flags orphaned/superseded/stale stashes, generates drop script |
 | `/cleanup-all` | Full git cleanup | Chains worktrees → branches → stashes with combined summary |
 | `/commit-smart` | User wants commit | Creates good commit message, reviews changes |

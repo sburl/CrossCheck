@@ -212,6 +212,24 @@ jobs:
 
           echo "✅ All markdown files have proper timestamps"
 
+  branch-hygiene-smoke:
+    name: Branch Hygiene Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Fetch full remote branch set
+        run: git fetch origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Smoke branch hygiene report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/report_branch_hygiene.py --repo "${GITHUB_REPOSITORY}" --json >/tmp/branch-hygiene.json
+          test -s /tmp/branch-hygiene.json
+
   mirror-drift:
     name: Mirror Drift Check
     runs-on: ubuntu-latest

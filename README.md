@@ -250,6 +250,8 @@ CrossCheck uses a **single source of truth** pattern:
 5. Go to **Settings** -> **General** -> **Pull Requests**
 6. Enable **"Automatically delete head branches"**
 
+CrossCheck also ships a reusable branch-hygiene workflow and report helper. See [docs/branch-hygiene.md](docs/branch-hygiene.md).
+
 Verify it works:
 
 ```bash
@@ -280,6 +282,8 @@ Verify it works:
 6. Click **"Create ruleset"**
 7. Go to **Settings** -> **General** -> **Pull Requests**
 8. Enable **"Automatically delete head branches"**
+
+CrossCheck also ships a reusable branch-hygiene workflow and report helper. See [docs/branch-hygiene.md](docs/branch-hygiene.md).
 
 ### Verify Installation
 

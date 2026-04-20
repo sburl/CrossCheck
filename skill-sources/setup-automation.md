@@ -55,6 +55,7 @@ When this skill is invoked, do the following:
 
 ### GitHub Actions (CI/CD)
 - **PR checks**: Documentation timestamp verification
+- **Branch hygiene**: Scheduled remote branch audit with optional safe merged-branch deletion
 
 ### Repository Files
 - `$(git rev-parse --git-common-dir)/hooks-pr-counter`: PR counter (managed by post-merge hook)
@@ -86,9 +87,12 @@ mkdir -p .github/workflows
 CROSSCHECK_DIR="${CROSSCHECK_DIR:-$HOME/.crosscheck}"
 cp "$CROSSCHECK_DIR/.github/workflows/quality-gates.yml" .github/workflows/quality-gates.yml
 
+# Copy branch hygiene workflow from CrossCheck
+cp "$CROSSCHECK_DIR/.github/workflows/branch-hygiene.yml" .github/workflows/branch-hygiene.yml
+
 # Commit and push
-git add .github/workflows/quality-gates.yml
-git commit -m "feat: add quality gates CI workflow"
+git add .github/workflows/quality-gates.yml .github/workflows/branch-hygiene.yml
+git commit -m "feat: add quality and branch hygiene workflows"
 git push
 ```
 
@@ -176,6 +180,9 @@ if [ ! -f ".github/rulesets/protect-main.json" ]; then
     cp "$CROSSCHECK_DIR/.github/rulesets/protect-main.json" .github/rulesets/protect-main.json
     echo "  Import .github/rulesets/protect-main.json via GitHub Settings > Rules > Rulesets"
 fi
+
+echo "  Also enable auto-delete head branches:"
+echo "    gh api --method PATCH repos/\$(gh repo view --json nameWithOwner -q .nameWithOwner) -f delete_branch_on_merge=true"
 
 git add .github/
 git commit -m "chore: add GitHub config (CODEOWNERS, dependabot, branch protection)"

@@ -1,0 +1,124 @@
+name: Branch Hygiene
+
+on:
+  workflow_call:
+    inputs:
+      stale_days:
+        required: false
+        type: string
+        default: "30"
+      delete_merged:
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      stale_days:
+        description: "Flag unique no-PR branches older than this many days as stale"
+        required: false
+        default: "30"
+        type: string
+      delete_merged:
+        description: "Delete safe merged remote branches after generating the report"
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "17 12 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: branch-hygiene-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out caller repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Fetch full remote branch set
+        run: git fetch origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Check out CrossCheck helper scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: sburl/CrossCheck
+          path: .crosscheck
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate branch hygiene report
+        shell: bash
+        env:
+          STALE_DAYS: ${{ inputs.stale_days }}
+        run: |
+          set -euo pipefail
+          stale_days="${STALE_DAYS:-30}"
+
+          python3 .crosscheck/scripts/report_branch_hygiene.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --stale-days "$stale_days" \
+            > branch-hygiene-report.txt
+
+          python3 .crosscheck/scripts/report_branch_hygiene.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --stale-days "$stale_days" \
+            --json \
+            > branch-hygiene-report.json
+
+      - name: Delete safe merged branches
+        if: inputs.delete_merged
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .crosscheck/scripts/report_branch_hygiene.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --delete-merged \
+            > branch-hygiene-delete.json
+
+      - name: Append workflow summary
+        if: always()
+        shell: bash
+        env:
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mode="report-only"
+          if [[ -f branch-hygiene-delete.json ]]; then
+            mode="delete-merged"
+          fi
+
+          {
+            echo "## Branch hygiene"
+            echo
+            echo "- Run: \`$RUN_URL\`"
+            echo "- Mode: \`$mode\`"
+            echo
+            echo '```text'
+            if [[ -f branch-hygiene-report.txt ]]; then
+              cat branch-hygiene-report.txt
+            else
+              echo "(report missing)"
+            fi
+            echo '```'
+            if [[ -f branch-hygiene-delete.json ]]; then
+              echo
+              echo '```json'
+              cat branch-hygiene-delete.json
+              echo
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

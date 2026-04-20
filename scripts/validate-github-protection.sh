@@ -95,6 +95,16 @@ echo ""
 # Check each required setting
 ISSUES=0
 
+# Check: Auto-delete head branches on merge
+DELETE_BRANCH_ON_MERGE=$(gh api "repos/$OWNER/$REPO" --jq '.delete_branch_on_merge')
+if [ "$DELETE_BRANCH_ON_MERGE" = "true" ]; then
+    echo "✅ Auto-delete head branches on merge enabled"
+else
+    echo "⚠️  WARNING: Auto-delete head branches on merge is disabled"
+    echo "   Enable with: gh api --method PATCH repos/$OWNER/$REPO -f delete_branch_on_merge=true"
+    ISSUES=$((ISSUES + 1))
+fi
+
 # Check: Ruleset is enabled
 ENFORCEMENT=$(echo "$RULESET" | jq -r '.enforcement')
 if [ "$ENFORCEMENT" = "active" ]; then

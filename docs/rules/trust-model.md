@@ -46,20 +46,10 @@ These are enforced by deny rules in `settings.json` (`gh*--admin*`, `*--admin*`,
 
 Every change:
 
-1. code + tests together
-2. question assumptions
-3. run tests
-4. pass = continue
-
-### intent sanity check (non-blocking, human-facing)
-
-for any task that could sprawl (multi-file refactors, new automation, new recurring processes), add a quick user-facing checkpoint:
-
-- “why am i working on this?”
-- “what outcome would make this a win?”
-- “what would make me stop?”
-
-this is not a security gate. it’s a drift-prevention guardrail so we don’t build elaborate machinery for a mis-specified goal.
+1. Code + tests together
+2. Question assumptions
+3. Run tests
+4. Pass = continue
 
 **Unfamiliar behavior?** Run tests to find out, don't assume.
 

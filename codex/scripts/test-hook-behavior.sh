@@ -572,8 +572,8 @@ echo ""
 echo "📋 Category: Post-merge PR counter and waterfall"
 echo ""
 
-setup_test_repo_for_merge() {
-    local name="$1"
+test_postmerge_pr_counter_incremented() {
+    local name="postmerge-counter"
     TEST_DIR="/tmp/hook-behavior-test-$name-$$"
     rm -rf "$TEST_DIR" 2>/dev/null || true
     mkdir -p "$TEST_DIR"
@@ -591,10 +591,6 @@ setup_test_repo_for_merge() {
     echo "initial" > README.md
     git add README.md
     git commit -m "chore: initial commit" -q --no-verify
-}
-
-test_postmerge_pr_counter_incremented() {
-    setup_test_repo_for_merge "postmerge-counter"
 
     # Create and commit on feature branch
     git checkout -q -b feat/merge-test
@@ -618,7 +614,24 @@ test_postmerge_pr_counter_incremented() {
 }
 
 test_postmerge_waterfall_reminder() {
-    setup_test_repo_for_merge "postmerge-waterfall"
+    local name="postmerge-waterfall"
+    TEST_DIR="/tmp/hook-behavior-test-$name-$$"
+    rm -rf "$TEST_DIR" 2>/dev/null || true
+    mkdir -p "$TEST_DIR"
+    cd "$TEST_DIR"
+    git init -q
+    git symbolic-ref HEAD refs/heads/main
+    git config user.email "test@test.com"
+    git config user.name "Test"
+
+    mkdir -p .git/hooks
+    cp "$CROSSCHECK_DIR/git-hooks/post-merge" ".git/hooks/post-merge"
+    chmod +x ".git/hooks/post-merge"
+
+    # Initial commit on main
+    echo "initial" > README.md
+    git add README.md
+    git commit -m "chore: initial commit" -q --no-verify
 
     # Pre-set PR counter to 2 so next merge triggers reminder at 3
     echo "2" > ".git/hooks-pr-counter"

@@ -54,7 +54,7 @@
 - **Rule-set automation**: unvalidated payloads can over-privilege repositories if config files become malformed.
 
 ### Controls already present
-- Nightly `security-gates-nightly.yml` with `scan-leaks.sh --all`.
+- Nightly `security-gates-nightly.yml` with `scan-secrets.sh --all`.
 - `quality-gates` split avoids long-running heavy checks on PR path.
 - Script mirror audit in nightly CI.
 - Mirror script now allows explicit Claude-only exceptions.

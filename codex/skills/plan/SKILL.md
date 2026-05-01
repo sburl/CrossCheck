@@ -1,13 +1,10 @@
 ---
 name: plan
-description: |
-  Enter plan mode for complex tasks (pour energy into the plan for 1-shot implementation).
-  Supports --scope (scope review with 4 modes and 10-section grid) and --arch (architecture
-  review with diagrams, test matrix, and failure mode analysis).
+description: Enter plan mode for complex tasks (pour energy into the plan for 1-shot implementation)
 ---
 
 **Created:** 2026-02-02-12-00
-**Last Updated:** 2026-03-20-00-00
+**Last Updated:** 2026-02-11-20-00
 
 # Plan Mode - Design Before Implementation
 
@@ -76,15 +73,12 @@ Automatically runs `EnterPlanMode` tool, which:
 
 **Plan should include:**
 
-1. **Intent** - Why we're doing this (the problem, not the feature)
-2. **Success criteria** - Observable, measurable definition of done
-3. **Key assumptions** - What we're taking as true that could be wrong
-4. **Requirements** - What we're building (explicit, verbose)
-5. **Approach** - How we'll build it (step-by-step)
-6. **Files to change** - Specific files and why
-7. **Tests needed** - How we'll verify it works
-8. **Edge cases** - What could go wrong
-9. **Alternatives considered** - Why we chose this approach
+1. **Requirements** - What we're building (explicit, verbose)
+2. **Approach** - How we'll build it (step-by-step)
+3. **Files to change** - Specific files and why
+4. **Tests needed** - How we'll verify it works
+5. **Edge cases** - What could go wrong
+6. **Alternatives considered** - Why we chose this approach
 
 ### Step 4: Exit Plan Mode
 
@@ -104,24 +98,6 @@ With detailed plan:
 - Fewer iterations needed
 - Less back-and-forth
 - Higher quality first draft
-
-### Step 6: Verify Against Intent
-
-Before submitting a PR, check the implementation against the plan's **Intent** and **Success Criteria** — not just whether tests pass, but whether the output actually achieves the goal.
-
-**The 80% rule:**
-
-- **≥ 80% match** → proceed with `/submit-pr`
-- **< 80% match** → do not submit. Identify *weaknesses in the intent* (not just bugs), re-enter `/plan`, update the intent, trash the current work, and re-implement from the revised plan.
-
-The failure mode this catches is different from test failures. Tests verify correctness. This step verifies *alignment* — the code can be technically correct and still miss the point.
-
-**Ask:**
-1. Does the output address the Intent stated in the plan?
-2. Are each of the Success Criteria met?
-3. If something is missing, is it a gap in the *implementation* or a gap in the *intent*?
-
-If the answer to #3 is "the intent was unclear", update the plan before re-running — not just the code.
 
 ## Example: Building Auth System
 
@@ -383,18 +359,6 @@ Save plans as files for reference:
 **Created:** 2026-02-02-12-00
 **Last Updated:** 2026-02-02-14-30
 
-## Intent
-[Why we're doing this — the problem being solved, not the feature list.
-This anchors later evaluation to what we actually intended, not hindsight.]
-
-## Success Criteria
-- [ ] Criterion 1: observable, measurable outcome
-- [ ] Criterion 2: what "done" looks like from the user's perspective
-
-## Key Assumptions
-- Assumption 1: [what we're taking as true that could be wrong]
-- Assumption 2:
-
 ## Requirements
 [What we're building - explicit, verbose]
 
@@ -458,133 +422,9 @@ to design a comprehensive approach.
 
 > **When stuck:** "The moment something goes sideways, they jump to plan mode, write a 1-pager on what went wrong, and ask Codex to propose 3 alternative approaches."
 
-## Scope Review Mode (`/plan --scope`)
-
-*Inspired by [gstack plan-ceo-review](https://github.com/garrytan/gstack).*
-
-Use when questioning scope, ambition, or direction of a plan. Helps decide whether to
-expand, hold, or reduce scope before implementation.
-
-### Step 1: Choose Scope Mode
-
-Ask the user via AskUserQuestion:
-
-> How should I review scope for this plan?
->
-> - **Expansion** — Dream big. What's the 10-star version? Where could this be more ambitious?
-> - **Selective Expansion** — Hold current scope but cherry-pick 1-2 high-value expansions
-> - **Hold Scope** — Maximum rigor on current scope. No additions, find what to cut.
-> - **Reduction** — Strip to absolute essentials. What's the smallest thing worth shipping?
-
-### Step 2: 10-Section Review Grid
-
-Run each section against the current plan. Be specific — cite plan sections, not generalities.
-
-| # | Dimension | Question |
-|---|-----------|----------|
-| 1 | Problem framing | Is this the right problem? Could a different framing yield something better? |
-| 2 | User value | Does the end user actually care about this? What's the evidence? |
-| 3 | Scope | Too big? Too small? Right-sized for the chosen scope mode? |
-| 4 | Ambition | Could this be thinking bigger? (Expansion mode) Or is it overreaching? (Reduction mode) |
-| 5 | Dependencies | What needs to exist first? Are any missing from the plan? |
-| 6 | Risks | What could kill this? Technical, product, or organizational risks? |
-| 7 | Alternatives | What else could solve the same problem with less effort or more impact? |
-| 8 | Effort/impact | Is the ratio favorable? What's the highest-leverage subset? |
-| 9 | Integration | How does this fit with existing code, systems, and workflows? |
-| 10 | Success criteria | How do we know it worked? Are the criteria measurable and observable? |
-
-### Step 3: Output
-
-```
-SCOPE REVIEW: [Expansion/Selective Expansion/Hold Scope/Reduction]
-
-[For each dimension with findings:]
-  #N [Dimension]: [Finding]
-    Recommendation: [specific action]
-
-SUMMARY:
-  Expand: [list items to add, if any]
-  Cut: [list items to remove, if any]
-  Keep: [list items that are right-sized]
-  Verdict: [1-sentence recommendation]
-```
-
-Present via AskUserQuestion. Update the plan based on user decisions.
-
----
-
-## Architecture Review Mode (`/plan --arch`)
-
-*Inspired by [gstack plan-eng-review](https://github.com/garrytan/gstack).*
-
-Use for technical deep-dive on a plan's architecture. Produces diagrams, test matrices,
-and failure mode analysis.
-
-### Data Flow Diagram
-
-Draw an ASCII diagram showing how data moves through the system:
-
-```
-User Input → API Handler → Validation → Service Layer → Database
-                                ↓
-                          Error Response
-```
-
-Include: entry points, transformations, storage, external calls, error paths.
-
-### State Machine (if applicable)
-
-If the feature involves state transitions (e.g., order status, auth flow, job processing),
-draw the state machine:
-
-```
-[idle] --start--> [running] --complete--> [done]
-                      |
-                    --fail--> [error] --retry--> [running]
-```
-
-Include: all states, transitions, guards/conditions, terminal states.
-
-### Test Matrix
-
-| Layer | What to Test | How | Priority |
-|-------|-------------|-----|----------|
-| Unit | Individual functions, edge cases | Jest/pytest/etc. | High |
-| Integration | Service interactions, DB queries | Test DB, mocked externals | High |
-| E2E | Full user flows | Playwright/Cypress or CLI tests | Medium |
-| Contract | API shape, response formats | Schema validation | Medium |
-
-For each row, list specific test cases relevant to the plan.
-
-### Failure Mode Analysis
-
-| Failure | Detection | Impact | Recovery |
-|---------|-----------|--------|----------|
-| [What breaks] | [How we know] | [Severity: Low/Med/High] | [What happens / how to fix] |
-
-Cover at minimum: network failures, invalid input, concurrent access, resource exhaustion,
-dependency unavailability.
-
-### Security Concerns
-
-Scan the plan for:
-- User input that reaches DB queries, shell commands, or file paths
-- Authentication/authorization gaps
-- Secrets handling (API keys, tokens, credentials)
-- Trust boundaries (LLM output, external API responses, user-supplied data)
-
-### Output
-
-Present the full architecture review as a single document. Ask via AskUserQuestion:
-- A) Approve architecture — proceed with implementation
-- B) Revise — specify concerns (loop back to update plan)
-
----
-
 ## Related Commands
 
 - `CODEX.md` - Global workflow (auto-loaded, includes planning guidance)
-- `/think` - Problem framing before planning (use before `/plan`)
 - `/submit-pr` - After implementation (should reference plan)
 - Create worktree for planning: `/create-worktree plan-feature-name`
 
@@ -600,6 +440,5 @@ When you run `/plan`:
 6. Get user approval
 7. `ExitPlanMode` when ready
 8. Proceed with 1-shot implementation
-9. **Verify against intent** — ≥80% match to Success Criteria → `/submit-pr`; <80% → document weaknesses, re-enter `/plan`, trash work, re-implement
 
 **Result:** Higher quality, fewer iterations, clearer thinking.

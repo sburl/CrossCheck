@@ -131,18 +131,11 @@ Codex: Uses Task(coach)
 
 | Agent | Why Kept | Alternative |
 |-------|----------|-------------|
-| **backend-architect** | Backend system design expertise | General-purpose can code, but lacks architectural focus |
-| **devops-automator** | Infrastructure and CI/CD expertise | General-purpose can script, but lacks DevOps patterns |
-| **frontend-developer** | Modern frontend framework expertise | General-purpose can code UI, but lacks framework depth |
 | **rapid-prototyper** | 6-day sprint patterns, MVP expertise | General-purpose can code, but lacks rapid iteration focus |
 | **test-writer-fixer** | Test-first development patterns | General-purpose can test, but lacks TDD workflow |
 | **ui-designer** | Design systems, component patterns | General-purpose can code UI, but lacks design expertise |
 | **whimsy-injector** | UX delight, playful moments | No general-purpose equivalent |
-| **sprint-prioritizer** | Task breakdown and prioritization | General-purpose lacks product management focus |
-| **project-shipper** | Release management and shipping | General-purpose lacks delivery focus |
-| **api-tester** | API validation patterns | General-purpose can test, but lacks API depth |
 | **tool-evaluator** | Tech stack decisions, tool comparison | No general-purpose equivalent |
-| **studio-coach** | Performance coaching | No general-purpose equivalent |
 | **coach** | Strategic planning, agent coordination | No general-purpose equivalent |
 | **codex_critic** | Critical analysis, risk identification | No general-purpose equivalent |
 

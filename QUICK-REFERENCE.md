@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-03-20-00-00
+**Last Updated:** 2026-02-26-00-00
 
 Complete reference tables for daily workflow.
 
@@ -41,19 +41,6 @@ When user requests these tasks, invoke the corresponding skill:
 | "test webapp", "browser test", "screenshot" | `/webapp-test` | Automated Playwright-based web app testing |
 | "setup plugins", "install plugins" | `/setup-plugins` | Opinionated plugin selection with CrossCheck overlap awareness |
 | "update crosscheck", "update skills" | `/update-crosscheck` | Pull latest from main, sync skills and agents |
-| "bug audit", "failure modes", "find bugs" | `/bug-review` | Systematic failure mode analysis (10 categories) |
-| "before pr", "pre-push check" | `/pre-pr-check` | Comprehensive pre-PR checklist (tests, lint, timestamps) |
-| "tech debt", "find debt", "refactor check" | `/techdebt` | Find silenced errors, debug code, TODO comments |
-| "save skill", "record discovery" | `/capture-skill` | Distill session discoveries into reusable skills |
-| "session memory", "repo notes", "napkin" | `/napkin` | Per-repo behavioral memory in `.claude/napkin.md` |
-| "deploy", "push to production", "ship it" | `/deploy` | Auto-detect platform, deploy, tail logs, report URL |
-| "run locally", "start server", "start the app" | `/run-local` | Auto-detect project type, install deps, start dev server |
-| "handoff", "session summary", "write handoff" | `/handoff` | Snapshot state for session-to-session or agent-to-agent continuity |
-| "publish", "make public", "open source" | `/publish-repo` | Security scan, clean dead code, verify docs, push to public remote |
-| "brainstorm", "think through", "is this worth building" | `/think` | Problem framing before code (startup/builder modes, design doc) |
-| "debug", "why is this broken", "root cause" | `/investigate` | Systematic debugging (root cause first, 3-strike escalation) |
-| "scope review", "is this too big" | `/plan --scope` | 4-mode scope review with 10-section grid |
-| "architecture review", "tech deep-dive" | `/plan --arch` | Diagrams, test matrix, failure mode analysis |
 
 ---
 
@@ -88,9 +75,6 @@ When user requests these tasks, invoke the corresponding skill:
 | **Parallel work needed** | INVOKE `/create-worktree` |
 | **Autonomous 30+ min** | Pre-flight checks + TODO.md scratchpad every 15min |
 | **Blocker >10min** | Document in TODO.md scratchpad, try alternative |
-| **Deploy** | INVOKE `/deploy` (auto-detects Railway/Vercel/GitHub Pages) |
-| **Run locally** | INVOKE `/run-local` (auto-detects project type, starts server) |
-| **End of session** | INVOKE `/handoff` if switching agents or pausing work |
 | **Copy-paste from UI** | Find CLI/API first (`vercel`, `stripe`, etc) |
 | **Code execution** | Explain first, repo only |
 | **Commits** | Via `/commit-smart` only |
@@ -291,17 +275,6 @@ mv old-file.js garbage/
 | `/plan` | Complex task (>3 files) | Enters plan mode, designs before implementation |
 | `/do-work` | Process task queue | Reads do-work/ folder, executes tasks autonomously |
 | `/doc-timestamp` | Modified .md file | Updates "Last Updated:" timestamp |
-| `/capture-skill` | Non-obvious discovery | Distills session learnings into reusable skill files |
-| `/napkin` | Repo-specific corrections | Per-repo behavioral memory in `.claude/napkin.md` |
-
-### Operations
-
-| Skill | When to Use | What It Does |
-|-------|-------------|--------------|
-| `/deploy` | Deploy to production | Auto-detects Railway/Vercel/GitHub Pages, deploys, tails logs, reports URL |
-| `/run-local` | Start dev server | Auto-detects project type, installs deps, starts server, reports URL |
-| `/handoff` | End of session or agent switch | Snapshots branch, commits, PRs, test status, writes do-work/handoff.md |
-| `/publish-repo` | Make repo public | Security scan, dead code cleanup, docs check, LICENSE verify, push |
 
 ### Analytics
 
@@ -317,7 +290,6 @@ mv old-file.js garbage/
 | `/setup-statusline` | Customize status bar | Configures Claude Code statusline |
 | `/setup-plugins` | Install Claude Code plugins | Registers marketplaces, recommends plugins by tier, detects stack, warns about overlaps |
 | `/garbage-collect` | Review deleted files | Shows garbage/ folder contents for cleanup |
-| `/update-crosscheck` | Update CrossCheck | Pulls latest from main, syncs skills and agents |
 
 ---
 

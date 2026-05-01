@@ -2,13 +2,13 @@
 # Fix missing timestamps in markdown files using git history
 # Called by pre-push hook when .md files are missing Created/Last Updated metadata
 
+set -e
+
 # Clean up temp files on exit/interrupt
 TMPFILES=()
 cleanup_tmpfiles() { for f in "${TMPFILES[@]}"; do rm -f "$f"; done; }
-
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-set -e
 trap cleanup_tmpfiles EXIT
+
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
@@ -18,7 +18,6 @@ errors=0
 
 echo "🔧 Fixing missing timestamps in markdown files..."
 echo ""
-fi
 
 # inject_after_line: insert text after a specific line number (handles multi-line text)
 # Usage: inject_after_line <file> <line_number> <text_to_insert>
@@ -40,6 +39,8 @@ inject_before_line() {
     tmp_file=$(mktemp); TMPFILES+=("$tmp_file")
     if [ "$line_num" -gt 1 ]; then
         head -n "$((line_num - 1))" "$file" > "$tmp_file"
+    else
+        : > "$tmp_file"
     fi
     printf '%s\n' "$text" >> "$tmp_file"
     tail -n +"$line_num" "$file" >> "$tmp_file"
@@ -56,7 +57,6 @@ prepend_to_file() {
     mv "$tmp_file" "$file"
 }
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 while IFS= read -r -d '' file; do
     # Skip symlinks — can't inject metadata into link targets
     [ -L "$file" ] && continue
@@ -153,6 +153,4 @@ if [ "$errors" -gt 0 ]; then
     echo ""
     echo "⚠️  $errors file(s) could not be auto-fixed. Edit manually."
     exit 1
-fi
-
 fi

@@ -33,34 +33,24 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Core repository initialization shared between local and remote test setups
-_init_test_repo() {
+# Create a fresh test repo with hooks installed
+# Uses a feature branch to avoid Codex approval gate on main
+setup_test_repo() {
     local name="$1"
     TEST_DIR="/tmp/hook-behavior-test-$name-$$"
     rm -rf "$TEST_DIR" 2>/dev/null || true
     mkdir -p "$TEST_DIR"
     cd "$TEST_DIR"
     git init -q
-
-    # Pre-push hook checks expect 'main' as the default branch in this suite
-    git symbolic-ref HEAD refs/heads/main
-
     git config user.email "test@test.com"
     git config user.name "Test"
 
-    # Install CrossCheck commit hooks directly (no prompts)
+    # Install CrossCheck hooks directly (no prompts)
     mkdir -p .git/hooks
     for hook in pre-commit commit-msg; do
         cp "$CROSSCHECK_DIR/git-hooks/$hook" ".git/hooks/$hook"
         chmod +x ".git/hooks/$hook"
     done
-}
-
-# Create a fresh test repo with hooks installed
-# Uses a feature branch to avoid Codex approval gate on main
-setup_test_repo() {
-    local name="$1"
-    _init_test_repo "$name"
 
     # Initial commit on main (needed for diff operations)
     echo "initial" > README.md
@@ -414,23 +404,33 @@ echo ""
 
 setup_test_repo_with_remote() {
     local name="$1"
-
-    # 1. Base local repo setup using shared helper
-    _init_test_repo "$name"
-
-    # 2. Remote setup
+    TEST_DIR="/tmp/hook-behavior-test-$name-$$"
     local REMOTE_DIR="/tmp/hook-behavior-test-${name}-remote-$$"
-    rm -rf "$REMOTE_DIR" 2>/dev/null || true
+    rm -rf "$TEST_DIR" "$REMOTE_DIR" 2>/dev/null || true
 
     # Create bare remote
     mkdir -p "$REMOTE_DIR"
-    git init -q --bare "$REMOTE_DIR"
+    cd "$REMOTE_DIR"
+    git init -q --bare
 
-    # Configure local repo to use the remote
+    # Create local repo
+    mkdir -p "$TEST_DIR"
     cd "$TEST_DIR"
+    git init -q
+    git symbolic-ref HEAD refs/heads/main
+    git config user.email "test@test.com"
+    git config user.name "Test"
     git remote add origin "$REMOTE_DIR"
 
-    # 3. Initial commit and push (no pre-push hook yet)
+    # Install commit hooks only (pre-push installed AFTER initial push to avoid
+    # the pre-check gate that blocks pushes to main without /techdebt marker)
+    mkdir -p .git/hooks
+    for hook in pre-commit commit-msg; do
+        cp "$CROSSCHECK_DIR/git-hooks/$hook" ".git/hooks/$hook"
+        chmod +x ".git/hooks/$hook"
+    done
+
+    # Initial commit and push (no pre-push hook yet)
     # Include timestamps in README.md to satisfy pre-push timestamp check
     cat > README.md << 'READMEEOF'
 # Test
@@ -442,11 +442,11 @@ READMEEOF
     git commit -m "chore: initial commit" -q --no-verify
     git push -u origin main -q 2>/dev/null
 
-    # 4. NOW install pre-push hook (after initial main push)
+    # NOW install pre-push hook (after initial main push)
     cp "$CROSSCHECK_DIR/git-hooks/pre-push" ".git/hooks/pre-push"
     chmod +x ".git/hooks/pre-push"
 
-    # 5. Switch to feature branch
+    # Switch to feature branch
     git checkout -q -b feat/test
 }
 
@@ -572,8 +572,8 @@ echo ""
 echo "📋 Category: Post-merge PR counter and waterfall"
 echo ""
 
-setup_test_repo_for_merge() {
-    local name="$1"
+test_postmerge_pr_counter_incremented() {
+    local name="postmerge-counter"
     TEST_DIR="/tmp/hook-behavior-test-$name-$$"
     rm -rf "$TEST_DIR" 2>/dev/null || true
     mkdir -p "$TEST_DIR"
@@ -591,10 +591,6 @@ setup_test_repo_for_merge() {
     echo "initial" > README.md
     git add README.md
     git commit -m "chore: initial commit" -q --no-verify
-}
-
-test_postmerge_pr_counter_incremented() {
-    setup_test_repo_for_merge "postmerge-counter"
 
     # Create and commit on feature branch
     git checkout -q -b feat/merge-test
@@ -618,7 +614,24 @@ test_postmerge_pr_counter_incremented() {
 }
 
 test_postmerge_waterfall_reminder() {
-    setup_test_repo_for_merge "postmerge-waterfall"
+    local name="postmerge-waterfall"
+    TEST_DIR="/tmp/hook-behavior-test-$name-$$"
+    rm -rf "$TEST_DIR" 2>/dev/null || true
+    mkdir -p "$TEST_DIR"
+    cd "$TEST_DIR"
+    git init -q
+    git symbolic-ref HEAD refs/heads/main
+    git config user.email "test@test.com"
+    git config user.name "Test"
+
+    mkdir -p .git/hooks
+    cp "$CROSSCHECK_DIR/git-hooks/post-merge" ".git/hooks/post-merge"
+    chmod +x ".git/hooks/post-merge"
+
+    # Initial commit on main
+    echo "initial" > README.md
+    git add README.md
+    git commit -m "chore: initial commit" -q --no-verify
 
     # Pre-set PR counter to 2 so next merge triggers reminder at 3
     echo "2" > ".git/hooks-pr-counter"

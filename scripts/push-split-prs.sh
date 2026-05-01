@@ -27,13 +27,6 @@ if [[ "$(gh api "repos/$REPO" --jq '.permissions.push')" != "true" ]]; then
   exit 1
 fi
 
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "❌ Working tree is dirty. Commit or stash changes before running." >&2
-  exit 1
-fi
-
-ORIGINAL_BRANCH="$(git branch --show-current)"
-
 for branch in "${BRANCHES[@]}"; do
   if ! git show-ref --verify --quiet "refs/heads/$branch"; then
     echo "⚠️  branch missing locally: $branch"
@@ -63,5 +56,4 @@ for branch in "${BRANCHES[@]}"; do
   fi
 done
 
-git checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
 echo "✅ Branch push + PR workflow complete."

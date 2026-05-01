@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-03-07-00-00
+**Last Updated:** 2026-02-26-00-00
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -184,8 +184,8 @@ cd CrossCheck
 ```
 
 This installs:
-- Skills to `~/.codex/skills/` as folder-based commands (and `~/.claude/commands/` if present)
-- Global `CODEX.md` symlinked in your projects folder (full workflow, updates on `git pull`)
+- Skills to `~/.codex/commands/` via symlinks (and `~/.claude/commands/` if present)
+- Global `CLAUDE.md` symlinked in your projects folder (full workflow, updates on `git pull`)
 - Agent settings with proper permissions
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
 
@@ -206,7 +206,7 @@ codex "Build user authentication"
 # Codex creates feature branch, writes code + tests, gets reviewer feedback, ships
 ```
 
-**That's it!** All 36 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
+**That's it!** All 27 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
 
 ---
 
@@ -218,21 +218,21 @@ CrossCheck uses a **single source of truth** pattern:
 
 ```
 ~/Documents/Developer/          # Your projects folder
-├── CODEX.md                  # Global workflow (symlink → CrossCheck/CODEX.md)
+├── CLAUDE.md                 # Global workflow (symlink → CrossCheck/CLAUDE.md)
 │
 ├── CrossCheck/                # 🎯 Source repository
-│   ├── CODEX.md             # Source of truth for global workflow
-│   ├── QUICK-REFERENCE.md    # Supporting reference (36 skills, tables)
+│   ├── CLAUDE.md            # Source of truth for global workflow
+│   ├── QUICK-REFERENCE.md    # Supporting reference (27 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history, memory)
-│   ├── skill-sources/        # 36 skills (installed to ~/.codex/skills/)
+│   ├── skill-sources/        # 27 skills (symlinked to ~/.codex/commands/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
-    ├── CODEX.md (optional)  # Project-specific overrides
+    ├── CLAUDE.md (optional) # Project-specific overrides
     └── .git/hooks/           # Installed per-project
 ```
 
-**Key insight:** Skills and `CODEX.md` are symlinked — `git pull` in CrossCheck updates everything instantly everywhere. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Hooks install per-project.
+**Key insight:** Skills and `CLAUDE.md` are symlinked — `git pull` in CrossCheck updates everything instantly everywhere. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Hooks install per-project.
 
 ### GitHub Branch Protection Setup
 
@@ -302,8 +302,8 @@ git reset HEAD test.txt && rm test.txt
 
 ```bash
 # Check skills installed
-ls ~/.codex/skills/ | wc -l
-# Should show: 36 skills
+ls ~/.codex/commands/ | wc -l
+# Should show: 27 skills
 
 # Start Codex
 codex

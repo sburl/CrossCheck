@@ -21,7 +21,7 @@
    - No orphaned references to deleted `setup-github-protection.sh`.
 
 3. **Privilege boundaries remain explicit**
-   - Existing `validate-github-protection.sh` and bootstrap logic continue to include explicit deny-list rules for bypassing branch protection tooling.
+- Existing `validate-github-protection.sh` and bootstrap logic continue to include explicit deny-list rules for bypassing branch protection tooling.
 
 ## 3) Remaining risk controls to track in Pass 3
 

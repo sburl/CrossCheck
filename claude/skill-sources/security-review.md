@@ -64,14 +64,7 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
    - Check for `.github/dependabot.yml` or `renovate.json`
    - Verify it covers all ecosystems in use
 
-7. **Supply chain protection (CrossCheck automated)**
-   - Run: `bash scripts/scan-supply-chain.sh` (also runs automatically via pre-commit/pre-push hooks)
-   - Checks: version pinning, known malicious packages, package age quarantine (7-day), lock file enforcement
-   - Blocklist: `scripts/supply-chain-blocklist.txt` — add entries as new threats emerge
-   - Ecosystems: npm, pip, Ruby gems, Go, Rust, PHP (auto-detected)
-   - Override age quarantine: `SUPPLY_CHAIN_SKIP_AGE=1`
-
-**Critical finding:** Known critical CVE in a direct dependency, or blocklisted malicious package. Stop and alert.
+**Critical finding:** Known critical CVE in a direct dependency. Stop and alert.
 
 ---
 
@@ -142,7 +135,7 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
 
    Users paste secrets into Claude/Codex conversations. Agents read `.env` files into context. These get persisted in plaintext log files on disk.
 
-   **Claude Code conversation logs:**
+   **Claude conversation logs:**
    ```bash
    # Claude stores full conversation history as JSONL
    # Location: ~/.claude/projects/<project-hash>/*.jsonl
@@ -157,16 +150,16 @@ The audit covers 10 categories. Each has specific scan steps and patterns.
      ~/.claude/projects/ 2>/dev/null | grep -v '"type"' | head -20
    ```
 
-   **Codex review logs:**
+   **Claude review logs:**
    ```bash
-   # Codex review history
+   # Claude review history
    grep -n 'sk-proj-\|sk-ant-\|AKIA\|ghp_\|sk_live_' \
-     ~/.claude/codex-commit-reviews.log 2>/dev/null
+     ~/.claude/claude-commit-reviews.log 2>/dev/null
    ```
 
-   **Codex file-based debugging:**
+   **Claude file-based debugging:**
    ```bash
-   # Temporary files from Codex debugging pattern
+   # Temporary files from Claude debugging pattern
    grep -n 'sk-proj-\|sk-ant-\|AKIA\|ghp_\|sk_live_' \
      /tmp/question.txt /tmp/reply.txt 2>/dev/null
    ```
@@ -614,13 +607,13 @@ For Categories 1-2, use the deterministic scanner:
 
 ```bash
 # Quick: repo working tree only
-scripts/scan-leaks.sh
+scripts/scan-secrets.sh
 
 # Full: also scan git history
-scripts/scan-leaks.sh --history
+scripts/scan-secrets.sh --history
 
 # Everything: repo + history + agent conversation logs
-scripts/scan-leaks.sh --all
+scripts/scan-secrets.sh --all
 ```
 
 This script uses exact regex patterns for all major providers (OpenAI, Anthropic, Google, AWS, GitHub, Stripe, Slack, etc.) and scans Claude/Codex log files at `~/.claude/projects/`. No false negatives for known key formats.
@@ -636,9 +629,8 @@ Pattern-matching finds possibilities; red teaming confirms realities.
 
 - `/redteam` -- Active exploit verification (confirms or disproves findings from this review)
 - `docs/rules/trust-model.md` -- Trust boundaries and zero-trust philosophy
-- `scripts/scan-leaks.sh` -- Deterministic secret scanner (standalone)
+- `scripts/scan-secrets.sh` -- Deterministic secret scanner (standalone)
 - `/repo-assessment` -- General code quality (runs at the same cadence)
-- Pre-commit hook -- Blocks malicious packages, warns on unpinned versions (Category 1)
-- Pre-push hook -- Full supply chain scan + lightweight Category 1-2 checks on every push
+- Pre-push hook -- Runs lightweight Category 1-2 checks on every push
 - `.github/dependabot.yml` -- Automated dependency updates (Category 1 prevention)
 - `.github/CODEOWNERS` -- Code ownership enforcement (Category 10)

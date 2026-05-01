@@ -6,26 +6,6 @@
 
 set -e
 
-# Validate environment
-if [ -z "$HOME" ]; then
-    echo "❌ ERROR: HOME is not set" >&2
-    exit 1
-fi
-if [ ! -d "$HOME" ] || [ ! -w "$HOME" ]; then
-    echo "❌ ERROR: HOME ($HOME) is not a writable directory" >&2
-    exit 1
-fi
-for _cmd in git ln mkdir cp; do
-    if ! command -v "$_cmd" >/dev/null 2>&1; then
-        echo "❌ ERROR: Required command '$_cmd' not found" >&2
-        exit 1
-    fi
-done
-if ! command -v jq >/dev/null 2>&1; then
-    echo "⚠️  WARNING: 'jq' not found — deny rule sync will be skipped"
-    echo "   Install jq for full bootstrap: https://jqlang.github.io/jq/download/"
-fi
-
 echo "🚀 CrossCheck Bootstrap"
 echo "=================="
 echo ""
@@ -114,25 +94,13 @@ if [ ! -f "$HOME/.claude/settings.json" ]; then
     echo "   Creating ~/.claude/settings.json from template..."
     mkdir -p "$HOME/.claude"  # Ensure directory exists
     cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.claude/settings.json"
-    echo "   💡  Tip: Edit ~/.claude/settings.json to add your own CLI commands to permissions.allow"
+    echo "   ⚠️  TODO: Edit ~/.claude/settings.json to customize for your stack"
+    echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
 else
     echo "   ✅ Settings already exist at ~/.claude/settings.json"
 
     # Sync critical deny rules even when settings exist
     echo "   Checking critical deny rules..."
-
-    # Validate settings.json is valid JSON before manipulation
-    if ! jq -e '.' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
-        echo "   ⚠️  ~/.claude/settings.json is not valid JSON — skipping deny rule sync"
-        echo "      Fix the file manually, then re-run bootstrap"
-    else
-    # Ensure .permissions.deny is an array
-    if ! jq -e '.permissions.deny | type == "array"' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
-        echo "   Initializing .permissions.deny array..."
-        jq '.permissions.deny //= []' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json.tmp" \
-            && mv "$HOME/.claude/settings.json.tmp" "$HOME/.claude/settings.json"
-    fi
-
     CRITICAL_DENY_RULES=(
         'Bash(gh*--admin*)'
         'Bash(*--admin*)'
@@ -164,8 +132,6 @@ else
     else
         echo "   ✅ Added $DENY_UPDATED critical security rule(s)"
     fi
-
-    fi  # end valid JSON check
 fi
 echo ""
 
@@ -300,26 +266,26 @@ fi
 echo ""
 echo "🎯 Next steps:"
 echo ""
-echo "   1. Start any supported CLI in your repo:"
+echo "   1. Start Gemini CLI in any repo:"
 echo "      cd ~/your-project"
-echo "      claude   # or: codex / gemini"
+echo "      gemini"
 echo ""
 if [ "$INSTALL_MODE" = "multi-project" ]; then
-    echo "   2. Each CLI loads its workflow config automatically:"
-    echo "      CLAUDE.md / CODEX.md / GEMINI.md from $PROJECTS_DIR/"
+    echo "   2. Gemini will automatically load GEMINI.md workflow"
+    echo "      from $PROJECTS_DIR/GEMINI.md (full workflow)"
     echo "      Supporting docs: $CROSSCHECK_DIR/QUICK-REFERENCE.md, docs/rules/"
 else
-    echo "   2. Each CLI loads its workflow config automatically:"
-    echo "      CLAUDE.md / CODEX.md / GEMINI.md from ~/.crosscheck/"
+    echo "   2. Gemini will automatically load GEMINI.md workflow"
+    echo "      from ~/.crosscheck/"
 fi
 echo ""
 echo "   3. Set up a repo for autonomous work:"
-echo "      claude '/setup-automation'   # or: codex / gemini"
+echo "      gemini '/setup-automation'"
 echo "      This creates: garbage/, do-work/, user-content/"
 echo ""
 echo "   4. Optional customization:"
-echo "      • Edit settings: ~/.claude/settings.json / ~/.codex/settings.json / ~/.gemini/settings.json"
-echo "      • Copy: *.local.md.template → *.local.md (personal prefs)"
+echo "      • Edit: ~/.gemini/settings.json (customize for your stack)"
+echo "      • Copy: GEMINI.local.md.template → GEMINI.local.md (personal prefs)"
 if [ "$INSTALL_MODE" = "multi-project" ]; then
     echo "      • Docs: $CROSSCHECK_DIR/README.md"
 else

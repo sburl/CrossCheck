@@ -24,33 +24,21 @@ has_item() {
   return 1
 }
 
-# Check if a mirror file is a valid exec proxy that delegates to the canonical script.
-# A proxy is a 2-line script: shebang + exec pointing to ../../scripts/<same-name>.
-is_exec_proxy() {
-  local file="$1"
-  [ -f "$file" ] || return 1
-  local line_count
-  line_count=$(wc -l < "$file" | tr -d ' ')
-  # Allow 2-3 lines (trailing newline variance)
-  [ "$line_count" -le 3 ] || return 1
-  grep -q 'exec.*\.\./\.\./scripts.*"\$@"' "$file" 2>/dev/null
-}
-
 # Collect files
 ROOT_FILES=()
 while IFS= read -r file; do
-  ROOT_FILES+=("${file##*/}")
-done < <(find "$ROOT_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f | sort)
+  ROOT_FILES+=("$file")
+done < <(find "$ROOT_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f -exec basename {} \; | sort)
 
 CODEX_FILES=()
 while IFS= read -r file; do
-  CODEX_FILES+=("${file##*/}")
-done < <(find "$CODEX_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f | sort)
+  CODEX_FILES+=("$file")
+done < <(find "$CODEX_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f -exec basename {} \; | sort)
 
 CLAUDE_FILES=()
 while IFS= read -r file; do
-  CLAUDE_FILES+=("${file##*/}")
-done < <(find "$CLAUDE_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f | sort)
+  CLAUDE_FILES+=("$file")
+done < <(find "$CLAUDE_SCRIPTS_DIR" -maxdepth 1 -name '*.sh' -type f -exec basename {} \; | sort)
 
 printf 'Root scripts:   %d\n' "${#ROOT_FILES[@]}"
 printf 'Codex scripts:  %d\n' "${#CODEX_FILES[@]}"
@@ -60,9 +48,6 @@ missing_codemirror=0
 missing_claudemirror=0
 extra_codemirror=0
 exec_mode_mismatch=0
-proxy_count=0
-copy_count=0
-delta_count=0
 
 # Check 1: every root script should exist in codex mirror; warn if missing from claude mirror.
 for file in "${ROOT_FILES[@]}"; do
@@ -114,29 +99,6 @@ for file in "${CLAUDE_FILES[@]}"; do
     echo "⚠️  Unlisted claude-only script: scripts/$file"
   fi
 done
-
-# Check 4: mirror content — verify mirrors are exec proxies, exact copies, or intentional deltas
-for file in "${ROOT_FILES[@]}"; do
-  for mirror_dir in "$CODEX_SCRIPTS_DIR" "$CLAUDE_SCRIPTS_DIR"; do
-    mirror_file="$mirror_dir/$file"
-    [ -f "$mirror_file" ] || continue
-
-    if is_exec_proxy "$mirror_file"; then
-      proxy_count=$((proxy_count + 1))
-    elif cmp -s "$ROOT_SCRIPTS_DIR/$file" "$mirror_file"; then
-      copy_count=$((copy_count + 1))
-    else
-      delta_count=$((delta_count + 1))
-    fi
-  done
-done
-
-printf '\nMirror breakdown: %d proxy, %d exact copy, %d intentional delta\n' \
-  "$proxy_count" "$copy_count" "$delta_count"
-
-if [ "$copy_count" -gt 0 ]; then
-  echo "⚠️  $copy_count mirror(s) are full copies — consider converting to exec proxies"
-fi
 
 if [ "$missing_codemirror" -gt 0 ] || [ "$extra_codemirror" -gt 0 ] || [ "$exec_mode_mismatch" -gt 0 ]; then
   echo ""

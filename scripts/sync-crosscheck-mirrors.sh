@@ -13,7 +13,7 @@ Options:
   --help             Show this help
 
 Environment:
-  CROSSCHECK_MIRROR_PATHS  Extra mirror paths (newline-separated)
+  CROSSCHECK_MIRROR_PATHS  Extra mirror paths (newline/space-separated)
   CROSSCHECK_INCLUDE_NOTACTIVE When set to 1, also sync NotActive installs
 EOF
 }
@@ -63,10 +63,9 @@ if [ "${CROSSCHECK_INCLUDE_NOTACTIVE:-0}" = "1" ]; then
   fi
 fi
 
-while IFS= read -r p; do
-  [ -z "$p" ] && continue
+for p in ${CROSSCHECK_MIRROR_PATHS:-}; do
   TARGETS+=("$p")
-done <<< "${CROSSCHECK_MIRROR_PATHS:-}"
+done
 
 if [ "${#TARGETS[@]}" -eq 0 ]; then
   TARGETS=("${DEFAULT_TARGETS[@]}")

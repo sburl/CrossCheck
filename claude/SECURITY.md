@@ -39,7 +39,7 @@ CrossCheck is a developer workflow tool (git hooks, shell scripts, CLI skills). 
 
 - **Settings deny list** (`settings.template.json`) — command blocking rules
 - **Git hooks** (`git-hooks/`) — pre-commit, pre-push enforcement
-- **Secret scanning** (`scripts/scan-leaks.sh`) — credential detection
+- **Secret scanning** (`scripts/scan-secrets.sh`) — credential detection
 - **Bootstrap script** (`scripts/bootstrap-crosscheck.sh`) — installation security
 - **Trust model** (`docs/rules/trust-model.md`) — agent permission boundaries
 

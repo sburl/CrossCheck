@@ -4,7 +4,7 @@ description: Process autonomous task queue from do-work/ folder
 ---
 
 **Created:** 2026-02-11-00-00
-**Last Updated:** 2026-04-10-00-00
+**Last Updated:** 2026-02-11-00-00
 
 # Do Work - Autonomous Task Queue Processing
 
@@ -26,25 +26,20 @@ Read all `.md` files from the `do-work/` folder, sorted by filename (use numeric
 
 ```text
 do-work/
-├── 0-001-critical-hotfix.md       ← Top priority (rare)
-├── 1-002-add-rate-limiting.md     ← High priority
-├── 1-003-refactor-auth-module.md  ← High priority
-├── 2-004-write-api-docs.md        ← Medium priority
-├── 3-005-nice-to-have-cleanup.md  ← Low priority
-├── 4-006-cosmetic-tweaks.md       ← Least priority
+├── 001-add-rate-limiting.md       ← Highest priority
+├── 002-refactor-auth-module.md
+├── 003-write-api-docs.md
+├── 010-nice-to-have-cleanup.md    ← Lower priority
 ```
 
-**Skip files in `do-work/done/` — those are completed or skipped tasks.**
+**Skip files that start with `DONE-` or `SKIP-` prefix.**
 
-**Numbering convention: `{priority}-{id}-{slug}.md`**
+**Numbering convention:**
 
-- **Priority** (first digit): 0 = top (rare), 1 = high, 2 = medium, 3 = low, 4 = least
-- **ID** (3-digit): Globally unique across all priorities. This lets you reprioritize items by renaming just the priority prefix.
-- **001-499**: Reserved for human-created tasks
-- **500+**: Agent-created tasks (when the agent discovers follow-up work)
-- **NEVER reuse an ID.** Check existing files (including done/) before assigning.
-- When creating a task, use the next available ID above 500.
-- To reprioritize: rename the priority prefix only (e.g. `2-084-foo.md` → `1-084-foo.md`). The ID stays the same.
+- **001-099**: Reserved for human-created tasks (user sets priorities)
+- **100+**: Agent-created tasks (when the agent discovers follow-up work)
+- **NEVER reuse a number.** Check existing files (including DONE-/SKIP-) before assigning.
+- When creating a task, use the next available number above 100.
 
 ### Step 2: Read the Task File
 
@@ -80,7 +75,7 @@ For each task:
 4. **Write tests alongside code** (zero trust)
 5. **Run tests** - must pass before proceeding
 6. **Submit PR:** INVOKE `/submit-pr`
-7. **Mark task done:** Move file to `do-work/done/` (e.g. `mv do-work/1-002-foo.md do-work/done/`)
+7. **Mark task done:** Rename file to `DONE-{original-name}.md`
 8. **Return to main:** `git checkout main && git pull`
 9. **Move to next task**
 
@@ -92,17 +87,17 @@ After processing, output a summary:
 ## /do-work Summary
 
 ### Completed
-- ✅ 1-002-add-rate-limiting.md → PR #12
-- ✅ 1-003-refactor-auth-module.md → PR #13
+- ✅ 001-add-rate-limiting.md → PR #12
+- ✅ 002-refactor-auth-module.md → PR #13
 
 ### Skipped
-- ⏭️ 2-004-write-api-docs.md (moved to done/SKIP-2-004-write-api-docs.md)
+- ⏭️ 003-write-api-docs.md (SKIP- prefix)
 
 ### Failed
-- ❌ 3-005-nice-to-have-cleanup.md (tests failed after 3 attempts)
+- ❌ 010-nice-to-have-cleanup.md (tests failed after 3 attempts)
 
 ### Remaining
-- 📋 2-006-update-ci-pipeline.md
+- 📋 015-update-ci-pipeline.md
 ```
 
 ## Task File Examples
@@ -147,12 +142,12 @@ Currently using session cookies. Need stateless auth for mobile app support.
 ## Rules
 
 1. **One task = one branch = one PR.** Never batch multiple tasks into one PR.
-2. **If a task is unclear, SKIP it.** Move to `do-work/done/SKIP-{name}.md` and add a comment at the top explaining what's unclear. Don't guess.
-3. **If a task fails 3 times, SKIP it.** Move to `do-work/done/SKIP-{name}.md` with error details at the top.
+2. **If a task is unclear, SKIP it.** Rename to `SKIP-{name}.md` and add a comment at the top explaining what's unclear. Don't guess.
+3. **If a task fails 3 times, SKIP it.** Rename to `SKIP-{name}.md` with error details at the top.
 4. **Respect the `user-content/` directory.** Never modify files in `user-content/` even if a task mentions it.
 5. **Follow all CODEX.md conventions.** do-work doesn't bypass any quality gates.
 6. **Don't create the do-work/ folder automatically.** If it doesn't exist, tell the user.
-7. **Numbering: `{priority}-{id}-slug.md`.** Priority 0-4, ID 001-499 = human, 500+ = agent. Never reuse an ID.
+7. **Numbering: 001-099 = human, 100+ = agent.** Never reuse a number. Check existing files first.
 
 ## Setting Up the Task Queue
 
@@ -160,8 +155,8 @@ Currently using session cookies. Need stateless auth for mobile app support.
 # Create the folder in your project
 mkdir -p do-work
 
-# Add a task (priority 2 = medium, ID 001)
-cat > do-work/2-001-my-first-task.md << 'EOF'
+# Add a task
+cat > do-work/001-my-first-task.md << 'EOF'
 # My First Task
 
 ## Requirements

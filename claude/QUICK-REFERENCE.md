@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-03-20-00-00
+**Last Updated:** 2026-02-26-00-00
 
 Complete reference tables for daily workflow.
 
@@ -13,15 +13,14 @@ When user requests these tasks, invoke the corresponding skill:
 
 | User Request | Skill to Invoke | Why Mandatory |
 |-------------|-----------------|---------------|
-| "create pr", "submit pr", "open pr" | `/submit-pr` | Complete workflow: techdebt → pre-check → PR → Peer review |
+| "create pr", "submit pr", "open pr" | `/submit-pr` | Complete workflow: techdebt → pre-check → PR → Claude review |
 | "commit", "save changes" | `/commit-smart` | Good commit messages, reviews changes |
 | Complex task (>3 files) | `/plan` | Design before implementation |
 | "have Claude do X" | `/claude-delegate` | Proper context injection |
-| "have Codex do X" | `/codex-delegate` | Proper context injection |
 | "have Gemini do X" | `/gemini-delegate` | Proper context injection |
 | "get opinions", "ask other models" | `/ensemble-opinion` | Multi-model perspectives |
-| "review", "Peer review" | `/pr-review` | Standard review handoff |
-| Every 3 PRs | `/repo-assessment` | Comprehensive assessment |
+| "review", "Claude review" | `/pr-review` | Standard Claude review handoff |
+| Every 3 PRs | `/repo-assessment` | Comprehensive Claude assessment |
 | "security review" | `/security-review` | Full security audit (deps, secrets, perms) |
 | "red team", "exploit" | `/redteam` | Active exploit verification of security findings |
 | "fuzz", "adversarial input" | `/fuzz` | Property-based and adversarial input testing |
@@ -30,8 +29,6 @@ When user requests these tasks, invoke the corresponding skill:
 | "show worktrees" | `/list-worktrees` | List active worktrees |
 | "cleanup worktrees" | `/cleanup-worktrees` | Remove merged worktrees |
 | "delete branches" | `/cleanup-branches` | Safe batch deletion |
-| "cleanup stashes", "review stashes" | `/cleanup-stashes` | Review and drop orphaned/stale stashes |
-| "full cleanup", "cleanup everything" | `/cleanup-all` | Worktrees + branches + stashes in sequence |
 | Modified .md file | `/doc-timestamp` | Update timestamps |
 | "setup automation" | `/setup-automation` | Install hooks + CI |
 | "customize statusline" | `/setup-statusline` | Configure status bar |
@@ -40,20 +37,6 @@ When user requests these tasks, invoke the corresponding skill:
 | "usage", "tokens", "how much AI", "spending" | `/ai-usage` | Token usage, cost, and impact dashboard |
 | "test webapp", "browser test", "screenshot" | `/webapp-test` | Automated Playwright-based web app testing |
 | "setup plugins", "install plugins" | `/setup-plugins` | Opinionated plugin selection with CrossCheck overlap awareness |
-| "update crosscheck", "update skills" | `/update-crosscheck` | Pull latest from main, sync skills and agents |
-| "bug audit", "failure modes", "find bugs" | `/bug-review` | Systematic failure mode analysis (10 categories) |
-| "before pr", "pre-push check" | `/pre-pr-check` | Comprehensive pre-PR checklist (tests, lint, timestamps) |
-| "tech debt", "find debt", "refactor check" | `/techdebt` | Find silenced errors, debug code, TODO comments |
-| "save skill", "record discovery" | `/capture-skill` | Distill session discoveries into reusable skills |
-| "session memory", "repo notes", "napkin" | `/napkin` | Per-repo behavioral memory in `.claude/napkin.md` |
-| "deploy", "push to production", "ship it" | `/deploy` | Auto-detect platform, deploy, tail logs, report URL |
-| "run locally", "start server", "start the app" | `/run-local` | Auto-detect project type, install deps, start dev server |
-| "handoff", "session summary", "write handoff" | `/handoff` | Snapshot state for session-to-session or agent-to-agent continuity |
-| "publish", "make public", "open source" | `/publish-repo` | Security scan, clean dead code, verify docs, push to public remote |
-| "brainstorm", "think through", "is this worth building" | `/think` | Problem framing before code (startup/builder modes, design doc) |
-| "debug", "why is this broken", "root cause" | `/investigate` | Systematic debugging (root cause first, 3-strike escalation) |
-| "scope review", "is this too big" | `/plan --scope` | 4-mode scope review with 10-section grid |
-| "architecture review", "tech deep-dive" | `/plan --arch` | Diagrams, test matrix, failure mode analysis |
 
 ---
 
@@ -68,29 +51,24 @@ When user requests these tasks, invoke the corresponding skill:
 | **Code "looks right"** | Don't trust - verify with tests |
 | **Claim "X works"** | Show passing test results as proof |
 | **Bug fix** | (1) Test reproduces (2) Verify fails (3) Fix (4) Pass (5) Commit |
-| User corrects | Add specific rule to GEMINI.md/CLAUDE.md/CODEX.md NOW |
-| Unfamiliar tech | ASK before "fixing" (post-Jan 2025?) |
-| Post-cutoff working code | Don't change - add `# WARNING: post-cutoff - VALID` |
-| User wants commit | INVOKE `/commit-smart` (NEVER git commit directly) |
-| User wants PR | INVOKE `/submit-pr` (auto-runs techdebt + pre-check) |
-| Submit PR | `/submit-pr` handles everything (no manual steps) |
-| CI pass | Merge on GitHub (not locally) |
-| CI fail | Fix on feature branch, push, wait again |
-| After merge | `git checkout main && git pull` |
-| Peer review | Auto loop - fix issues autonomously |
-| Stuck 10+ rounds | Ask user for input |
-| Every 3 PRs | INVOKE `/repo-assessment` → refactor PR |
-| Delegate to Codex | INVOKE `/codex-delegate` with context |
-| Delegate to Gemini | INVOKE `/gemini-delegate` with context |
-| Delegate to Claude | INVOKE `/claude-delegate` with context |
-| Multiple AI opinions | INVOKE `/ensemble-opinion` |
-
+| **User corrects** | Add specific rule to CLAUDE.md NOW |
+| **Unfamiliar tech** | ASK before "fixing" (post-Jan 2025?) |
+| **Post-cutoff working code** | Don't change - add `# WARNING: post-cutoff - VALID` |
+| **User wants commit** | INVOKE `/commit-smart` (NEVER git commit directly) |
+| **User wants PR** | INVOKE `/submit-pr` (auto-runs techdebt + pre-check) |
+| **Submit PR** | `/submit-pr` handles everything (no manual steps) |
+| **CI pass** | Merge on GitHub (not locally) |
+| **CI fail** | Fix on feature branch, push, wait again |
+| **After merge** | `git checkout main && git pull` |
+| **Claude review** | Auto loop - fix issues autonomously |
+| **Stuck 10+ rounds** | Ask user for input |
+| **Every 3 PRs** | INVOKE `/repo-assessment` → refactor PR |
+| **Delegate to Claude** | INVOKE `/claude-delegate` with context |
+| **Delegate to Gemini** | INVOKE `/gemini-delegate` with context |
+| **Multiple AI opinions** | INVOKE `/ensemble-opinion` |
 | **Parallel work needed** | INVOKE `/create-worktree` |
 | **Autonomous 30+ min** | Pre-flight checks + TODO.md scratchpad every 15min |
 | **Blocker >10min** | Document in TODO.md scratchpad, try alternative |
-| **Deploy** | INVOKE `/deploy` (auto-detects Railway/Vercel/GitHub Pages) |
-| **Run locally** | INVOKE `/run-local` (auto-detects project type, starts server) |
-| **End of session** | INVOKE `/handoff` if switching agents or pausing work |
 | **Copy-paste from UI** | Find CLI/API first (`vercel`, `stripe`, etc) |
 | **Code execution** | Explain first, repo only |
 | **Commits** | Via `/commit-smart` only |
@@ -212,7 +190,7 @@ pytest test_auth.py
 
 # Start fresh if needed:
 exit  # Ctrl+D
-codex  # New session
+claude  # New session
 ```
 
 ---
@@ -252,7 +230,7 @@ mv old-file.js garbage/
 
 | Skill | When to Use | What It Does |
 |-------|-------------|--------------|
-| `/submit-pr` | User wants PR | Runs techdebt + pre-check + creates PR + starts Codex review |
+| `/submit-pr` | User wants PR | Runs techdebt + pre-check + creates PR + starts Claude review |
 | `/pre-pr-check` | Before PR (auto-invoked) | Runs tests, linting, checks timestamps, verifies branch |
 | `/techdebt` | Before PR (auto-invoked) | Finds silenced errors, debug code, TODO comments |
 
@@ -260,11 +238,11 @@ mv old-file.js garbage/
 
 | Skill | When to Use | What It Does |
 |-------|-------------|--------------|
-| `/codex-delegate` | User says "have Codex X" | Injects CLAUDE.md context, runs Codex autonomously |
+| `/claude-delegate` | User says "have Claude X" | Injects CLAUDE.md context, runs Claude autonomously |
 | `/gemini-delegate` | User says "have Gemini X" | Injects CLAUDE.md context, runs Gemini autonomously |
-| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Codex + Claude + Gemini |
-| `/pr-review` | Manual PR review needed | Standard Codex review handoff workflow |
-| `/repo-assessment` | Every 3 PRs | Comprehensive Codex analysis of repo state |
+| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Claude + Codex + Gemini |
+| `/pr-review` | Manual PR review needed | Standard Claude review handoff workflow |
+| `/repo-assessment` | Every 3 PRs | Comprehensive Claude analysis of repo state |
 | `/security-review` | Every 3 PRs (waterfall) or on demand | Dependency audit, secrets scan, trust model check |
 | `/bug-review` | On demand or before major release | AI code patterns, concurrency, memory leaks, error handling |
 | `/redteam` | After `/security-review` or standalone | Active exploit verification (writes throwaway exploit tests) |
@@ -280,8 +258,6 @@ mv old-file.js garbage/
 | `/list-worktrees` | Check active worktrees | Shows all worktrees with status |
 | `/cleanup-worktrees` | Remove old worktrees | Deletes merged/abandoned worktrees |
 | `/cleanup-branches` | Delete old branches | Generates batch script for safe branch deletion |
-| `/cleanup-stashes` | Review stashes | Flags orphaned/superseded/stale stashes, generates drop script |
-| `/cleanup-all` | Full git cleanup | Chains worktrees → branches → stashes with combined summary |
 | `/commit-smart` | User wants commit | Creates good commit message, reviews changes |
 
 ### Development
@@ -291,17 +267,6 @@ mv old-file.js garbage/
 | `/plan` | Complex task (>3 files) | Enters plan mode, designs before implementation |
 | `/do-work` | Process task queue | Reads do-work/ folder, executes tasks autonomously |
 | `/doc-timestamp` | Modified .md file | Updates "Last Updated:" timestamp |
-| `/capture-skill` | Non-obvious discovery | Distills session learnings into reusable skill files |
-| `/napkin` | Repo-specific corrections | Per-repo behavioral memory in `.claude/napkin.md` |
-
-### Operations
-
-| Skill | When to Use | What It Does |
-|-------|-------------|--------------|
-| `/deploy` | Deploy to production | Auto-detects Railway/Vercel/GitHub Pages, deploys, tails logs, reports URL |
-| `/run-local` | Start dev server | Auto-detects project type, installs deps, starts server, reports URL |
-| `/handoff` | End of session or agent switch | Snapshots branch, commits, PRs, test status, writes do-work/handoff.md |
-| `/publish-repo` | Make repo public | Security scan, dead code cleanup, docs check, LICENSE verify, push |
 
 ### Analytics
 
@@ -314,10 +279,9 @@ mv old-file.js garbage/
 | Skill | When to Use | What It Does |
 |-------|-------------|--------------|
 | `/setup-automation` | New repo setup | Installs git hooks + GitHub Actions |
-| `/setup-statusline` | Customize status bar | Configures Claude Code statusline |
+| `/setup-statusline` | Customize status bar | Configures Claude statusline |
 | `/setup-plugins` | Install Claude Code plugins | Registers marketplaces, recommends plugins by tier, detects stack, warns about overlaps |
 | `/garbage-collect` | Review deleted files | Shows garbage/ folder contents for cleanup |
-| `/update-crosscheck` | Update CrossCheck | Pulls latest from main, syncs skills and agents |
 
 ---
 
@@ -386,7 +350,7 @@ These cannot be bypassed - enforced by GitHub regardless of local hooks.
 
 ## Related Documentation
 
-- **[CODEX.md](../codex/CODEX.md)** - Core workflow (condensed version)
+- **[CLAUDE.md](CLAUDE.md)** - Core workflow (condensed version)
 - **[README.md](README.md)** - Project overview
 - **[README.md](README.md#detailed-setup)** - Setup guide
 - **[ADVANCED.md](ADVANCED.md)** - Customization and multi-agent workflows

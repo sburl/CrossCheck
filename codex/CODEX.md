@@ -1,7 +1,7 @@
 # Codex Workflow
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-03-07-00-00
+**Last Updated:** 2026-02-25-00-00
 
 ---
 
@@ -34,12 +34,10 @@ The user decides *what* to build and reviews PRs. You do *everything else*. Don'
 6. **Test-First** - Write tests ALONGSIDE code, not after.
 7. **Codex as Partner** - Codex reviews and approves. Don't ask it to write code.
 8. **Skill-First** - ALWAYS use skills for common workflows.
-9. **Hard Cutover** - Never implement backward compatibility. When changing interfaces, configs, or APIs, make the breaking change directly. Don't support old and new simultaneously.
-10. **Intent Check for Sprawling Work** - Before multi-file refactors, new automation, or recurring-process work, answer: `why am i working on this?`, `what outcome would make this a win?`, `what would make me stop?`
 
 ---
 
-## Skills (36)
+## Skills (27)
 
 If a skill exists for what you're doing, use it. Skills save context and ensure correctness.
 
@@ -49,23 +47,14 @@ If a skill exists for what you're doing, use it. Skills save context and ensure 
 **Agent Delegation:**
 `/codex-delegate` (Codex review) | `/gemini-delegate` (Gemini) | `/ensemble-opinion` (multi-model) | `/pr-review` (Codex PR review) | `/repo-assessment` (every 3 PRs)
 
-**Testing:**
-`/redteam` (active exploit verification) | `/fuzz` (adversarial input testing) | `/mutation-test` (test quality) | `/webapp-test` (browser testing)
-
 **Development:**
-`/plan` (design first, >3 files) | `/do-work` (process task queue) | `/doc-timestamp` (update timestamps) | `/capture-skill` (persist discoveries)
+`/plan` (design first, >3 files) | `/do-work` (process task queue) | `/doc-timestamp` (update timestamps)
 
 **Git:**
-`/create-worktree` | `/list-worktrees` | `/cleanup-worktrees` | `/cleanup-branches` | `/cleanup-all` | `/cleanup-stashes`
-
-**Operations:**
-`/deploy` (deploy to Railway/Vercel/GitHub Pages) | `/run-local` (start dev server) | `/handoff` (session handoff doc) | `/publish-repo` (prepare and publish repo publicly)
-
-**Analytics:**
-`/ai-usage` (token usage and costs)
+`/create-worktree` | `/list-worktrees` | `/cleanup-worktrees` | `/cleanup-branches`
 
 **Setup:**
-`/setup-automation` | `/setup-statusline` | `/setup-plugins` | `/garbage-collect`
+`/setup-automation` | `/setup-statusline` | `/garbage-collect`
 
 **Memory:**
 `/napkin` (per-repo behavioral corrections in `.claude/napkin.md`)
@@ -99,12 +88,6 @@ You have skills, hooks, Codex, tests, and this file. The user set up this system
 - Nothing to do: tell the user once, then stop
 
 **CLIs over dashboards.** If a service has a CLI (`gh`, `railway`, `vercel`, `sqlite3`, `psql`, `redis-cli`), use it. A loop breaks the moment you hand off to a user to click a web UI. Configure CLIs once, interact programmatically. The settings template already allows these.
-
-**Agent delegation means exec, not instructions.** When told to involve another agent (Codex, Gemini, Claude) — review, delegate, get opinion — ALWAYS run the appropriate tool or skill yourself (`codex exec`, `/codex-delegate`, `/pr-review`, etc.). NEVER tell the user to run another agent manually. NEVER provide CLI commands for the user to copy-paste. NEVER say "you can run codex with...". You have the tools. Use them.
-
-**Merge gating.** NEVER merge a PR without review approval from a separate agent or account. If no review has happened, run `/pr-review` first. If review rejects, fix the issues and re-run. Do not skip review because it seems expedient. Do not ask the user if you should skip review.
-
-**Test-fix loops.** When tests fail, fix the failure and re-run. Repeat up to 5 times before escalating. Do not stop after one attempt and report back. Do not ask the user what to do about a test failure you haven't tried to fix. The loop is: run tests → read failures → fix code → re-run → repeat until green or 5 attempts exhausted.
 
 **Communication:** Report outcomes, not process. Batch updates at milestones. If blocked on the user, say what you need and move to the next task.
 

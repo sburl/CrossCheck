@@ -1,7 +1,7 @@
 # AGENTS.md for `codex/`
 
 **Created:** 2026-02-24-15-00
-**Last Updated:** 2026-03-07-00-00
+**Last Updated:** 2026-02-24-15-00
 
 Use this section as a Codex-native workspace.
 
@@ -10,7 +10,7 @@ Use this section as a Codex-native workspace.
 - Prompt patterns: `codex/CODEX-PROMPTS.md`
 - Skill catalog: `codex/skills/`
 
-## Skills (Codex Format) — 36 total
+## Skills (Codex Format) — 27 total
 Each skill is a folder with `SKILL.md`.
 
 - `codex/skills/ai-usage/SKILL.md`
@@ -23,32 +23,23 @@ Each skill is a folder with `SKILL.md`.
 - `codex/skills/codex-delegate/SKILL.md`
 - `codex/skills/commit-smart/SKILL.md`
 - `codex/skills/create-worktree/SKILL.md`
-- `codex/skills/deploy/SKILL.md`
 - `codex/skills/do-work/SKILL.md`
 - `codex/skills/doc-timestamp/SKILL.md`
 - `codex/skills/ensemble-opinion/SKILL.md`
-- `codex/skills/fuzz/SKILL.md`
 - `codex/skills/garbage-collect/SKILL.md`
 - `codex/skills/gemini-delegate/SKILL.md`
-- `codex/skills/handoff/SKILL.md`
 - `codex/skills/list-worktrees/SKILL.md`
-- `codex/skills/mutation-test/SKILL.md`
 - `codex/skills/napkin/SKILL.md`
 - `codex/skills/plan/SKILL.md`
 - `codex/skills/pr-review/SKILL.md`
 - `codex/skills/pre-pr-check/SKILL.md`
-- `codex/skills/publish-repo/SKILL.md`
-- `codex/skills/redteam/SKILL.md`
 - `codex/skills/repo-assessment/SKILL.md`
-- `codex/skills/run-local/SKILL.md`
 - `codex/skills/security-review/SKILL.md`
 - `codex/skills/setup-automation/SKILL.md`
-- `codex/skills/setup-plugins/SKILL.md`
 - `codex/skills/setup-statusline/SKILL.md`
 - `codex/skills/submit-pr/SKILL.md`
 - `codex/skills/techdebt/SKILL.md`
 - `codex/skills/update-crosscheck/SKILL.md`
-- `codex/skills/webapp-test/SKILL.md`
 
 ## Skill Usage Rules
 - If a task clearly matches a skill, use that skill.

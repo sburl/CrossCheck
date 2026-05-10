@@ -10,8 +10,51 @@ permissions:
   contents: read
 
 jobs:
+  check-changes:
+    name: Skip if HEAD unchanged since last successful scheduled run
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      should_run: ${{ steps.compare.outputs.should_run }}
+    steps:
+      - name: Compare HEAD to last successful scheduled run
+        id: compare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          CURRENT_SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" != "schedule" ]]; then
+            echo "Non-scheduled event ($EVENT); running."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          last_sha=$(gh run list \
+            --repo "$REPO" \
+            --workflow quality-gates-nightly.yml \
+            --branch "$BRANCH" \
+            --status success \
+            --event schedule \
+            --limit 1 \
+            --json headSha \
+            --jq '.[0].headSha // ""')
+          echo "Last successful scheduled run SHA: ${last_sha:-<none>}"
+          echo "Current HEAD SHA: $CURRENT_SHA"
+          if [[ -z "$last_sha" || "$last_sha" != "$CURRENT_SHA" ]]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   script-mirror-audit:
     name: Script Mirror Audit
+    needs: check-changes
+    if: needs.check-changes.outputs.should_run != 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -21,6 +64,8 @@ jobs:
 
   hook-docs-consistency:
     name: Hook Documentation Consistency
+    needs: check-changes
+    if: needs.check-changes.outputs.should_run != 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -83,6 +128,8 @@ jobs:
 
   hook-behavior:
     name: Hook Behavior Tests
+    needs: check-changes
+    if: needs.check-changes.outputs.should_run != 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -92,6 +139,8 @@ jobs:
 
   doc-metadata:
     name: Documentation Metadata
+    needs: check-changes
+    if: needs.check-changes.outputs.should_run != 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -123,6 +172,8 @@ jobs:
 
   mirror-drift:
     name: Mirror Drift Check
+    needs: check-changes
+    if: needs.check-changes.outputs.should_run != 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

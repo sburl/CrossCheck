@@ -542,12 +542,29 @@ test_prepush_function_call_result_fp_allowed() {
     fi
 }
 
+test_prepush_unquoted_yaml_secret_still_blocks() {
+    # Regression guard: unquoted colon-style YAML secret must still be detected.
+    # The FP fix must not allow bare config-file key values to slip through.
+    setup_test_repo_with_remote "prepush-yaml-secret"
+    # Build from parts to avoid triggering repo's own pre-commit hook
+    local kn="api_key" kv="sk-proj-abcdefghijklmnopqrstuvwx"
+    printf '%s: %s\n' "$kn" "$kv" > config.yaml
+    git add config.yaml
+    git commit -m "feat: add yaml config with api key" -q --no-verify
+    if git push origin feat/test 2>&1; then
+        fail "Unquoted YAML colon secret should still be blocked by pre-push"
+    else
+        pass "Unquoted YAML colon secret (bare config key value) still blocked"
+    fi
+}
+
 test_prepush_secret_rescan_blocks
 test_prepush_feature_branch_allowed
 test_prepush_provider_token_blocks
 test_prepush_delete_branch_allowed
 test_prepush_swift_keyword_arg_fp_allowed
 test_prepush_function_call_result_fp_allowed
+test_prepush_unquoted_yaml_secret_still_blocks
 echo ""
 
 # ============================================================

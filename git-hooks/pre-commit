@@ -37,8 +37,16 @@ fi
 # 3. Secrets detection
 echo "  🔒 Checking for secrets..."
 
-# Check for common API key patterns (only in added lines, not deletions)
-if echo "$CACHED_DIFF_CONTENT" | grep -E '^\+[^+]' | grep -qiE '(api_key|apikey|password|secret|token|aws_access|private_key|bearer|auth|credential)(\s*[=:]\s*)['"'"'"]?(sk-|pk-|[a-zA-Z0-9_-]{20,})['"'"'"]?'; then
+# Check for common API key patterns (only in added lines, not deletions).
+# Tightened: colon separator requires quotes (bare identifiers after ':' are
+# Swift keyword args / type annotations, not secrets); equals separator excludes
+# function-call results (value immediately followed by '(' or '.').
+_staged_added=$(echo "$CACHED_DIFF_CONTENT" | grep -E '^\+[^+]' || true)
+_staged_colon=$(echo "$_staged_added" | grep -iE '(api_key|apikey|password|secret|token|aws_access|private_key|bearer|auth|credential)\s*:\s*['"'"'"][^'"'"'"]{10,}['"'"'"]' || true)
+_staged_eq=$(echo "$_staged_added" | \
+    grep -iE '(api_key|apikey|password|secret|token|aws_access|private_key|bearer|auth|credential)\s*=\s*['"'"'"]?(sk-|pk-|[a-zA-Z0-9_-]{20,})['"'"'"]?' | \
+    grep -vE '[a-zA-Z0-9_-]{20,}[.(]' || true)
+if [ -n "$_staged_colon" ] || [ -n "$_staged_eq" ]; then
     echo "  ❌ Possible secret detected in staged changes"
     echo "     Common patterns: API keys, tokens, passwords (20+ chars)"
     echo "     Review carefully. If false positive: --no-verify is blocked by permissions"

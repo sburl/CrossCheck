@@ -1,5 +1,5 @@
 **Created:** 2026-02-11-00-00
-**Last Updated:** 2026-02-17-00-00
+**Last Updated:** 2026-05-20-00-00
 
 # Security (Boundary-Based Trust)
 
@@ -63,3 +63,31 @@ The deny list is defense-in-depth, not a sandbox. Known limitations:
 - **CLAUDE.md and docs/rules/ modifications require approval** (ask list) to prevent silent self-modification of agent constraints.
 
 The real security boundary is server-side: GitHub branch protection, PR approval requirements, and the two-account model.
+
+## Supply Chain
+
+**Threat model.** npm, PyPI, RubyGems, crates.io, and Go modules are push-once-published-everywhere registries. A compromised maintainer account or a typosquat ships malware to millions of installs within minutes. Recent examples: `ua-parser-js` (Oct 2021), `coa`/`rc` (Nov 2021), `colors`/`faker` sabotage (Jan 2022), `ctx` PyPI takeover (May 2022), `chalk`/`debug` ecosystem attacks (Sep 2025). Typical exploit path: `postinstall` script during `npm install`.
+
+**Defense layers** (each partial; together effective):
+
+1. **PATH shim** (strongest, single source of truth). A user-controlled `npm`/`npx`/`pnpm`/`yarn` shim at `~/bin/safe-shims/` earlier in `$PATH` than the real binary routes installs through `socket` (socket.dev malware scan) or `npm-safe-install` (≥7-day-age policy). Works for every tool that inherits the user's environment — Claude, Codex, Cursor, plain shell. Survives agent updates.
+2. **PreToolUse hook** — `scripts/preuse-supply-chain-gate.sh`. Runs on every Bash tool call from Claude Code. Pattern-matches install verbs (`npm install`, `pnpm add`, `pip install`, `uv add`, `cargo install`, etc.) and exits 2 — Claude Code surfaces the stderr message back to the model so it self-corrects to the safe variant. Allows `npm ci`, `uv sync`, lockfile-only installs, anything prefixed by `socket ` or `npm-safe-install`, or env-prefixed `SAFE_INSTALL_OVERRIDE=1`.
+3. **`settings.json` ask list** for install verbs. If the hook is missing/bypassed, the agent still has to request human approval.
+4. **Pre-commit / pre-push scan** — `scripts/scan-supply-chain.sh`. Runs at git-hook time on changes to `package.json`, `requirements.txt`, `pyproject.toml`, `Gemfile`, `Cargo.toml`, `composer.json`, `go.mod`. Checks against a known-bad list, flags unpinned ranges, optionally queries the npm registry to enforce a minimum release age. Exit 2 = malicious (always blocks); exit 1 = warning (pre-commit allows, pre-push blocks).
+5. **`npm config set ignore-scripts true`** as a global default. Kills the postinstall path, where almost all real npm attacks land. Override per-install with `--ignore-scripts=false` when a package legitimately needs build steps. Pip equivalent: `pip install --only-binary=:all:`.
+
+**Bypass paths (documented):**
+
+- `node -e '<code>'` or `python -c '<code>'` can `child_process.exec` an install. The hook does not inspect runtime contents — only the literal command. Same general-runtime-bypass acknowledged in *Deny List Limitations*; mitigation is the PATH shim catching the `npm` invocation from inside Node.
+- `SAFE_INSTALL_OVERRIDE=1` env prefix bypasses the PreToolUse hook by design (so humans can override). It is visible in the transcript.
+- Direct registry HTTP fetch (`curl https://registry.npmjs.org/...`) is not blocked. Agents have no reason to do this, so it appears in transcript review.
+
+**Agent guidance.** When asked to install a dependency, agents should default to:
+
+```
+socket npm install <pkg>          # preferred — malware/typosquat scan
+npm-safe-install <pkg>            # fallback — enforces 7-day age
+npm ci                            # for restoring from lockfile
+```
+
+If neither `socket` nor `npm-safe-install` is available, the agent should report the policy and ask the human whether to proceed with raw `npm install`.

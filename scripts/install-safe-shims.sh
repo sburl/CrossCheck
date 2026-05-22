@@ -12,6 +12,7 @@
 #   PREFIX=~/bin               where to put the shim dir (default: ~/bin)
 #   NO_NPM_CONFIG=1            skip `npm config set ignore-scripts true`
 #   NO_RC_APPEND=1             skip touching ~/.zshrc / ~/.bashrc / ~/.profile
+#   INSTALL_AGE_DAYS=10        default min-age for npm-safe-install (default: 7)
 #
 # Idempotent — safe to re-run. Will not pick up a previously-installed shim
 # as REAL_NPM (the most common foot-gun, since the shim ends up earlier in PATH).
@@ -22,6 +23,7 @@ PREFIX="${PREFIX:-$HOME/bin}"
 SHIM_DIR="$PREFIX/safe-shims"
 SHIM="$SHIM_DIR/npm"
 SAFE_INSTALL="$PREFIX/npm-safe-install"
+INSTALL_AGE_DAYS="${INSTALL_AGE_DAYS:-7}"
 
 mkdir -p "$SHIM_DIR" "$PREFIX"
 
@@ -134,7 +136,7 @@ set -eu
 
 REAL_NPM="__REAL_NPM__"
 
-AGE_DAYS=7
+AGE_DAYS=__AGE_DAYS__
 GLOBAL=""
 DRYRUN=0
 PKGS=()
@@ -195,8 +197,9 @@ fi
 SAFE_INSTALL_OVERRIDE=1 exec "\$REAL_NPM" install \$GLOBAL "\${resolved[@]}"
 SAFE_END
 
-sed "s|__REAL_NPM__|$REAL_NPM|g" "$SAFE_INSTALL" > "$SAFE_INSTALL.new" && mv "$SAFE_INSTALL.new" "$SAFE_INSTALL"
+sed -e "s|__REAL_NPM__|$REAL_NPM|g" -e "s|__AGE_DAYS__|$INSTALL_AGE_DAYS|g" "$SAFE_INSTALL" > "$SAFE_INSTALL.new" && mv "$SAFE_INSTALL.new" "$SAFE_INSTALL"
 chmod +x "$SAFE_INSTALL"
+echo "→ npm-safe-install default min-age: $INSTALL_AGE_DAYS days"
 
 # ---------------------------------------------------------------------------
 # 4. Symlinks for npx / pnpm / yarn

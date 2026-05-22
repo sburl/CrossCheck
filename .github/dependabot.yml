@@ -7,14 +7,15 @@
 version: 2
 updates:
   # GitHub Actions -- always active
+  # Public repo, so public-tier cooldown (7d default / 15d major)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     cooldown:
-      default-days: 14  # Actions run with secrets — wait longer
-      semver-major-days: 30
-      semver-minor-days: 14
+      default-days: 7
+      semver-major-days: 15
+      semver-minor-days: 7
       semver-patch-days: 7
 
   # Node.js -- uncomment if you have a package.json

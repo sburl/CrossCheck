@@ -16,12 +16,22 @@
 #   4. If PRESENT: skips (does NOT overwrite — your existing config wins).
 #
 # Flags:
-#   --owner <name>     repo owner (default: sburl)
-#   --filter <regex>   only operate on repos whose nameWithOwner matches
-#   --dry-run          plan-only; no clones, no commits, no PRs
-#   --limit <N>        cap the number of repos to process (default: 100)
-#   --age-days <N>     default cooldown (default: 10)
-#   --branch <name>    branch name for the PR (default: chore/dependabot-cooldown)
+#   --owner <name>            repo owner (default: sburl)
+#   --filter <regex>           only operate on repos whose nameWithOwner matches
+#   --dry-run                  plan-only; no clones, no commits, no PRs
+#   --limit <N>                cap the number of repos to process (default: 100)
+#   --public-age-days <N>      default cooldown for public repos (default: 7)
+#   --public-major-days <N>    semver-major cooldown, public (default: 15)
+#   --private-age-days <N>     default cooldown for private repos (default: 10)
+#   --private-major-days <N>   semver-major cooldown, private (default: 20)
+#   --branch <name>            branch name for the PR (default: chore/dependabot-cooldown)
+#   --age-days <N>             [legacy] applies the same value to public + private default-days
+#
+# Policy (rationale for the asymmetry):
+#   Public repos: shorter waits — more eyes find malicious versions faster,
+#     contributors expect fresher deps, you're less of a single point of failure.
+#   Private repos: longer waits — only you/your team affected, no contributor
+#     urgency, defense-in-depth matters more.
 #
 # Requires: gh (authenticated), jq, git.
 
@@ -31,19 +41,26 @@ OWNER="sburl"
 FILTER=""
 DRYRUN=0
 LIMIT=100
-AGE_DAYS=10
+PUBLIC_AGE_DAYS=7
+PUBLIC_MAJOR_DAYS=15
+PRIVATE_AGE_DAYS=10
+PRIVATE_MAJOR_DAYS=20
 BRANCH="chore/dependabot-cooldown"
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --owner)     OWNER="$2"; shift 2 ;;
-        --filter)    FILTER="$2"; shift 2 ;;
-        --dry-run)   DRYRUN=1; shift ;;
-        --limit)     LIMIT="$2"; shift 2 ;;
-        --age-days)  AGE_DAYS="$2"; shift 2 ;;
-        --branch)    BRANCH="$2"; shift 2 ;;
+        --owner)              OWNER="$2"; shift 2 ;;
+        --filter)             FILTER="$2"; shift 2 ;;
+        --dry-run)            DRYRUN=1; shift ;;
+        --limit)              LIMIT="$2"; shift 2 ;;
+        --public-age-days)    PUBLIC_AGE_DAYS="$2"; shift 2 ;;
+        --public-major-days)  PUBLIC_MAJOR_DAYS="$2"; shift 2 ;;
+        --private-age-days)   PRIVATE_AGE_DAYS="$2"; shift 2 ;;
+        --private-major-days) PRIVATE_MAJOR_DAYS="$2"; shift 2 ;;
+        --age-days)           PUBLIC_AGE_DAYS="$2"; PRIVATE_AGE_DAYS="$2"; shift 2 ;;
+        --branch)             BRANCH="$2"; shift 2 ;;
         -h|--help)
-            sed -n '2,25p' "$0"
+            sed -n '2,30p' "$0"
             exit 0
             ;;
         *)
@@ -66,48 +83,56 @@ TEMPLATE="$REPO_ROOT/templates/dependabot.yml"
 
 # ---------------------------------------------------------------------------
 # Per-ecosystem block renderers
+# Args: $1 = default-days, $2 = major-days
 # ---------------------------------------------------------------------------
 render_npm_block() {
+    local d="$1" m="$2"
+    local patch=$(( d > 7 ? 7 : d ))
     cat <<EOF
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
     cooldown:
-      default-days: $AGE_DAYS
-      semver-major-days: 30
-      semver-minor-days: $AGE_DAYS
-      semver-patch-days: 7
+      default-days: $d
+      semver-major-days: $m
+      semver-minor-days: $d
+      semver-patch-days: $patch
     open-pull-requests-limit: 5
 EOF
 }
 
 render_pip_block() {
+    local d="$1" m="$2"
+    local patch=$(( d > 7 ? 7 : d ))
     cat <<EOF
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
     cooldown:
-      default-days: $AGE_DAYS
-      semver-major-days: 30
-      semver-minor-days: $AGE_DAYS
-      semver-patch-days: 7
+      default-days: $d
+      semver-major-days: $m
+      semver-minor-days: $d
+      semver-patch-days: $patch
     open-pull-requests-limit: 5
 EOF
 }
 
 render_actions_block() {
+    # Actions always get the longer (private) treatment — they run with secrets
+    local d="$1" m="$2"
+    local patch=$(( d > 7 ? 7 : d ))
     cat <<EOF
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     cooldown:
-      default-days: 14
-      semver-major-days: 30
-      semver-minor-days: 14
-      semver-patch-days: 7
+      default-days: $d
+      semver-major-days: $m
+      semver-minor-days: $d
+      semver-patch-days: $patch
 EOF
 }
 
@@ -142,8 +167,21 @@ trap "rm -rf $WORK" EXIT
 for repo in $(echo "$REPOS_JSON" | jq -r '.[].nameWithOwner'); do
     processed=$((processed + 1))
     default_branch=$(echo "$REPOS_JSON" | jq -r --arg r "$repo" '.[] | select(.nameWithOwner == $r) | .defaultBranchRef.name // "main"')
+    is_private=$(echo "$REPOS_JSON" | jq -r --arg r "$repo" '.[] | select(.nameWithOwner == $r) | .isPrivate')
+
+    # Pick cooldown values based on visibility
+    if [ "$is_private" = "true" ]; then
+        repo_age_days="$PRIVATE_AGE_DAYS"
+        repo_major_days="$PRIVATE_MAJOR_DAYS"
+        visibility="private"
+    else
+        repo_age_days="$PUBLIC_AGE_DAYS"
+        repo_major_days="$PUBLIC_MAJOR_DAYS"
+        visibility="public"
+    fi
+
     echo
-    echo "─── [$processed/$REPO_COUNT] $repo (default: $default_branch) ───"
+    echo "─── [$processed/$REPO_COUNT] $repo ($visibility, default: $default_branch, cooldown: ${repo_age_days}d/${repo_major_days}d major) ───"
 
     # Quick remote check for the file — saves the clone in most cases
     if gh api "repos/$repo/contents/.github/dependabot.yml" >/dev/null 2>&1; then
@@ -184,9 +222,9 @@ for repo in $(echo "$REPOS_JSON" | jq -r '.[].nameWithOwner'); do
 
     # Render template
     npm_block=""; pip_block=""; actions_block=""
-    [ $has_npm = 1 ]     && npm_block=$(render_npm_block)
-    [ $has_pip = 1 ]     && pip_block=$(render_pip_block)
-    [ $has_actions = 1 ] && actions_block=$(render_actions_block)
+    [ $has_npm = 1 ]     && npm_block=$(render_npm_block "$repo_age_days" "$repo_major_days")
+    [ $has_pip = 1 ]     && pip_block=$(render_pip_block "$repo_age_days" "$repo_major_days")
+    [ $has_actions = 1 ] && actions_block=$(render_actions_block "$repo_age_days" "$repo_major_days")
 
     # Build the file from the template by substituting the markers.
     # Use awk to handle multi-line replacements cleanly.
@@ -209,8 +247,10 @@ Adds a Dependabot config with cooldown so version-bump PRs lag behind the
 upstream release. Catches the supply-chain attack window where a bad
 release is live but hasn't been pulled yet.
 
-- npm/pip: ${AGE_DAYS}-day cooldown, 30 days for major versions
-- github-actions: 14-day cooldown (longer because Actions run with secrets)
+This repo is ${visibility}: ${repo_age_days}-day default cooldown,
+${repo_major_days}-day cooldown for major versions.
+
+- All ecosystems: ${repo_age_days}d default, ${repo_major_days}d major
 - Security advisories bypass cooldown — CVE patches still fire immediately
 
 Generated by CrossCheck install-dependabot-cooldown.sh
@@ -222,9 +262,11 @@ Policy: https://github.com/sburl/CrossCheck/blob/main/docs/rules/trust-model.md"
             --body "$(cat <<EOF
 Adds a \`.github/dependabot.yml\` with cooldown so version-bump PRs lag behind upstream releases. This catches the supply-chain attack window where a bad release is live but hasn't been pulled yet.
 
-**Per-ecosystem cooldowns:**
-- **npm / pip**: ${AGE_DAYS} days default, 30 days for major versions
-- **github-actions**: 14 days (longer — Actions run with repo secrets)
+**This repo is ${visibility}** — using the ${visibility}-tier cooldown.
+
+**Cooldowns (all ecosystems):**
+- ${repo_age_days} days default
+- ${repo_major_days} days for major versions
 
 **Security advisories bypass cooldown** — GHSA-triggered updates still fire immediately. Only routine version-bump PRs are delayed.
 

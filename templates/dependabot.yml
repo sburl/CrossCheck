@@ -1,0 +1,14 @@
+# Dependabot config with cooldown — give the rest of the world time to find
+# malicious releases before you pull them into your repos.
+#
+# Distributed by CrossCheck via scripts/install-dependabot-cooldown.sh
+# Policy: docs/rules/trust-model.md § Supply Chain
+#
+# cooldown does NOT delay security advisories — GHSA-triggered updates fire
+# immediately. It only delays version-bump PRs.
+
+version: 2
+updates:
+{{NPM_BLOCK}}
+{{PIP_BLOCK}}
+{{ACTIONS_BLOCK}}

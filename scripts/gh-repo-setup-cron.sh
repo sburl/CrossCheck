@@ -135,4 +135,23 @@ echo "$REPOS_JSON" | jq -r '.[] | "\(.nameWithOwner)\t\(.createdAt)\t\(.viewerPe
   fi
 done
 
+# ---------------------------------------------------------------------------
+# Supply-chain drift sync: ensure Dependabot cooldown is set across all repos.
+# Idempotent — skips repos that already have cooldown configured.
+# ---------------------------------------------------------------------------
+COOLDOWN_SCRIPT="$SCRIPT_DIR/install-dependabot-cooldown.sh"
+if [ -x "$COOLDOWN_SCRIPT" ]; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) — Dependabot cooldown sync starting"
+    # Public defaults 7/15, private defaults 10/20. Override via env if needed.
+    bash "$COOLDOWN_SCRIPT" \
+        --public-age-days "${COOLDOWN_PUBLIC_DAYS:-7}" \
+        --public-major-days "${COOLDOWN_PUBLIC_MAJOR_DAYS:-15}" \
+        --private-age-days "${COOLDOWN_PRIVATE_DAYS:-10}" \
+        --private-major-days "${COOLDOWN_PRIVATE_MAJOR_DAYS:-20}" 2>&1 \
+        | sed 's/^/  /'
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) — Dependabot cooldown sync finished"
+else
+    echo "  (cooldown sync skipped — $COOLDOWN_SCRIPT not found)"
+fi
+
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) — repo-setup-cron finished"

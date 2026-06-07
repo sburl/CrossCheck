@@ -96,7 +96,7 @@ bin/switchyard review codex --repo <org/repo> --pr {PR_NUMBER} --apply --attest
 ```
 Then merge through the gate — switchYard uses merge commits, never squash:
 ```bash
-bin/switchyard merge finalize --repo <org/repo> --pr {PR_NUMBER} \
+SWITCHYARD_MERGE_WRITE=1 bin/switchyard merge finalize --repo <org/repo> --pr {PR_NUMBER} \
   --base-sha <main-head-sha> --expected-head-sha <pr-head-sha> \
   --merge-method merge --apply
 ```

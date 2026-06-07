@@ -4,7 +4,7 @@ description: Initiate autonomous PR review process with Codex agent
 ---
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-06-06-00-00
 
 # PR Review with Codex Agent
 
@@ -79,6 +79,22 @@ Repeat Steps 3-4 until Codex explicitly approves merge with destination.
 ## Step 6: Merge
 
 When Codex explicitly approves:
+
+**switchYard / any repo with `bin/switchyard` (control-plane repos that gate merges through `merge finalize`):**
+First record the SHA-bound review attestation so `merge finalize` recognizes this local Codex approval. Without it, finalize reports `crosscheck_failed` for r2+ PRs and you fall back to a bare `gh pr merge` that skips the serialization lock, Path-D audit, and Linear state flip (the exact gap GIT-2833 / GIT-3020 close):
+```bash
+bin/switchyard review codex --repo <org/repo> --pr {PR_NUMBER} --apply --attest
+# (use --set-status instead of --attest when the environment has statuses:write)
+```
+Then merge through the gate — switchYard uses merge commits, never squash:
+```bash
+SWITCHYARD_MERGE_WRITE=1 bin/switchyard merge finalize --repo <org/repo> --pr {PR_NUMBER} \
+  --base-sha <main-head-sha> --expected-head-sha <pr-head-sha> \
+  --merge-method merge --apply
+```
+See switchYard's merge-gate docs for the full finalize flag set (green-baseline, locks, and the r3 `human-approval record` artifact).
+
+**Other repos:** bare merge per the repo's ruleset:
 ```bash
 gh pr merge {PR_NUMBER} --squash  # GitHub ruleset enforces squash-only merges
 ```

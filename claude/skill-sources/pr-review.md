@@ -4,7 +4,7 @@ description: Initiate autonomous PR review process with Claude agent
 ---
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-06-06-00-00
 
 # PR Review with Claude Agent
 
@@ -87,6 +87,22 @@ Repeat Steps 3-5 until Claude explicitly approves merge with destination.
 ## Step 7: Merge
 
 When Claude explicitly approves:
+
+**switchYard / any repo with `bin/switchyard` (control-plane repos that gate merges through `merge finalize`):**
+First record the SHA-bound review attestation so `merge finalize` recognizes the approval. Without it, finalize reports `crosscheck_failed` for r2+ PRs and you fall back to a bare `gh pr merge` that skips the serialization lock, Path-D audit, and Linear state flip (the exact gap GIT-2833 / GIT-3020 close). The attestation verb is Codex-backed (it records the canonical independent review regardless of which agent drove the loop above):
+```bash
+bin/switchyard review codex --repo <org/repo> --pr {PR_NUMBER} --apply --attest
+# (use --set-status instead of --attest when the environment has statuses:write)
+```
+Then merge through the gate — switchYard uses merge commits, never squash:
+```bash
+SWITCHYARD_MERGE_WRITE=1 bin/switchyard merge finalize --repo <org/repo> --pr {PR_NUMBER} \
+  --base-sha <main-head-sha> --expected-head-sha <pr-head-sha> \
+  --merge-method merge --apply
+```
+See switchYard's merge-gate docs for the full finalize flag set (green-baseline, locks, and the r3 `human-approval record` artifact).
+
+**Other repos:** bare merge per the repo's ruleset:
 ```bash
 gh pr merge {PR_NUMBER} --squash  # GitHub ruleset enforces squash-only merges
 ```

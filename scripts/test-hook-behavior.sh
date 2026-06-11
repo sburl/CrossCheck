@@ -514,10 +514,57 @@ test_prepush_delete_branch_allowed() {
     fi
 }
 
+test_prepush_swift_keyword_arg_fp_allowed() {
+    # Regression: intakeToken: TelemetryIntakeToken.value was a false positive (PR #1615).
+    # Colon separator with an unquoted identifier is a Swift keyword arg, not a secret literal.
+    setup_test_repo_with_remote "prepush-swift-kwarg-fp"
+    echo "intakeToken: TelemetryIntakeToken.value" > Worker.swift
+    git add Worker.swift
+    git commit -m "feat: add swift worker with intake token reference" -q --no-verify
+    if git push origin feat/test 2>&1; then
+        pass "Swift keyword arg (intakeToken: Identifier.member) is not a false-positive"
+    else
+        fail "Swift keyword arg should not trigger generic secret scan"
+    fi
+}
+
+test_prepush_function_call_result_fp_allowed() {
+    # Regression: account_session_token = get_or_create_account_for_worker(...) was a FP (#1516).
+    # Equals separator followed by a function call is not a secret literal.
+    setup_test_repo_with_remote "prepush-fn-call-fp"
+    echo "account_session_token = get_or_create_account_for_worker(req.worker_id, req.display_name)" > service.py
+    git add service.py
+    git commit -m "feat: add account session service module" -q --no-verify
+    if git push origin feat/test 2>&1; then
+        pass "Function call result (session_token = fn_name(...)) is not a false-positive"
+    else
+        fail "Function call result should not trigger generic secret scan"
+    fi
+}
+
+test_prepush_unquoted_yaml_secret_still_blocks() {
+    # Regression guard: unquoted colon-style YAML secret must still be detected.
+    # The FP fix must not allow bare config-file key values to slip through.
+    setup_test_repo_with_remote "prepush-yaml-secret"
+    # Build from parts to avoid triggering repo's own pre-commit hook
+    local kn="api_key" kv="sk-proj-abcdefghijklmnopqrstuvwx"
+    printf '%s: %s\n' "$kn" "$kv" > config.yaml
+    git add config.yaml
+    git commit -m "feat: add yaml config with api key" -q --no-verify
+    if git push origin feat/test 2>&1; then
+        fail "Unquoted YAML colon secret should still be blocked by pre-push"
+    else
+        pass "Unquoted YAML colon secret (bare config key value) still blocked"
+    fi
+}
+
 test_prepush_secret_rescan_blocks
 test_prepush_feature_branch_allowed
 test_prepush_provider_token_blocks
 test_prepush_delete_branch_allowed
+test_prepush_swift_keyword_arg_fp_allowed
+test_prepush_function_call_result_fp_allowed
+test_prepush_unquoted_yaml_secret_still_blocks
 echo ""
 
 # ============================================================

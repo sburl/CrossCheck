@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-06-11-00-00
 
 Complete reference tables for daily workflow.
 
@@ -36,6 +36,8 @@ When user requests these tasks, invoke the corresponding skill:
 | "setup automation" | `/setup-automation` | Install hooks + CI |
 | "customize statusline" | `/setup-statusline` | Configure status bar |
 | "do the work", "process tasks" | `/do-work` | Process task queue from do-work/ folder |
+| "drain repo", "drain approved PRs", "merge wave" | `/drain-repo` | Drain review-approved PRs for a repo via integration-branch process |
+| "triage repo", "triage Linear queue", "intake sweep" | `/triage-repo` | Autonomous Linear intake triage and queue allocation for a target repo |
 | "cleanup garbage" | `/garbage-collect` | Review /garbage folder |
 | "usage", "tokens", "how much AI", "spending" | `/ai-usage` | Token usage, cost, and impact dashboard |
 | "test webapp", "browser test", "screenshot" | `/webapp-test` | Automated Playwright-based web app testing |
@@ -271,10 +273,17 @@ mv old-file.js garbage/
 ### Development
 
 | Skill | When to Use | What It Does |
-|-------|-------------|--------------|
+|-------|-------------|-------------|
 | `/plan` | Complex task (>3 files) | Enters plan mode, designs before implementation |
 | `/do-work` | Process task queue | Reads do-work/ folder, executes tasks autonomously |
 | `/doc-timestamp` | Modified .md file | Updates "Last Updated:" timestamp |
+
+### Repo Operations
+
+| Skill | When to Use | What It Does |
+|-------|-------------|-------------|
+| `/drain-repo` | Drain approved PRs for a repo | Partitions open PRs, validates combined CI, merges wave-by-wave (acorn\|firehose\|thriftfit\|switchyard) |
+| `/triage-repo` | Linear intake triage for a repo | Dedupes, marks stale, chains deps, enriches, routes to correct queue (acorn\|firehose\|thriftfit) |
 
 ### Analytics
 

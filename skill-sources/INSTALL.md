@@ -1,7 +1,7 @@
 # Installing Codex Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-06-11-00-00
 
 This directory contains all custom skill sources for Codex.
 
@@ -33,7 +33,7 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
   cp ~/.crosscheck/skill-sources/*.md ~/.codex/commands/
 ```
 
-## Available Skills (30 total)
+## Available Skills (32 total)
 
 ### PR Workflow (9)
 - `/submit-pr` - Automated PR submission with checks
@@ -66,6 +66,10 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
 - `/do-work` - Process autonomous task queue from do-work/ folder
 - `/commit-smart` - Atomic Git Commit
 - `/doc-timestamp` - Add/update timestamps in docs
+
+### Repo Operations (2)
+- `/drain-repo` - Drain review-approved PRs via integration-branch process (acorn|firehose|thriftfit|switchyard)
+- `/triage-repo` - Autonomous Linear intake triage and queue allocation for a target repo (acorn|firehose|thriftfit)
 
 ### Knowledge Capture (1)
 - `/capture-skill` - Distill session discoveries into reusable skills (auto-installs to Claude + Codex)

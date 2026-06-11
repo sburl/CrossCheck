@@ -4,8 +4,8 @@ description: |
   Autonomous Linear intake triage and queue allocation for one target repo.
   Sweeps issues in triage/needs-clarification/hold/queue:human, dedupes, marks
   stale, chains dependencies, enriches specs, and routes to the correct queue.
-  Pass the target as an argument: acorn | firehose | thriftfit.
-argument-hint: "<repo: acorn|firehose|thriftfit>"
+  Pass the target as an argument: acorn | firehose | thriftfit | switchyard.
+argument-hint: "<repo: acorn|firehose|thriftfit|switchyard>"
 date: 2026-06-11
 source: ~/Desktop/general_repo_linear_triage_prompt.md
 ---
@@ -21,6 +21,7 @@ Run a full Switchyard-governed Linear intake sweep for one target repo:
 /triage-repo acorn
 /triage-repo firehose
 /triage-repo thriftfit
+/triage-repo switchyard
 ```
 
 If no argument is provided, ask for exactly one of the valid targets before continuing.
@@ -34,6 +35,7 @@ If no argument is provided, ask for exactly one of the valid targets before cont
 | `acorn` | `sqburl/Acorn-Compute` | Acorn |
 | `firehose` | `sqburl/FireHose` | Firehose |
 | `thriftfit` | `sqburl/ThriftFit` | ThriftFit |
+| `switchyard` | `sburl/switchyard` | switchYard |
 
 Prefer Linear project ID/project membership over issue prefix. Some projects share
 `GIT-*` issue IDs, so never classify by prefix alone.

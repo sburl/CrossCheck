@@ -2,6 +2,13 @@
 # Post-merge hook: Cleanup and verification after PR merge
 # Addresses: 401 permission blocks (branch cleanup), CI verification pattern
 
+# Skip in CI: this is a developer-workflow hook (branch deletion, TODO.md rewrite,
+# assessment counters). It must never run inside a runner's git operations
+# (see GIT-4378 / GIT-4424).
+if [ -n "$GITHUB_ACTIONS" ] || [ -n "$RUNNER_NAME" ] || [ -n "$CI" ]; then
+    exit 0
+fi
+
 echo "🎉 Merge completed: running post-merge actions..."
 
 # 1. Delete merged feature branch (addresses 401 permission blocks)

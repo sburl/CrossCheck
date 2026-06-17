@@ -1,6 +1,13 @@
 #!/bin/bash
 # Post-commit hook: Checkpoint tracking, long session detection, extensions
 
+# Skip in CI: this is a developer-workflow hook (checkpointing, session reminders,
+# Codex-review dispatch). It must never run inside a runner's git operations
+# (see GIT-4378 / GIT-4424).
+if [ -n "$GITHUB_ACTIONS" ] || [ -n "$RUNNER_NAME" ] || [ -n "$CI" ]; then
+    exit 0
+fi
+
 # 1. Update PROGRESS.md checkpoint (for autonomous work sessions)
 if [ -f "PROGRESS.md" ]; then
     if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then

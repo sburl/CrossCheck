@@ -514,10 +514,30 @@ test_prepush_delete_branch_allowed() {
     fi
 }
 
+test_prepush_noop_push_is_not_treated_as_delete_only() {
+    setup_test_repo_with_remote "prepush-noop"
+
+    echo "clean code" > app.py
+    git add app.py
+    git commit -m "feat: add clean application code" -q --no-verify
+    git push -u origin feat/test -q 2>/dev/null
+
+    output=$(git push 2>&1) || true
+
+    if echo "$output" | grep -q "Delete-only push"; then
+        fail "No-op push should not be treated as delete-only"
+    elif echo "$output" | grep -q "Everything up-to-date"; then
+        pass "No-op push remains a normal up-to-date push"
+    else
+        fail "No-op push should succeed as an up-to-date push"
+    fi
+}
+
 test_prepush_secret_rescan_blocks
 test_prepush_feature_branch_allowed
 test_prepush_provider_token_blocks
 test_prepush_delete_branch_allowed
+test_prepush_noop_push_is_not_treated_as_delete_only
 echo ""
 
 # ============================================================

@@ -34,6 +34,21 @@ GitHub enforces identity-based rules:
 
 These are enforced by deny rules in `settings.json` (`gh*--admin*`, `*--admin*`, `gh api*rulesets*`, `gh api*branches/*/protection*`, `*graphql*BranchProtection*`, `*graphql*Ruleset*`), but the prohibition is absolute regardless of settings. The `*--admin*` catch-all prevents command-prefixing bypasses (e.g. `cd . && gh pr merge --admin`). The GraphQL patterns prevent ruleset mutation via the GitHub GraphQL API.
 
+## Required merge convention: `gh pr merge --auto`
+
+**ALWAYS use `gh pr merge --auto`** (not bare `gh pr merge`) when merging PRs.
+
+**Why:** Bare `gh pr merge` attempts the merge immediately. Parallel merge invocations against the same base branch race; GitHub creates the merge commit but only one fast-forward succeeds, leaving the loser reported as "MERGED" with a `mergeCommit.oid` that is **not in main's ancestry**. We hit this on 2026-05-20 — PR #2340 was reported merged but its commit never landed, and a historical audit found 3 prior occurrences (#2096, #1670, #1434).
+
+`--auto` queues the merge to fire only when checks pass and the base is current, eliminating the race entirely. It also waits for branch-protection conditions instead of failing outright.
+
+**Pattern:**
+```bash
+gh pr merge $PR_NUMBER --auto --squash --delete-branch
+```
+
+The `--squash` matches the squash-only ruleset; `--delete-branch` keeps the branch list clean; `--auto` is what prevents the lost-race class.
+
 ## Why this works
 
 - Agents work freely on feature branches

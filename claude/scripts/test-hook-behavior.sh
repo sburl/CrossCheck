@@ -28,8 +28,12 @@ TEST_DIR=""
 export GIT_CONFIG_GLOBAL=/dev/null
 
 # Cleanup function — remove all test directories from this run (keyed by PID)
+MANAGED_TEST_DIR=""
 cleanup() {
     rm -rf /tmp/hook-behavior-test-*-$$ 2>/dev/null || true
+    if [ -n "$MANAGED_TEST_DIR" ]; then
+        rm -rf "$MANAGED_TEST_DIR" 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT
 
@@ -606,7 +610,8 @@ test_postcheckout_skips_scratch_clone() {
 test_postcheckout_managed_root_cleans_untracked_tmp_only() {
     local name="checkout-managed"
     local managed_root="${HOME}/developer/worktrees"
-    TEST_DIR="${managed_root}/hook-behavior-test-${name}-$$"
+    MANAGED_TEST_DIR="${managed_root}/hook-behavior-test-${name}-$$"
+    TEST_DIR="$MANAGED_TEST_DIR"
     rm -rf "$TEST_DIR"
     mkdir -p "$TEST_DIR"
     cd "$TEST_DIR"
@@ -627,7 +632,7 @@ test_postcheckout_managed_root_cleans_untracked_tmp_only() {
     echo "home = /tmp/venv" > .venv/pyvenv.cfg
     echo junk > .tmp/junk.txt
 
-    output=$(git checkout -q -b feat/managed 2>&1) || true
+    output=$(CROSSCHECK_MANAGED_ROOTS="${HOME}/developer" git checkout -q -b feat/managed 2>&1) || true
     survived=0
     if [ -f app.py ] && [ -f .venv/pyvenv.cfg ] && [ ! -e .tmp/junk.txt ] && [ -z "$(git diff --name-only --diff-filter=D)" ]; then
         survived=1
@@ -644,9 +649,71 @@ test_postcheckout_managed_root_cleans_untracked_tmp_only() {
     fi
 }
 
+test_postcheckout_kills_only_repo_runners() {
+    setup_test_repo "checkout-kill"
+    install_postcheckout
+
+    mkdir -p bin
+    cat > bin/pytest << 'EOF'
+#!/bin/sh
+sleep 30
+EOF
+    chmod +x bin/pytest
+
+    outside="/tmp/hook-behavior-test-pytest-outside-$$"
+    mkdir -p "$outside"
+    cp bin/pytest "$outside/pytest"
+
+    ( exec ./bin/pytest ) &
+    in_pid=$!
+    ( cd "$outside" && exec ./pytest ) &
+    out_pid=$!
+    ( exec python3 -c 'import time; time.sleep(30)' ) &
+    py_pid=$!
+    sleep 0.4
+
+    in_child=$(pgrep -P "$in_pid" || true)
+    out_child=$(pgrep -P "$out_pid" || true)
+
+    CROSSCHECK_HOOK_ALLOW_UNMANAGED=1 git checkout -q -b feat/kill
+
+    in_dead=0
+    if ! kill -0 "$in_pid" 2>/dev/null; then
+        in_dead=1
+    fi
+    out_alive=0
+    if kill -0 "$out_pid" 2>/dev/null; then
+        out_alive=1
+    fi
+    py_alive=0
+    if kill -0 "$py_pid" 2>/dev/null; then
+        py_alive=1
+    fi
+
+    kill "$in_pid" "$out_pid" "$py_pid" $in_child $out_child 2>/dev/null || true
+    wait "$in_pid" "$out_pid" "$py_pid" 2>/dev/null || true
+
+    if [ "$in_dead" -eq 1 ]; then
+        pass "In-repo pytest shebang was stopped"
+    else
+        fail "In-repo pytest should have been stopped"
+    fi
+    if [ "$out_alive" -eq 1 ]; then
+        pass "Pytest outside the repo was left running"
+    else
+        fail "Pytest outside the repo should have been left running"
+    fi
+    if [ "$py_alive" -eq 1 ]; then
+        pass "Python process in the repo was left running"
+    else
+        fail "Python process in the repo should have been left running"
+    fi
+}
+
 test_postcheckout_leaves_tracked_files_and_venv
 test_postcheckout_skips_scratch_clone
 test_postcheckout_managed_root_cleans_untracked_tmp_only
+test_postcheckout_kills_only_repo_runners
 echo ""
 
 # ============================================================

@@ -207,7 +207,7 @@ Note: --no-verify is blocked by permissions (policy enforcement)
 ✅ Environment cleaned for new branch
 ```
 
-No action needed. Continue working on the new branch. Orphan pytest, jest, and vitest processes whose working directory is that repo are cleaned. Add workspace roots with `CROSSCHECK_MANAGED_ROOTS` (colon-separated absolute paths). `CROSSCHECK_HOOK_ALLOW_UNMANAGED=1` runs cleanup in a temporary repo on purpose.
+No action needed. Continue working on the new branch. Orphan pytest, jest, and vitest processes whose working directory is that repo are cleaned, including when the process list shows the interpreter in front of the runner script. python, pip, node, and npm are not killed. A worktree created outside the allowlist is skipped until its path is added. Add workspace roots with `CROSSCHECK_MANAGED_ROOTS` (colon-separated absolute paths). `CROSSCHECK_HOOK_ALLOW_UNMANAGED=1` runs cleanup in a temporary repo on purpose.
 
 ---
 

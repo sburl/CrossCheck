@@ -53,13 +53,17 @@ echo "  🧹 Killing orphan test processes in $repo_path..."
 # argv0 basename must be pytest, jest, or vitest. Do not match python, node,
 # npm, or pip: those include venv installers and language servers.
 if command -v ps > /dev/null 2>&1; then
+    # Shebang scripts show up as "<interpreter> <script>", so match the
+    # basename of any argument, not only argv0. Do not match python/pip/node.
     pids=$(ps -axo pid=,command= | awk '
         {
-            argv0 = $2
-            n = split(argv0, parts, "/")
-            base = parts[n]
-            if (base ~ /^(pytest|jest|vitest)$/) {
-                print $1
+            for (i = 2; i <= NF; i++) {
+                n = split($i, parts, "/")
+                base = parts[n]
+                if (base ~ /^(pytest|jest|vitest)$/) {
+                    print $1
+                    break
+                }
             }
         }
     ')
@@ -68,10 +72,15 @@ if command -v ps > /dev/null 2>&1; then
         while IFS= read -r pid; do
             [ -n "$pid" ] || continue
             cwd=""
-            if command -v lsof > /dev/null 2>&1; then
+            if [ -d "/proc/$pid" ]; then
+                cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null || true)
+            elif command -v lsof > /dev/null 2>&1; then
                 cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | awk '/^n/ { print substr($0, 2); exit }')
             fi
             [ -n "$cwd" ] || continue
+            if [ -d "$cwd" ]; then
+                cwd=$(cd "$cwd" && pwd -P)
+            fi
             case "$cwd" in
                 "$physical"/.venv | "$physical"/.venv/* | "$physical"/node_modules | "$physical"/node_modules/*)
                     continue

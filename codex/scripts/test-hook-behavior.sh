@@ -661,6 +661,96 @@ test_postmerge_waterfall_reminder
 echo ""
 
 # ============================================================
+# Supply-chain PreToolUse gate (GIT-6494)
+# ============================================================
+echo "📋 Category: Supply-chain gate parses executed commands"
+echo ""
+
+supply_gate_run() {
+    GATE_STATUS=0
+    GATE_OUTPUT=""
+    local payload gate
+    gate="$CROSSCHECK_DIR/scripts/preuse-supply-chain-gate.sh"
+    # The gate lives in the canonical scripts/ tree. Mirror suites still run it.
+    if [ ! -f "$gate" ]; then
+        gate="$(cd "$CROSSCHECK_DIR/.." && pwd)/scripts/preuse-supply-chain-gate.sh"
+    fi
+    payload=$(jq -n --arg cmd "$1" '{tool_name:"Bash", tool_input:{command:$cmd}}')
+    set +e
+    GATE_OUTPUT=$(printf '%s' "$payload" | bash "$gate" 2>&1)
+    GATE_STATUS=$?
+    set -e
+}
+
+test_supply_gate_ignores_quoted_install_prose() {
+    supply_gate_run "python3 -c 'print(\"pip install switchyard cannot ever be an acceptance criterion\")'"
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Quoted pip install prose is not an install"
+    else
+        fail "Quoted pip install prose should be allowed (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_ignores_heredoc_body() {
+    supply_gate_run "$(printf '%s\n' 'cat <<EOF' 'pip install foo' 'EOF')"
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Here-document body mentioning pip install is not an install"
+    else
+        fail "Here-document body should be allowed (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_blocks_real_pip_install() {
+    supply_gate_run "pip install foo"
+    if [ "$GATE_STATUS" -eq 2 ] && printf '%s\n' "$GATE_OUTPUT" | grep -q "Parsed action: pip install foo"; then
+        pass "pip install foo is blocked and the parsed action is named"
+    else
+        fail "pip install foo should block with a parsed action (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_blocks_install_after_safe_command() {
+    supply_gate_run "npm ci && pip install evil"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "A later pip install is not masked by npm ci"
+    else
+        fail "npm ci && pip install evil should block (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_override_must_be_assignment() {
+    supply_gate_run "SAFE_INSTALL_OVERRIDE=1 pip install foo"
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "SAFE_INSTALL_OVERRIDE=1 assignment allows the install"
+    else
+        fail "Override assignment should allow the install (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'echo "SAFE_INSTALL_OVERRIDE=1" && pip install evil'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Override text inside quotes does not allow a later install"
+    else
+        fail "Quoted override text should not allow pip install (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_blocks_command_substitution() {
+    supply_gate_run 'echo $(pip install foo)'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Command substitution that installs is blocked"
+    else
+        fail "Command substitution install should block (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_ignores_quoted_install_prose
+test_supply_gate_ignores_heredoc_body
+test_supply_gate_blocks_real_pip_install
+test_supply_gate_blocks_install_after_safe_command
+test_supply_gate_override_must_be_assignment
+test_supply_gate_blocks_command_substitution
+echo ""
+
+# ============================================================
 # Summary
 # ============================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

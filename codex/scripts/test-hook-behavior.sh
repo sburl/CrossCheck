@@ -658,7 +658,8 @@ test_postcheckout_kills_only_repo_runners() {
 #!/bin/sh
 sleep 30
 EOF
-    chmod +x bin/pytest
+    cp bin/pytest bin/pip
+    chmod +x bin/pytest bin/pip
 
     outside="/tmp/hook-behavior-test-pytest-outside-$$"
     mkdir -p "$outside"
@@ -670,10 +671,13 @@ EOF
     out_pid=$!
     ( exec python3 -c 'import time; time.sleep(30)' ) &
     py_pid=$!
+    ( exec ./bin/pip install pytest ) &
+    pip_pid=$!
     sleep 0.4
 
     in_child=$(pgrep -P "$in_pid" || true)
     out_child=$(pgrep -P "$out_pid" || true)
+    pip_child=$(pgrep -P "$pip_pid" || true)
 
     CROSSCHECK_HOOK_ALLOW_UNMANAGED=1 git checkout -q -b feat/kill
 
@@ -689,9 +693,13 @@ EOF
     if kill -0 "$py_pid" 2>/dev/null; then
         py_alive=1
     fi
+    pip_alive=0
+    if kill -0 "$pip_pid" 2>/dev/null; then
+        pip_alive=1
+    fi
 
-    kill "$in_pid" "$out_pid" "$py_pid" $in_child $out_child 2>/dev/null || true
-    wait "$in_pid" "$out_pid" "$py_pid" 2>/dev/null || true
+    kill "$in_pid" "$out_pid" "$py_pid" "$pip_pid" $in_child $out_child $pip_child 2>/dev/null || true
+    wait "$in_pid" "$out_pid" "$py_pid" "$pip_pid" 2>/dev/null || true
 
     if [ "$in_dead" -eq 1 ]; then
         pass "In-repo pytest shebang was stopped"
@@ -707,6 +715,11 @@ EOF
         pass "Python process in the repo was left running"
     else
         fail "Python process in the repo should have been left running"
+    fi
+    if [ "$pip_alive" -eq 1 ]; then
+        pass "pip install pytest was left running"
+    else
+        fail "pip install pytest should have been left running"
     fi
 }
 

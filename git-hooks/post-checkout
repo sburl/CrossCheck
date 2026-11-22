@@ -50,20 +50,41 @@ fi
 echo "🔄 Branch switched: cleaning up environment"
 echo "  🧹 Killing orphan test processes in $repo_path..."
 
-# argv0 basename must be pytest, jest, or vitest. Do not match python, node,
-# npm, or pip: those include venv installers and language servers.
+# Match a test runner as argv0, or as the first non-flag argument after an
+# interpreter. Do not scan later arguments: "pip install pytest" and
+# "npm install jest" must survive a branch switch.
 if command -v ps > /dev/null 2>&1; then
-    # Shebang scripts show up as "<interpreter> <script>", so match the
-    # basename of any argument, not only argv0. Do not match python/pip/node.
     pids=$(ps -axo pid=,command= | awk '
+        function base(arg, parts, n) {
+            n = split(arg, parts, "/")
+            return parts[n]
+        }
+        function is_runner(arg) {
+            return base(arg) ~ /^(pytest|jest|vitest)$/
+        }
+        function is_interp(arg, b) {
+            b = base(arg)
+            return b ~ /^(python[0-9.]*|Python[0-9.]*|node|sh|bash|env)$/
+        }
         {
-            for (i = 2; i <= NF; i++) {
-                n = split($i, parts, "/")
-                base = parts[n]
-                if (base ~ /^(pytest|jest|vitest)$/) {
-                    print $1
-                    break
+            if (NF < 2) {
+                next
+            }
+            if (is_runner($2)) {
+                print $1
+                next
+            }
+            if (!is_interp($2)) {
+                next
+            }
+            for (i = 3; i <= NF; i++) {
+                if ($i ~ /^-/) {
+                    continue
                 }
+                if (is_runner($i)) {
+                    print $1
+                }
+                break
             }
         }
     ')

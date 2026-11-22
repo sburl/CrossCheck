@@ -470,9 +470,28 @@ word_is_duration() {
     [[ "$1" =~ $re ]]
 }
 
+# $1 word, $2 value-taking short letters, $3 boolean short letters.
+# -iu is a cluster whose last letter takes a value. -uroot is an attached value.
+short_cluster_takes_value() {
+    local w="$1" vals="$2" bools="$3" rest last ch allowed k
+    [[ "$w" =~ ^-[A-Za-z]+$ ]] || return 1
+    rest="${w#-}"
+    last="${rest: -1}"
+    [[ "$vals" == *"$last"* ]] || return 1
+    allowed="${vals}${bools}"
+    k=0
+    while [ "$k" -lt "${#rest}" ]; do
+        ch="${rest:$k:1}"
+        [[ "$allowed" == *"$ch"* ]] || return 1
+        k=$((k + 1))
+    done
+    return 0
+}
+
 # Updates the caller's i/w. $1 flags that take the next word, $2 attached-value globs.
+# $3/$4 are the short letters used to spot a cluster like sudo -iu.
 unwrap_flags() {
-    local takes="$1" glued="$2"
+    local takes="$1" glued="$2" cvals="${3:-}" cbools="${4:-}"
     i=$((i + 1))
     while [ "$i" -lt "$n" ]; do
         w="${WORDS[$i]}"
@@ -482,6 +501,10 @@ unwrap_flags() {
         fi
         [[ "$w" == -* ]] || return 0
         if [ -n "$takes" ] && [[ "$w" == @($takes) ]]; then
+            i=$((i + 2))
+            continue
+        fi
+        if [ -n "$cvals" ] && short_cluster_takes_value "$w" "$cvals" "$cbools"; then
             i=$((i + 2))
             continue
         fi
@@ -525,7 +548,7 @@ classify_segment() {
         base=$(basename "$w")
         case "$base" in
             sudo)
-                unwrap_flags '-u|-g|-p|-C|-D|-h|-r|-t|-T|-U|-R' ''
+                unwrap_flags '-u|-g|-p|-C|-D|-h|-r|-t|-T|-U|-R' '' 'ugpCDhrtTUR' 'AbEeiHkKnPsSvV'
                 continue
                 ;;
             exec)
@@ -533,7 +556,7 @@ classify_segment() {
                 continue
                 ;;
             time)
-                unwrap_flags '-f|-o' ''
+                unwrap_flags '-f|-o' '' 'fo' 'p'
                 continue
                 ;;
             command|nohup)

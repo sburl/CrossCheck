@@ -772,6 +772,10 @@ quote-glued hash	echo "hi"#; pip install foo
 dollar-quote escape	echo $'a\'b'; pip install foo
 exec dash-a	exec -a x pip install foo
 sudo chdir	sudo -D /tmp pip install foo
+sudo cluster	sudo -iu root pip install foo
+sudo cluster E	sudo -Eu root pip install foo
+sudo cluster n	sudo -nu root npm install x
+sudo attached user	sudo -uroot pip install foo
 env altpath	env -P /usr/bin pip install foo
 env split-string	env -S pip install foo
 time format	time -f %e pip install foo

@@ -1,7 +1,7 @@
 # CrossCheck Troubleshooting Guide
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-11-22-14-39
 
 When automation fails, debug it here.
 
@@ -195,21 +195,19 @@ Note: --no-verify is blocked by permissions (policy enforcement)
 
 ### Post-Checkout Hook (Information Only)
 
-**Note:** This hook does not block, it only informs.
+**Note:** This hook does not block, it only informs. It does not rewrite tracked files or remove virtualenvs.
 
-**Trigger:** Switching branches
+**Trigger:** Switching branches inside a managed workspace. The default allowlist is `~/developer`. Scratch clones under `/tmp`, `/private/tmp`, and `/var/folders`, and any other repo outside `CROSSCHECK_MANAGED_ROOTS`, are left untouched.
 
 **Message:**
 ```
 🔄 Branch switched: cleaning up environment
-  🧹 Killing orphan background processes in /Users/sqb/project...
-  ✅ Killed repo-specific background processes
+  🧹 Killing orphan test processes in /Users/sqb/developer/project...
   🗑️  Cleaning .tmp directory...
-  📝 Updating TODO.md branch context...
 ✅ Environment cleaned for new branch
 ```
 
-No action needed. Continue working on new branch. Background processes are cleaned automatically.
+No action needed. Continue working on the new branch. Orphan pytest, jest, and vitest processes whose working directory is that repo are cleaned, including when the process list shows the interpreter in front of the runner script. python, pip, node, and npm are not killed. A worktree created outside the allowlist is skipped until its path is added. Add workspace roots with `CROSSCHECK_MANAGED_ROOTS` (colon-separated absolute paths). `CROSSCHECK_HOOK_ALLOW_UNMANAGED=1` runs cleanup in a temporary repo on purpose.
 
 ---
 

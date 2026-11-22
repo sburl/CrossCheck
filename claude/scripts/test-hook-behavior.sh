@@ -526,44 +526,127 @@ echo ""
 echo "📋 Category: Post-checkout environment cleanup"
 echo ""
 
-test_postcheckout_todo_branch_header() {
-    setup_test_repo "checkout-todo"
+install_postcheckout() {
     cp "$CROSSCHECK_DIR/git-hooks/post-checkout" ".git/hooks/post-checkout"
     chmod +x ".git/hooks/post-checkout"
+}
 
-    # Create TODO.md on the feature branch
+test_postcheckout_leaves_tracked_files_and_venv() {
+    setup_test_repo "checkout-tracked"
+    install_postcheckout
+
     echo "# TODO" > TODO.md
     echo "- Task 1" >> TODO.md
-    git add TODO.md
-    git commit -m "chore: add todo file for testing" -q --no-verify
+    echo "print(1)" > app.py
+    git add TODO.md app.py
+    git commit -m "chore: add tracked files for checkout" -q --no-verify
 
-    # Switch to a new branch (triggers post-checkout)
-    git checkout -q -b feat/other 2>&1 || true
+    mkdir -p .venv
+    echo "home = /tmp/venv" > .venv/pyvenv.cfg
+    mkdir -p outside
+    echo secret > outside/secret.txt
+    ln -s outside .tmp
 
-    if grep -q "## Current Branch: feat/other" TODO.md; then
-        pass "TODO.md branch header updated on checkout"
-    else
-        fail "TODO.md should have branch header after checkout"
-    fi
-}
-
-test_postcheckout_cleanup_runs() {
-    setup_test_repo "checkout-cleanup"
-    cp "$CROSSCHECK_DIR/git-hooks/post-checkout" ".git/hooks/post-checkout"
-    chmod +x ".git/hooks/post-checkout"
-
-    # Switch branches and check that the hook runs (check output)
-    output=$(git checkout -q -b feat/cleanup-test 2>&1) || true
+    # Temporary repos are denied unless the test opts in.
+    output=$(CROSSCHECK_HOOK_ALLOW_UNMANAGED=1 git checkout -q -b feat/other 2>&1) || true
 
     if echo "$output" | grep -q "Branch switched"; then
-        pass "Post-checkout hook runs on branch switch"
+        pass "Post-checkout hook runs when unmanaged repos are allowed"
     else
-        fail "Post-checkout hook should run on branch switch"
+        fail "Post-checkout hook should run when CROSSCHECK_HOOK_ALLOW_UNMANAGED=1"
+    fi
+    if grep -q "## Current Branch:" TODO.md; then
+        fail "TODO.md is tracked and must not be rewritten on checkout"
+    else
+        pass "Tracked TODO.md was not rewritten"
+    fi
+    if [ -f app.py ] && [ -z "$(git diff --name-only --diff-filter=D)" ]; then
+        pass "Tracked files survived checkout"
+    else
+        fail "Checkout deleted tracked files"
+    fi
+    if [ -f .venv/pyvenv.cfg ]; then
+        pass "Virtualenv was not removed"
+    else
+        fail "Virtualenv should survive checkout"
+    fi
+    if [ -L .tmp ] && [ -f outside/secret.txt ]; then
+        pass "Symlinked .tmp was not followed"
+    else
+        fail "Symlinked .tmp or its target was removed"
     fi
 }
 
-test_postcheckout_todo_branch_header
-test_postcheckout_cleanup_runs
+test_postcheckout_skips_scratch_clone() {
+    setup_test_repo "checkout-scratch"
+    install_postcheckout
+
+    echo "keep" > keep.txt
+    git add keep.txt
+    git commit -m "chore: add file that must survive checkout" -q --no-verify
+    mkdir -p .venv
+    echo "home = /tmp/venv" > .venv/pyvenv.cfg
+    mkdir -p .tmp
+    echo junk > .tmp/junk.txt
+
+    output=$(git checkout -q -b feat/scratch 2>&1) || true
+
+    if echo "$output" | grep -q "Branch switched"; then
+        fail "Scratch clone under /tmp must not run cleanup"
+    else
+        pass "Scratch clone under /tmp skipped cleanup"
+    fi
+    if [ -f keep.txt ] && [ -f .venv/pyvenv.cfg ] && [ -f .tmp/junk.txt ] && [ -z "$(git diff --name-only --diff-filter=D)" ]; then
+        pass "Scratch clone working tree and virtualenv were left intact"
+    else
+        fail "Scratch clone lost tracked files, .venv, or .tmp"
+    fi
+}
+
+test_postcheckout_managed_root_cleans_untracked_tmp_only() {
+    local name="checkout-managed"
+    local managed_root="${HOME}/developer/worktrees"
+    TEST_DIR="${managed_root}/hook-behavior-test-${name}-$$"
+    rm -rf "$TEST_DIR"
+    mkdir -p "$TEST_DIR"
+    cd "$TEST_DIR"
+    git init -q
+    git config user.email "test@test.com"
+    git config user.name "Test"
+    mkdir -p .git/hooks
+    echo "initial" > README.md
+    git add README.md
+    git commit -m "chore: initial commit" -q --no-verify
+    git checkout -q -b feat/test
+    install_postcheckout
+
+    echo "print(1)" > app.py
+    git add app.py
+    git commit -m "chore: add app file for managed checkout" -q --no-verify
+    mkdir -p .venv .tmp
+    echo "home = /tmp/venv" > .venv/pyvenv.cfg
+    echo junk > .tmp/junk.txt
+
+    output=$(git checkout -q -b feat/managed 2>&1) || true
+    survived=0
+    if [ -f app.py ] && [ -f .venv/pyvenv.cfg ] && [ ! -e .tmp/junk.txt ] && [ -z "$(git diff --name-only --diff-filter=D)" ]; then
+        survived=1
+    fi
+    cd "$CROSSCHECK_DIR"
+    rm -rf "$TEST_DIR"
+
+    if [ "$survived" -ne 1 ]; then
+        fail "Managed checkout should keep tracked files and .venv and drop untracked .tmp"
+    elif echo "$output" | grep -q "Cleaning .tmp directory"; then
+        pass "Managed workspace cleans untracked .tmp only"
+    else
+        fail "Managed workspace should clean untracked .tmp (output: $output)"
+    fi
+}
+
+test_postcheckout_leaves_tracked_files_and_venv
+test_postcheckout_skips_scratch_clone
+test_postcheckout_managed_root_cleans_untracked_tmp_only
 echo ""
 
 # ============================================================

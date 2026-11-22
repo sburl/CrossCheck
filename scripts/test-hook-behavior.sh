@@ -776,6 +776,16 @@ sudo cluster	sudo -iu root pip install foo
 sudo cluster E	sudo -Eu root pip install foo
 sudo cluster n	sudo -nu root npm install x
 sudo attached user	sudo -uroot pip install foo
+leading redirect	2>/dev/null pip install x
+redirect fd	2>&1 pip install x
+sudo long user	sudo --user root pip install foo
+time long format	time --format %e pip install x
+stdbuf long output	stdbuf --output L pip install x
+env cluster	env -iu FOO pip install x
+timeout cluster	timeout -vk 5 10 pip install x
+exec cluster	exec -ca name pip install x
+coproc	coproc pip install x
+function body	function f { pip install x; }
 env altpath	env -P /usr/bin pip install foo
 env split-string	env -S pip install foo
 time format	time -f %e pip install foo

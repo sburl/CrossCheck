@@ -465,6 +465,20 @@ word_is_assignment() {
     [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]
 }
 
+# A redirect is not the executable. Operators with no target consume the next word.
+skip_one_redirect() {
+    local w="${WORDS[$i]}"
+    local op_re='^[0-9]*([<>]|&[<>]|[<>]&|[<>]{2,3})'
+    local bare_re='^[0-9]*([<>]|&[<>]|[<>]&|[<>]{2,3})$'
+    [[ "$w" =~ $op_re ]] || return 1
+    if [[ "$w" =~ $bare_re ]]; then
+        i=$((i + 2))
+    else
+        i=$((i + 1))
+    fi
+    return 0
+}
+
 word_is_duration() {
     local re='^([0-9]+([.][0-9]+)?[smhd]?|infinity)$'
     [[ "$1" =~ $re ]]
@@ -540,23 +554,30 @@ classify_segment() {
         # Keywords are not the executable. Keep walking: `then pip install`.
         # Do not skip `in`; it would eat the words of `for x in a`.
         case "$w" in
-            if|then|else|elif|fi|for|do|done|while|until|case|'esac'|select|'!'|'{'|'}')
+            function)
+                i=$((i + 2))
+                continue
+                ;;
+            coproc|if|then|else|elif|fi|for|do|done|while|until|case|'esac'|select|'!'|'{'|'}')
                 i=$((i + 1))
                 continue
                 ;;
         esac
+        if skip_one_redirect; then
+            continue
+        fi
         base=$(basename "$w")
         case "$base" in
             sudo)
-                unwrap_flags '-u|-g|-p|-C|-D|-h|-r|-t|-T|-U|-R' '' 'ugpCDhrtTUR' 'AbEeiHkKnPsSvV'
+                unwrap_flags '--user|--group|--chdir|--prompt|--close-from|--host|--role|--type|--other-user|--chroot|--command-timeout|-u|-g|-p|-C|-D|-h|-r|-t|-T|-U|-R' '' 'ugpCDhrtTUR' 'AbEeiHkKnPsSvV'
                 continue
                 ;;
             exec)
-                unwrap_flags '-a' ''
+                unwrap_flags '-a' '' 'a' 'cl'
                 continue
                 ;;
             time)
-                unwrap_flags '-f|-o' '' 'fo' 'p'
+                unwrap_flags '--format|--output|-f|-o' '' 'fo' 'p'
                 continue
                 ;;
             command|nohup)
@@ -564,7 +585,7 @@ classify_segment() {
                 continue
                 ;;
             timeout)
-                unwrap_flags '-k|-s|--kill-after|--signal' '--kill-after=*|--signal=*'
+                unwrap_flags '-k|-s|--kill-after|--signal' '--kill-after=*|--signal=*' 'ks' 'vf'
                 if [ "$i" -lt "$n" ] && word_is_duration "${WORDS[$i]}"; then
                     i=$((i + 1))
                 fi
@@ -575,12 +596,12 @@ classify_segment() {
                 continue
                 ;;
             stdbuf)
-                unwrap_flags '-i|-o|-e' '--input=*|--output=*|--error=*'
+                unwrap_flags '--input|--output|--error|-i|-o|-e' '--input=*|--output=*|--error=*'
                 continue
                 ;;
             env)
                 # -S / --split-string is the command itself when the value is unquoted.
-                unwrap_flags '-u|-C|-P|--chdir|--unset' '--chdir=*|--unset=*'
+                unwrap_flags '-u|-C|-P|--chdir|--unset' '--chdir=*|--unset=*' 'uCP' 'i0v'
                 continue
                 ;;
             *)
@@ -819,6 +840,19 @@ split_segments() {
             cur=""
             i=$((i + 2))
             continue
+        fi
+        if [ "$c" = '&' ]; then
+            # >& and &> are redirects, not a background operator.
+            local prev=""
+            if [ -n "$cur" ]; then
+                prev="${cur: -1}"
+            fi
+            local nxt="${s:$((i + 1)):1}"
+            if [ "$prev" = '>' ] || [ "$nxt" = '>' ]; then
+                cur+="$c"
+                i=$((i + 1))
+                continue
+            fi
         fi
         case "$c" in
             ';'|'|'|'&'|$'\n')

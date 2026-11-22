@@ -677,7 +677,11 @@ supply_gate_run() {
     fi
     payload=$(jq -n --arg cmd "$1" '{tool_name:"Bash", tool_input:{command:$cmd}}')
     set +e
-    GATE_OUTPUT=$(printf '%s' "$payload" | bash "$gate" 2>&1)
+    if [ "${2:-}" = "fault" ]; then
+        GATE_OUTPUT=$(printf '%s' "$payload" | GATE_TEST_FAULT=1 bash "$gate" 2>&1)
+    else
+        GATE_OUTPUT=$(printf '%s' "$payload" | bash "$gate" 2>&1)
+    fi
     GATE_STATUS=$?
     set -e
 }
@@ -765,6 +769,12 @@ env chdir	env -C /tmp pip install foo
 escaped double quote	echo "a\"b" ; pip install foo ; echo "c"
 escaped single quote	echo \' ; pip install foo ; echo \'
 quote-glued hash	echo "hi"#; pip install foo
+dollar-quote escape	echo $'a\'b'; pip install foo
+exec dash-a	exec -a x pip install foo
+sudo chdir	sudo -D /tmp pip install foo
+env altpath	env -P /usr/bin pip install foo
+env split-string	env -S pip install foo
+time format	time -f %e pip install foo
 EOF
     supply_gate_run 'echo hi # pip install foo'
     if [ "$GATE_STATUS" -eq 0 ]; then
@@ -783,6 +793,12 @@ EOF
         pass "Commands that name no package manager stay allowed"
     else
         fail "git status should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run "pip install foo" fault
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "A scanner fault refuses the command"
+    else
+        fail "A scanner fault should refuse (status=$GATE_STATUS)"
     fi
 }
 

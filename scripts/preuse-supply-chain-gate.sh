@@ -125,6 +125,21 @@ scan_skip_single() {
     done
 }
 
+# $'...' treats \' as a literal quote. A plain quote walk would swallow the rest.
+scan_skip_dollar_single() {
+    while [ "$SCAN_I" -lt "$SCAN_N" ]; do
+        if [ "${SCAN_CHARS[$SCAN_I]}" = $'\\' ]; then
+            SCAN_I=$((SCAN_I + 2))
+            continue
+        fi
+        if [ "${SCAN_CHARS[$SCAN_I]}" = "'" ]; then
+            SCAN_I=$((SCAN_I + 1))
+            return 0
+        fi
+        SCAN_I=$((SCAN_I + 1))
+    done
+}
+
 scan_double() {
     while [ "$SCAN_I" -lt "$SCAN_N" ]; do
         local c="${SCAN_CHARS[$SCAN_I]}"
@@ -359,9 +374,8 @@ scan_code() {
             continue
         fi
         if [ "$c" = '$' ] && [ "$next" = "'" ]; then
-            # $'...' is a quoted literal.
             SCAN_I=$((SCAN_I + 2))
-            scan_skip_single
+            scan_skip_dollar_single
             continue
         fi
         if [ "$c" = '$' ] && [ "$next" = '(' ]; then
@@ -511,10 +525,18 @@ classify_segment() {
         base=$(basename "$w")
         case "$base" in
             sudo)
-                unwrap_flags '-u|-g|-p|-C' ''
+                unwrap_flags '-u|-g|-p|-C|-D|-h|-r|-t|-T|-U|-R' ''
                 continue
                 ;;
-            command|exec|time|nohup)
+            exec)
+                unwrap_flags '-a' ''
+                continue
+                ;;
+            time)
+                unwrap_flags '-f|-o' ''
+                continue
+                ;;
+            command|nohup)
                 unwrap_flags '' ''
                 continue
                 ;;
@@ -534,7 +556,8 @@ classify_segment() {
                 continue
                 ;;
             env)
-                unwrap_flags '-u|-S|-C|--chdir|--unset|--split-string' '--chdir=*|--unset=*|--split-string=*'
+                # -S / --split-string is the command itself when the value is unquoted.
+                unwrap_flags '-u|-C|-P|--chdir|--unset' '--chdir=*|--unset=*'
                 continue
                 ;;
             *)
@@ -721,6 +744,11 @@ classify_manager() {
 }
 
 executed_text() {
+    if [ "${GATE_TEST_FAULT:-}" = "1" ]; then
+        # Unset on purpose: a scanner fault must not fail open.
+        # shellcheck disable=SC2154
+        printf '%s' "$GATE_TEST_UNBOUND_SENTINEL" >/dev/null
+    fi
     scan_load "$1"
     SCAN_I=0
     scan_reset_out
@@ -788,12 +816,17 @@ if ! needs_structural_scan "$cmd"; then
 fi
 set +e
 blocked_action=$(
-    text=$(executed_text "$cmd")
+    text=$(executed_text "$cmd") || exit 1
     split_segments "$text"
     for seg in "${SEGMENTS[@]+"${SEGMENTS[@]}"}"; do
-        if ! action=$(classify_segment "$seg"); then
-            printf '%s' "$action"
-            exit 0
+        action=$(classify_segment "$seg")
+        class_status=$?
+        if [ "$class_status" -ne 0 ]; then
+            if [ -n "$action" ]; then
+                printf '%s' "$action"
+                exit 0
+            fi
+            exit 1
         fi
     done
     exit 0

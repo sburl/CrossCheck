@@ -537,7 +537,7 @@ test_postcheckout_leaves_tracked_files_and_venv() {
 
     echo "# TODO" > TODO.md
     echo "- Task 1" >> TODO.md
-    echo "print(1)" > app.py
+    echo "value = 1" > app.py
     git add TODO.md app.py
     git commit -m "chore: add tracked files for checkout" -q --no-verify
 
@@ -620,7 +620,7 @@ test_postcheckout_managed_root_cleans_untracked_tmp_only() {
     git checkout -q -b feat/test
     install_postcheckout
 
-    echo "print(1)" > app.py
+    echo "value = 1" > app.py
     git add app.py
     git commit -m "chore: add app file for managed checkout" -q --no-verify
     mkdir -p .venv .tmp

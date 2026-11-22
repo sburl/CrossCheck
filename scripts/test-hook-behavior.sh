@@ -742,12 +742,57 @@ test_supply_gate_blocks_command_substitution() {
     fi
 }
 
+test_supply_gate_blocks_structured_installs() {
+    local label cmd
+    while IFS=$'\t' read -r label cmd; do
+        [ -z "$label" ] && continue
+        supply_gate_run "$cmd"
+        if [ "$GATE_STATUS" -eq 2 ] && printf '%s\n' "$GATE_OUTPUT" | grep -q "Parsed action:"; then
+            pass "$label"
+        else
+            fail "$label (status=$GATE_STATUS)"
+        fi
+    done <<'EOF'
+if/then install	if true; then pip install foo; fi
+for/do install	for x in a; do pip install foo; done
+bang install	! pip install foo
+process substitution	cat <(pip install foo)
+timeout wrapper	timeout 60 pip install foo
+timeout signal	timeout --signal=TERM 60 pip install foo
+nice wrapper	nice -n 10 pip install foo
+stdbuf wrapper	stdbuf -o L pip install foo
+env chdir	env -C /tmp pip install foo
+escaped double quote	echo "a\"b" ; pip install foo ; echo "c"
+escaped single quote	echo \' ; pip install foo ; echo \'
+quote-glued hash	echo "hi"#; pip install foo
+EOF
+    supply_gate_run 'echo hi # pip install foo'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Comment after a command is not an install"
+    else
+        fail "Comment should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'npm ci'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "npm ci stays allowed"
+    else
+        fail "npm ci should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'git status'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Commands that name no package manager stay allowed"
+    else
+        fail "git status should be allowed (status=$GATE_STATUS)"
+    fi
+}
+
 test_supply_gate_ignores_quoted_install_prose
 test_supply_gate_ignores_heredoc_body
 test_supply_gate_blocks_real_pip_install
 test_supply_gate_blocks_install_after_safe_command
 test_supply_gate_override_must_be_assignment
 test_supply_gate_blocks_command_substitution
+test_supply_gate_blocks_structured_installs
 echo ""
 
 # ============================================================

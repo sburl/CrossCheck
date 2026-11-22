@@ -8,40 +8,85 @@
 #
 # The match is on the shell command that will actually execute. Quoted
 # arguments, comments, and here-document bodies are not installs. Command
-# substitutions are, because the shell runs them. A quoted script passed to
-# bash -c / eval is not re-parsed (GIT-6494); GIT-8227 tracks that residue.
+# substitutions and process substitutions are, because the shell runs them.
+# Shell keywords and the wrappers sudo, command, exec, env, time, timeout,
+# nohup, nice, and stdbuf are unwrapped. A quoted script passed to bash -c /
+# eval is not re-parsed (GIT-6494); GIT-8227 tracks that residue.
 #
 # Exit codes (Claude Code contract):
 #   0 = allow
 #   2 = block, surface stderr back to the model so it self-corrects
-
 set -u
+shopt -s extglob
 
 input=$(cat)
-
 tool=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)
 [ "$tool" != "Bash" ] && exit 0
-
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 [ -z "$cmd" ] && exit 0
 
-# Scanner state. Heredoc queues are global and tagged with SCAN_DEPTH so a
-# nested command substitution cannot consume the caller's here-documents.
-SCAN_S=""
+SCAN_CHARS=()
 SCAN_N=0
 SCAN_I=0
 SCAN_OUT=""
+SCAN_BUF=()
 SCAN_DEPTH=0
 H_DELIM=()
 H_QUOTED=()
 H_TABS=()
 H_LEVEL=()
 
-scan_append_literal_gap() {
-    SCAN_OUT+=" "
+scan_emit() {
+    SCAN_BUF+=("$1")
 }
 
-# First here-doc queued at the current depth (FIFO). Returns 1 if none.
+scan_flush() {
+    if [ "${#SCAN_BUF[@]}" -eq 0 ]; then
+        return 0
+    fi
+    local chunk
+    # printf -v keeps trailing newlines. Command substitution would strip them.
+    printf -v chunk '%s' "${SCAN_BUF[@]}"
+    SCAN_OUT+="$chunk"
+    SCAN_BUF=()
+}
+
+scan_reset_out() {
+    SCAN_OUT=""
+    SCAN_BUF=()
+}
+
+scan_append_literal_gap() {
+    scan_emit " "
+}
+
+scan_load() {
+    local s="$1"
+    SCAN_CHARS=()
+    local n=${#s}
+    if [ "$n" -gt 0 ]; then
+        if [ "$n" -lt 2000 ]; then
+            local i=0
+            while [ "$i" -lt "$n" ]; do
+                SCAN_CHARS[i]="${s:$i:1}"
+                i=$((i + 1))
+            done
+        else
+            local c
+            while IFS= read -r -n1 c || [ -n "$c" ]; do
+                if [ -z "$c" ]; then
+                    SCAN_CHARS+=($'\n')
+                else
+                    SCAN_CHARS+=("$c")
+                fi
+            done < <(printf '%s' "$s")
+        fi
+    fi
+    SCAN_N=$n
+    # Past-the-end peeks must exist under set -u.
+    SCAN_CHARS+=("" "" "")
+}
+
 scan_peek_heredoc() {
     local i
     HD_INDEX=-1
@@ -72,7 +117,7 @@ scan_has_heredoc() {
 
 scan_skip_single() {
     while [ "$SCAN_I" -lt "$SCAN_N" ]; do
-        if [ "${SCAN_S:$SCAN_I:1}" = "'" ]; then
+        if [ "${SCAN_CHARS[$SCAN_I]}" = "'" ]; then
             SCAN_I=$((SCAN_I + 1))
             return 0
         fi
@@ -82,13 +127,13 @@ scan_skip_single() {
 
 scan_double() {
     while [ "$SCAN_I" -lt "$SCAN_N" ]; do
-        local c="${SCAN_S:$SCAN_I:1}"
-        local next="${SCAN_S:$((SCAN_I + 1)):1}"
+        local c="${SCAN_CHARS[$SCAN_I]}"
+        local next="${SCAN_CHARS[$((SCAN_I + 1))]}"
         if [ "$c" = '"' ]; then
             SCAN_I=$((SCAN_I + 1))
             return 0
         fi
-        if [ "$c" = '\\' ]; then
+        if [ "$c" = $'\\' ]; then
             if [ "$next" = $'\n' ]; then
                 SCAN_I=$((SCAN_I + 2))
                 continue
@@ -103,9 +148,9 @@ scan_double() {
         fi
         if [ "$c" = '`' ]; then
             SCAN_I=$((SCAN_I + 1))
-            SCAN_OUT+=$'\n'
+            scan_emit $'\n'
             scan_code btick
-            SCAN_OUT+=$'\n'
+            scan_emit $'\n'
             continue
         fi
         SCAN_I=$((SCAN_I + 1))
@@ -113,18 +158,13 @@ scan_double() {
 }
 
 scan_dollar_paren() {
-    local third="${SCAN_S:$((SCAN_I + 2)):1}"
+    local third="${SCAN_CHARS[$((SCAN_I + 2))]}"
     if [ "$third" = '(' ]; then
         # $(( arithmetic )), not a command.
         SCAN_I=$((SCAN_I + 3))
         local depth=1
         while [ "$SCAN_I" -lt "$SCAN_N" ] && [ "$depth" -gt 0 ]; do
-            local c="${SCAN_S:$SCAN_I:1}"
-            local next="${SCAN_S:$((SCAN_I + 1)):1}"
-            if [ "$c" = '(' ] && [ "$next" = '(' ]; then
-                # Nested arithmetic is unusual; count parens only.
-                :
-            fi
+            local c="${SCAN_CHARS[$SCAN_I]}"
             if [ "$c" = '(' ]; then
                 depth=$((depth + 1))
             elif [ "$c" = ')' ]; then
@@ -135,21 +175,21 @@ scan_dollar_paren() {
         return 0
     fi
     SCAN_I=$((SCAN_I + 2))
-    SCAN_OUT+=$'\n'
+    scan_emit $'\n'
     scan_code paren
-    SCAN_OUT+=$'\n'
+    scan_emit $'\n'
 }
 
 scan_parse_heredoc_op() {
     # SCAN_I points at the first '<'.
     SCAN_I=$((SCAN_I + 2))
     local tabs=0
-    if [ "${SCAN_S:$SCAN_I:1}" = '-' ]; then
+    if [ "${SCAN_CHARS[$SCAN_I]}" = '-' ]; then
         tabs=1
         SCAN_I=$((SCAN_I + 1))
     fi
     while [ "$SCAN_I" -lt "$SCAN_N" ]; do
-        local c="${SCAN_S:$SCAN_I:1}"
+        local c="${SCAN_CHARS[$SCAN_I]}"
         case "$c" in
             ' '|$'\t') SCAN_I=$((SCAN_I + 1)) ;;
             *) break ;;
@@ -157,21 +197,21 @@ scan_parse_heredoc_op() {
     done
     local quoted=0
     local delim=""
-    local c="${SCAN_S:$SCAN_I:1}"
+    local c="${SCAN_CHARS[$SCAN_I]}"
     if [ "$c" = "'" ] || [ "$c" = '"' ]; then
         quoted=1
         local q="$c"
         SCAN_I=$((SCAN_I + 1))
-        while [ "$SCAN_I" -lt "$SCAN_N" ] && [ "${SCAN_S:$SCAN_I:1}" != "$q" ]; do
-            delim+="${SCAN_S:$SCAN_I:1}"
+        while [ "$SCAN_I" -lt "$SCAN_N" ] && [ "${SCAN_CHARS[$SCAN_I]}" != "$q" ]; do
+            delim+="${SCAN_CHARS[$SCAN_I]}"
             SCAN_I=$((SCAN_I + 1))
         done
-        if [ "${SCAN_S:$SCAN_I:1}" = "$q" ]; then
+        if [ "${SCAN_CHARS[$SCAN_I]}" = "$q" ]; then
             SCAN_I=$((SCAN_I + 1))
         fi
     else
         while [ "$SCAN_I" -lt "$SCAN_N" ]; do
-            c="${SCAN_S:$SCAN_I:1}"
+            c="${SCAN_CHARS[$SCAN_I]}"
             case "$c" in
                 ' '|$'\t'|$'\n'|'|'|'&'|';'|'<'|'>'|'('|')') break ;;
                 *) delim+="$c"; SCAN_I=$((SCAN_I + 1)) ;;
@@ -192,11 +232,11 @@ scan_read_line() {
     if [ "$SCAN_I" -ge "$SCAN_N" ]; then
         return 1
     fi
-    while [ "$SCAN_I" -lt "$SCAN_N" ] && [ "${SCAN_S:$SCAN_I:1}" != $'\n' ]; do
-        SCAN_LINE+="${SCAN_S:$SCAN_I:1}"
+    while [ "$SCAN_I" -lt "$SCAN_N" ] && [ "${SCAN_CHARS[$SCAN_I]}" != $'\n' ]; do
+        SCAN_LINE+="${SCAN_CHARS[$SCAN_I]}"
         SCAN_I=$((SCAN_I + 1))
     done
-    if [ "$SCAN_I" -lt "$SCAN_N" ] && [ "${SCAN_S:$SCAN_I:1}" = $'\n' ]; then
+    if [ "$SCAN_I" -lt "$SCAN_N" ] && [ "${SCAN_CHARS[$SCAN_I]}" = $'\n' ]; then
         SCAN_I=$((SCAN_I + 1))
     fi
     return 0
@@ -222,19 +262,22 @@ scan_consume_heredocs() {
             fi
             if [ "$quoted" = "0" ] && [ -n "$SCAN_LINE" ]; then
                 # Unquoted body: quotes are literal, but $(...) and backticks run.
-                local saved_s="$SCAN_S" saved_n="$SCAN_N" saved_i="$SCAN_I" saved_out="$SCAN_OUT"
-                SCAN_S="$SCAN_LINE"
-                SCAN_N=${#SCAN_LINE}
+                scan_flush
+                local saved_n="$SCAN_N" saved_i="$SCAN_I" saved_out="$SCAN_OUT"
+                local saved_chars=("${SCAN_CHARS[@]}")
+                scan_load "$SCAN_LINE"
                 SCAN_I=0
-                SCAN_OUT=""
+                scan_reset_out
                 scan_expansions_only
+                scan_flush
                 local extra="$SCAN_OUT"
-                SCAN_S="$saved_s"
+                SCAN_CHARS=("${saved_chars[@]}")
                 SCAN_N="$saved_n"
                 SCAN_I="$saved_i"
                 SCAN_OUT="$saved_out"
+                SCAN_BUF=()
                 if [ -n "$extra" ]; then
-                    SCAN_OUT+=$'\n'"$extra"$'\n'
+                    scan_emit $'\n'"$extra"$'\n'
                 fi
             fi
         done
@@ -245,12 +288,11 @@ scan_consume_heredocs() {
     done
 }
 
-# Walk a here-doc line looking only for command substitutions.
 scan_expansions_only() {
     while [ "$SCAN_I" -lt "$SCAN_N" ]; do
-        local c="${SCAN_S:$SCAN_I:1}"
-        local next="${SCAN_S:$((SCAN_I + 1)):1}"
-        if [ "$c" = '\\' ]; then
+        local c="${SCAN_CHARS[$SCAN_I]}"
+        local next="${SCAN_CHARS[$((SCAN_I + 1))]}"
+        if [ "$c" = $'\\' ]; then
             SCAN_I=$((SCAN_I + 2))
             continue
         fi
@@ -260,27 +302,27 @@ scan_expansions_only() {
         fi
         if [ "$c" = '`' ]; then
             SCAN_I=$((SCAN_I + 1))
-            SCAN_OUT+=$'\n'
+            scan_emit $'\n'
             scan_code btick
-            SCAN_OUT+=$'\n'
+            scan_emit $'\n'
             continue
         fi
         SCAN_I=$((SCAN_I + 1))
     done
 }
 
+# '#' starts a comment only at a word boundary. A quote glued on does not.
 scan_comment_starts() {
-    if [ -z "$SCAN_OUT" ]; then
+    if [ "$SCAN_I" -eq 0 ]; then
         return 0
     fi
-    local last="${SCAN_OUT: -1}"
-    case "$last" in
-        ' '|$'\t'|$'\n'|'|'|'&'|';') return 0 ;;
+    local prev="${SCAN_CHARS[$((SCAN_I - 1))]}"
+    case "$prev" in
+        [[:space:]]|'|'|'&'|';'|'('|'<'|'>') return 0 ;;
         *) return 1 ;;
     esac
 }
 
-# end_type: eof | paren | btick
 scan_code() {
     local end_type="$1"
     local depth=0
@@ -288,11 +330,9 @@ scan_code() {
         depth=1
     fi
     SCAN_DEPTH=$((SCAN_DEPTH + 1))
-
     while [ "$SCAN_I" -lt "$SCAN_N" ]; do
-        local c="${SCAN_S:$SCAN_I:1}"
-        local next="${SCAN_S:$((SCAN_I + 1)):1}"
-
+        local c="${SCAN_CHARS[$SCAN_I]}"
+        local next="${SCAN_CHARS[$((SCAN_I + 1))]}"
         if [ "$end_type" = "btick" ] && [ "$c" = '`' ]; then
             SCAN_I=$((SCAN_I + 1))
             SCAN_DEPTH=$((SCAN_DEPTH - 1))
@@ -314,8 +354,7 @@ scan_code() {
             SCAN_I=$((SCAN_I + 1))
             continue
         fi
-
-        if [ "$c" = '\\' ]; then
+        if [ "$c" = $'\\' ]; then
             SCAN_I=$((SCAN_I + 2))
             continue
         fi
@@ -331,9 +370,9 @@ scan_code() {
         fi
         if [ "$c" = '`' ]; then
             SCAN_I=$((SCAN_I + 1))
-            SCAN_OUT+=$'\n'
+            scan_emit $'\n'
             scan_code btick
-            SCAN_OUT+=$'\n'
+            scan_emit $'\n'
             continue
         fi
         if [ "$c" = "'" ]; then
@@ -347,7 +386,7 @@ scan_code() {
             continue
         fi
         if [ "$c" = '#' ] && scan_comment_starts; then
-            while [ "$SCAN_I" -lt "$SCAN_N" ] && [ "${SCAN_S:$SCAN_I:1}" != $'\n' ]; do
+            while [ "$SCAN_I" -lt "$SCAN_N" ] && [ "${SCAN_CHARS[$SCAN_I]}" != $'\n' ]; do
                 SCAN_I=$((SCAN_I + 1))
             done
             continue
@@ -356,19 +395,32 @@ scan_code() {
             scan_parse_heredoc_op
             continue
         fi
+        # <(...) and >(...) run. Same as $(...): the inner command is executed.
+        if { [ "$c" = '<' ] || [ "$c" = '>' ]; } && [ "$next" = '(' ]; then
+            SCAN_I=$((SCAN_I + 2))
+            scan_emit $'\n'
+            scan_code paren
+            scan_emit $'\n'
+            continue
+        fi
         if [ "$c" = $'\n' ]; then
-            SCAN_OUT+=$'\n'
+            scan_emit $'\n'
             SCAN_I=$((SCAN_I + 1))
             scan_consume_heredocs
             continue
         fi
         case "$c" in
-            '('|')'|'{'|'}')
+            ')')
+                # case-arm ')' starts a new simple command: case x in a) pip install
+                scan_emit $'\n'
+                SCAN_I=$((SCAN_I + 1))
+                ;;
+            '('|'{'|'}')
                 scan_append_literal_gap
                 SCAN_I=$((SCAN_I + 1))
                 ;;
             *)
-                SCAN_OUT+="$c"
+                scan_emit "$c"
                 SCAN_I=$((SCAN_I + 1))
                 ;;
         esac
@@ -399,7 +451,37 @@ word_is_assignment() {
     [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]
 }
 
+word_is_duration() {
+    local re='^([0-9]+([.][0-9]+)?[smhd]?|infinity)$'
+    [[ "$1" =~ $re ]]
+}
+
+# Updates the caller's i/w. $1 flags that take the next word, $2 attached-value globs.
+unwrap_flags() {
+    local takes="$1" glued="$2"
+    i=$((i + 1))
+    while [ "$i" -lt "$n" ]; do
+        w="${WORDS[$i]}"
+        if [ "$w" = "--" ]; then
+            i=$((i + 1))
+            return 0
+        fi
+        [[ "$w" == -* ]] || return 0
+        if [ -n "$takes" ] && [[ "$w" == @($takes) ]]; then
+            i=$((i + 2))
+            continue
+        fi
+        # glued is an extglob of attached values, for example --signal=*
+        # shellcheck disable=SC2053
+        if [ -n "$glued" ] && [[ "$w" == $glued ]]; then
+            i=$((i + 1))
+            continue
+        fi
+        i=$((i + 1))
+    done
+}
 # Print the offending simple command, or nothing when the segment is allowed.
+
 classify_segment() {
     local seg
     seg=$(trim_ws "$1")
@@ -409,7 +491,6 @@ classify_segment() {
     local n=${#WORDS[@]}
     local override=0
     local w base
-
     while [ "$i" -lt "$n" ]; do
         w="${WORDS[$i]}"
         if word_is_assignment "$w"; then
@@ -419,39 +500,41 @@ classify_segment() {
             i=$((i + 1))
             continue
         fi
+        # Keywords are not the executable. Keep walking: `then pip install`.
+        # Do not skip `in`; it would eat the words of `for x in a`.
+        case "$w" in
+            if|then|else|elif|fi|for|do|done|while|until|case|'esac'|select|'!'|'{'|'}')
+                i=$((i + 1))
+                continue
+                ;;
+        esac
         base=$(basename "$w")
         case "$base" in
             sudo)
-                i=$((i + 1))
-                while [ "$i" -lt "$n" ]; do
-                    w="${WORDS[$i]}"
-                    case "$w" in
-                        --) i=$((i + 1)); break ;;
-                        -u|-g|-p|-C) i=$((i + 2)); continue ;;
-                        -*) i=$((i + 1)); continue ;;
-                        *) break ;;
-                    esac
-                done
+                unwrap_flags '-u|-g|-p|-C' ''
                 continue
                 ;;
-            command|exec|time|nohup|nice|stdbuf)
-                i=$((i + 1))
-                while [ "$i" -lt "$n" ] && [[ "${WORDS[$i]}" == -* ]]; do
+            command|exec|time|nohup)
+                unwrap_flags '' ''
+                continue
+                ;;
+            timeout)
+                unwrap_flags '-k|-s|--kill-after|--signal' '--kill-after=*|--signal=*'
+                if [ "$i" -lt "$n" ] && word_is_duration "${WORDS[$i]}"; then
                     i=$((i + 1))
-                done
+                fi
+                continue
+                ;;
+            nice)
+                unwrap_flags '-n|--adjustment' '--adjustment=*'
+                continue
+                ;;
+            stdbuf)
+                unwrap_flags '-i|-o|-e' '--input=*|--output=*|--error=*'
                 continue
                 ;;
             env)
-                i=$((i + 1))
-                while [ "$i" -lt "$n" ]; do
-                    w="${WORDS[$i]}"
-                    case "$w" in
-                        --) i=$((i + 1)); break ;;
-                        -u|-S) i=$((i + 2)); continue ;;
-                        -*) i=$((i + 1)); continue ;;
-                        *) break ;;
-                    esac
-                done
+                unwrap_flags '-u|-S|-C|--chdir|--unset|--split-string' '--chdir=*|--unset=*|--split-string=*'
                 continue
                 ;;
             *)
@@ -459,17 +542,14 @@ classify_segment() {
                 ;;
         esac
     done
-
     if [ "$override" -eq 1 ]; then
         return 0
     fi
     [ "$i" -ge "$n" ] && return 0
-
     base=$(basename "${WORDS[$i]}")
     case "$base" in
         socket|npm-safe-install) return 0 ;;
     esac
-
     local rest_start=$((i + 1))
     if [[ "$base" =~ ^python([0-9]+(\.[0-9]+)*)?$ ]]; then
         local j=$rest_start
@@ -482,7 +562,6 @@ classify_segment() {
         done
         return 0
     fi
-
     case "$base" in
         npm|npx|pnpm|yarn|pip|pip3|pipx|uv|cargo|gem|go|poetry|pipenv)
             classify_manager "$base" "$rest_start" "$n" "$seg"
@@ -517,7 +596,6 @@ classify_manager() {
     if [ "$start" -lt "$n" ]; then
         sub="${WORDS[$start]}"
     fi
-
     case "$manager" in
         npm)
             case "$sub" in
@@ -526,14 +604,14 @@ classify_manager() {
                     if args_include "--offline" "$start" "$n" || args_include "--prefer-offline" "$start" "$n"; then
                         return 0
                     fi
-                    printf '%s\n' "$seg"
+                    printf '%s' "$seg"
                     return 1
                     ;;
                 exec)
                     if args_include "--offline" "$start" "$n"; then
                         return 0
                     fi
-                    printf '%s\n' "$seg"
+                    printf '%s' "$seg"
                     return 1
                     ;;
                 *) return 0 ;;
@@ -551,14 +629,14 @@ classify_manager() {
         pnpm)
             case "$sub" in
                 add)
-                    printf '%s\n' "$seg"
+                    printf '%s' "$seg"
                     return 1
                     ;;
                 install)
                     if args_include "--frozen-lockfile" "$start" "$n"; then
                         return 0
                     fi
-                    printf '%s\n' "$seg"
+                    printf '%s' "$seg"
                     return 1
                     ;;
                 *) return 0 ;;
@@ -567,7 +645,7 @@ classify_manager() {
         yarn)
             case "$sub" in
                 add)
-                    printf '%s\n' "$seg"
+                    printf '%s' "$seg"
                     return 1
                     ;;
                 install)
@@ -624,7 +702,7 @@ classify_manager() {
             if [ "$sub" = "install" ] && [ $((start + 1)) -lt "$n" ]; then
                 local target="${WORDS[$((start + 1))]}"
                 if [[ "$target" =~ ^[a-zA-Z] ]]; then
-                    printf '%s\n' "$seg"
+                    printf '%s' "$seg"
                     return 1
                 fi
             fi
@@ -643,10 +721,9 @@ classify_manager() {
 }
 
 executed_text() {
-    SCAN_S="$1"
-    SCAN_N=${#SCAN_S}
+    scan_load "$1"
     SCAN_I=0
-    SCAN_OUT=""
+    scan_reset_out
     SCAN_DEPTH=0
     H_DELIM=()
     H_QUOTED=()
@@ -657,7 +734,24 @@ executed_text() {
     if scan_has_heredoc; then
         scan_consume_heredocs
     fi
+    scan_flush
     printf '%s' "$SCAN_OUT"
+}
+
+# Skip the walker when the text cannot name a gated manager. Do not match pipeline/going.
+needs_structural_scan() {
+    local s="$1"
+    local re_named='(npm|npx|pnpm|yarn|pip3|pipx|cargo|poetry|pipenv)'
+    local re_pip='(^|[^[:alpha:]])pip([^[:alpha:]]|$)'
+    local re_uv='(^|[^[:alpha:]])uv([^[:alpha:]]|$)'
+    local re_gem='(^|[^[:alpha:]])gem([^[:alpha:]]|$)'
+    local re_go='go[[:space:]]+install'
+    [[ "$s" =~ $re_named ]] && return 0
+    [[ "$s" =~ $re_pip ]] && return 0
+    [[ "$s" =~ $re_uv ]] && return 0
+    [[ "$s" =~ $re_gem ]] && return 0
+    [[ "$s" =~ $re_go ]] && return 0
+    return 1
 }
 
 split_segments() {
@@ -689,7 +783,9 @@ split_segments() {
     done
     SEGMENTS+=("$cur")
 }
-
+if ! needs_structural_scan "$cmd"; then
+    exit 0
+fi
 set +e
 blocked_action=$(
     text=$(executed_text "$cmd")
@@ -709,32 +805,24 @@ if [ "$scan_status" -ne 0 ]; then
     echo "🛡️  Supply-chain gate: could not parse the command, refusing it." >&2
     exit 2
 fi
-
 if [ -n "$blocked_action" ]; then
     cat >&2 <<EOF
 🛡️  Supply-chain gate: direct package install blocked.
-
   Parsed action: $blocked_action
-
 Use one of these instead:
   socket npm install <pkg>            # malware/typosquat scan via socket.dev
   npm-safe-install <pkg>              # install version released ≥7 days ago
   npm ci                              # lockfile-only, no fresh resolution
   npm install --offline               # use cache only
-
 For pip/uv:
   socket pip install <pkg>
   uv sync                             # lockfile-only
-
 If this is a known-safe installation (internal package, lockfile sync, etc),
 prefix the command with:  SAFE_INSTALL_OVERRIDE=1
-
 Quoted text, comments, and here-document bodies are not installs. The gate
 names the parsed executable action above, not a mention inside a string.
-
 Policy: CrossCheck/docs/rules/trust-model.md § Supply Chain
 EOF
     exit 2
 fi
-
 exit 0

@@ -930,7 +930,11 @@ scan_context_expects_code() {
     scan_flush
     # Only the current simple-command suffix matters. Keeping this bounded
     # avoids quadratic work on long commands with many substitutions.
-    prefix=${SCAN_OUT: -512}
+    if [ "${#SCAN_OUT}" -gt 512 ]; then
+        prefix=${SCAN_OUT: -512}
+    else
+        prefix=$SCAN_OUT
+    fi
     prefix=${prefix##*$'\n'}
     prefix=${prefix##*;}
     prefix=${prefix##*|}

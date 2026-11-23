@@ -704,6 +704,17 @@ test_supply_gate_ignores_heredoc_body() {
     fi
 }
 
+test_supply_gate_ignores_heredoc_prose_in_substitution() {
+    local command
+    command=$(printf '%s\n' 'gh pr create --title t --body "$(cat <<'\''EOF'\''' 'Run npm install foo to reproduce.' 'EOF' ')"')
+    supply_gate_run "$command"
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Heredoc prose passed through a command substitution is allowed"
+    else
+        fail "Heredoc prose passed through a command substitution should be allowed (status=$GATE_STATUS)"
+    fi
+}
+
 test_supply_gate_blocks_indirect_heredocs() {
     local command
     command=$(printf '%s\n' 'bash -c "$(cat <<'\''EOF'\''' 'pip install evil' 'EOF' ')")')
@@ -1097,6 +1108,7 @@ EOF
 
 test_supply_gate_ignores_quoted_install_prose
 test_supply_gate_ignores_heredoc_body
+test_supply_gate_ignores_heredoc_prose_in_substitution
 test_supply_gate_blocks_indirect_heredocs
 test_supply_gate_blocks_real_pip_install
 test_supply_gate_blocks_install_after_safe_command

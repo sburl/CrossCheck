@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-11-23-22-13
+**Last Updated:** 2026-11-23-22-23
 
 Complete reference tables for daily workflow.
 
@@ -16,7 +16,7 @@ When user requests these tasks, invoke the corresponding skill:
 | "create pr", "submit pr", "open pr" | `/submit-pr` | Complete workflow: techdebt → pre-check → PR → Peer review |
 | "commit", "save changes" | `/commit-smart` | Good commit messages, reviews changes |
 | Complex task (>3 files) | `/plan` | Design before implementation |
-| "have Claude do X" | `/claude-delegate` | Proper context injection |
+| "have Claude do X" | `/codex-delegate` | Proper context injection |
 | "have Codex do X" | `/codex-delegate` | Proper context injection |
 | "have Gemini do X" | `/gemini-delegate` | Proper context injection |
 | "get opinions", "ask other models" | `/ensemble-opinion` | Multi-model perspectives |
@@ -70,9 +70,9 @@ When user requests these tasks, invoke the corresponding skill:
 | Peer review | Auto loop - fix issues autonomously |
 | Stuck 10+ rounds | Ask user for input |
 | Every 3 PRs | INVOKE `/repo-assessment` → refactor PR |
-| Delegate to Codex | INVOKE `/codex-delegate` with context |
+| Delegate to Claude | INVOKE `/codex-delegate` with context |
 | Delegate to Gemini | INVOKE `/gemini-delegate` with context |
-| Delegate to Claude | INVOKE `/claude-delegate` with context |
+| Delegate to Codex | INVOKE `/codex-delegate` with context |
 | Multiple AI opinions | INVOKE `/ensemble-opinion` |
 
 | **Parallel work needed** | INVOKE `/create-worktree` |

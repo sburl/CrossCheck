@@ -1,7 +1,7 @@
 # Installing Claude Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-11-23-22-13
+**Last Updated:** 2026-11-23-22-23
 
 This directory contains all custom skill sources for Claude.
 
@@ -17,7 +17,7 @@ git clone https://github.com/sburl/CrossCheck.git ~/.crosscheck
 
 # 2. Copy skills to ~/.claude/commands/
 mkdir -p ~/.claude/commands
-cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
+cp ~/.crosscheck/claude/skill-sources/*.md ~/.claude/commands/
 
 # 3. Verify installation
 ls ~/.claude/commands/
@@ -27,7 +27,7 @@ ls ~/.claude/commands/
 
 ```bash
 # Run this one-liner:
-mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
+mkdir -p ~/.claude/commands && cp ~/.crosscheck/claude/skill-sources/*.md ~/.claude/commands/
 ```
 
 ## Available Skills (34 total)
@@ -149,7 +149,7 @@ git push
 ```
 
 **Why two locations?**
-- `~/.crosscheck/skill-sources/` - Version controlled source (traditional install)
+- `~/.crosscheck/claude/skill-sources/` - Version controlled source (traditional install)
 - `~/Documents/Developer/CrossCheck/skill-sources/` - Version controlled source (multi-project install)
 - `~/.claude/commands/` - Active skills Claude loads
 

@@ -1,11 +1,13 @@
 # Installing Codex Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-11-23-21-39
+**Last Updated:** 2026-11-23-23-01
 
-This directory contains all custom skill sources for Codex.
+This directory contains legacy flat Markdown command sources. Codex-native
+skills live under `codex/skills/` and install as
+`~/.codex/skills/<name>/SKILL.md`.
 
-**Note:** This folder is named `skill-sources/` (not `commands/`) so that Codex doesn't load these as project-level commands when working inside the CrossCheck repo. The bootstrap script copies them to `~/.codex/commands/` where Codex picks them up globally.
+Use the Codex-native skills for Codex and the Claude mirror for Claude Code.
 
 ## Installation
 
@@ -15,22 +17,22 @@ This directory contains all custom skill sources for Codex.
 # 1. Clone the CrossCheck repo to ~/.crosscheck
 git clone https://github.com/sburl/CrossCheck.git ~/.crosscheck
 
-# 2. Copy skills to both Claude Code and Codex
-mkdir -p ~/.claude/commands ~/.codex/commands
-cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
-cp ~/.crosscheck/skill-sources/*.md ~/.codex/commands/
+# 2. Install Codex-native skills and Claude commands
+mkdir -p ~/.codex/skills ~/.claude/commands
+cp -R ~/.crosscheck/codex/skills/* ~/.codex/skills/
+cp ~/.crosscheck/claude/skill-sources/*.md ~/.claude/commands/
 
 # 3. Verify installation
-ls ~/.claude/commands/
+find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
 ```
 
 ### Quick install script:
 
 ```bash
-# Run this one-liner (installs to both Claude Code and Codex):
-mkdir -p ~/.claude/commands ~/.codex/commands && \
-  cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/ && \
-  cp ~/.crosscheck/skill-sources/*.md ~/.codex/commands/
+# Run this one-liner (native Codex skills plus Claude commands):
+mkdir -p ~/.codex/skills ~/.claude/commands && \
+  cp -R ~/.crosscheck/codex/skills/* ~/.codex/skills/ && \
+  cp ~/.crosscheck/claude/skill-sources/*.md ~/.claude/commands/
 ```
 
 ## Available Skills (34 total)
@@ -95,8 +97,7 @@ Don't want a specific skill? Add its name to `~/.crosscheck/skip-skills` (one pe
 # Create skip list
 echo "ai-usage" >> ~/.crosscheck/skip-skills
 
-# Remove it locally if already installed
-rm ~/.codex/commands/ai-usage.md
+# Add it to the skip list, then rerun codex/scripts/bootstrap-crosscheck.sh
 ```
 
 The bootstrap script will skip any skills listed in this file. Lines starting with `#` are ignored.
@@ -159,9 +160,11 @@ git push
 - `~/.crosscheck/skill-sources/` - Version controlled source (traditional install)
 - `~/Documents/Developer/CrossCheck/skill-sources/` - Version controlled source (multi-project install)
 - `~/.claude/commands/` - Active skills Claude Code loads
-- `~/.codex/commands/` - Active skills Codex loads
+- `~/.codex/skills/<name>/SKILL.md` - Active native skills Codex loads
 
-The repo is the source of truth. Copy to both `~/.claude/commands/` and `~/.codex/commands/` to activate.
+The repo is the source of truth. Copy Codex skills from `codex/skills/` to
+`~/.codex/skills/`; install Claude commands from `claude/skill-sources/` to
+`~/.claude/commands/`.
 
 **Important:** The CrossCheck repo must NOT be inside `~/.codex/`. Codex scans
 `~/.codex/` for commands, which would cause duplicate skill registrations.

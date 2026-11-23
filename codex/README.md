@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-11-23-13-05
+**Last Updated:** 2026-11-23-23-01
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -184,7 +184,7 @@ cd CrossCheck
 ```
 
 This installs:
-- Skills to `~/.codex/commands/` via symlinks (and `~/.claude/commands/` if present)
+- Codex-native skills from `codex/skills/` to `~/.codex/skills/<name>/SKILL.md`
 - Global `CLAUDE.md` symlinked in your projects folder (full workflow, updates on `git pull`)
 - Agent settings with proper permissions
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
@@ -224,7 +224,7 @@ CrossCheck uses a **single source of truth** pattern:
 │   ├── CLAUDE.md            # Source of truth for global workflow
 │   ├── QUICK-REFERENCE.md    # Supporting reference (34 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history, memory)
-│   ├── skill-sources/        # 34 skills (symlinked to ~/.codex/commands/)
+│   ├── codex/skills/         # 34 native skills (installed under ~/.codex/skills/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
@@ -302,7 +302,7 @@ git reset HEAD test.txt && rm test.txt
 
 ```bash
 # Check skills installed
-ls ~/.codex/commands/ | wc -l
+find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
 # Should show: 34 skills
 
 # Start Codex

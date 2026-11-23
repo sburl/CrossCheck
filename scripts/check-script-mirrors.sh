@@ -13,6 +13,11 @@ CLAUDE_ONLY=(
   "install-claude-hooks.sh"
 )
 
+# Claude's supply-chain gate is required by its native PreToolUse hook.
+CLAUDE_REQUIRED=(
+  "preuse-supply-chain-gate.sh"
+)
+
 # Claude's PreToolUse hook consumes Claude-specific tool payloads. Do not
 # require it in the Codex mirror, and reject it if it is copied there.
 CODEX_EXCLUDED=(
@@ -54,6 +59,7 @@ missing_codemirror=0
 missing_claudemirror=0
 extra_codemirror=0
 exec_mode_mismatch=0
+missing_claude_required=0
 
 # Check 1: every root script should exist in its target agent mirror.
 for file in "${ROOT_FILES[@]}"; do
@@ -90,6 +96,14 @@ for file in "${ROOT_FILES[@]}"; do
   fi
 done
 
+# Check 1b: security-sensitive Claude hooks must remain present in the mirror.
+for file in "${CLAUDE_REQUIRED[@]}"; do
+  if [ ! -f "$CLAUDE_SCRIPTS_DIR/$file" ]; then
+    echo "❌ Missing required Claude mirror: claude/scripts/$file"
+    missing_claude_required=$((missing_claude_required + 1))
+  fi
+done
+
 # Check 2: codex extras (anything not in root)
 for file in "${CODEX_FILES[@]}"; do
   if has_item "$file" "${CODEX_EXCLUDED[@]}"; then
@@ -112,7 +126,7 @@ for file in "${CLAUDE_FILES[@]}"; do
   fi
 done
 
-if [ "$missing_codemirror" -gt 0 ] || [ "$extra_codemirror" -gt 0 ] || [ "$exec_mode_mismatch" -gt 0 ]; then
+if [ "$missing_codemirror" -gt 0 ] || [ "$extra_codemirror" -gt 0 ] || [ "$exec_mode_mismatch" -gt 0 ] || [ "$missing_claude_required" -gt 0 ]; then
   echo ""
   echo "❌ Codex script mirror check failed"
   exit 1

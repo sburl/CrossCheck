@@ -12,8 +12,8 @@
 # process substitutions are checked because the shell runs them.
 # Echo, printf, and other text commands may mention an install. Any
 # other command is blocked when its arguments run a package manager, so
-# wrappers do not need their own flag lists. Quoted code passed to an
-# interpreter is treated as data unless it is supplied through a here-doc.
+# wrappers do not need their own flag lists. Quoted code passed to a shell
+# interpreter is scanned when the shell executes it.
 #
 # Exit codes (Claude Code contract):
 #   0 = allow
@@ -265,29 +265,30 @@ scan_parse_heredoc_op() {
             *) break ;;
         esac
     done
-    local quoted=0
-    local delim=""
-    local c="${SCAN_CHARS[$SCAN_I]}"
-    if [ "$c" = "'" ] || [ "$c" = '"' ]; then
-        quoted=1
-        local q="$c"
-        SCAN_I=$((SCAN_I + 1))
-        while [ "$SCAN_I" -lt "$SCAN_N" ] && [ "${SCAN_CHARS[$SCAN_I]}" != "$q" ]; do
-            delim+="${SCAN_CHARS[$SCAN_I]}"
-            SCAN_I=$((SCAN_I + 1))
-        done
-        if [ "${SCAN_CHARS[$SCAN_I]}" = "$q" ]; then
-            SCAN_I=$((SCAN_I + 1))
-        fi
-    else
-        while [ "$SCAN_I" -lt "$SCAN_N" ]; do
-            c="${SCAN_CHARS[$SCAN_I]}"
-            case "$c" in
-                ' '|$'\t'|$'\n'|'|'|'&'|';'|'<'|'>'|'('|')') break ;;
-                *) delim+="$c"; SCAN_I=$((SCAN_I + 1)) ;;
-            esac
-        done
-    fi
+    local quoted=0 delim="" c q
+    while [ "$SCAN_I" -lt "$SCAN_N" ]; do
+        c="${SCAN_CHARS[$SCAN_I]}"
+        case "$c" in
+            ' '|$'\t'|$'\n'|'|'|'&'|';'|'<'|'>'|'('|')') break ;;
+            "'"|'"')
+                quoted=1
+                q="$c"
+                SCAN_I=$((SCAN_I + 1))
+                while [ "$SCAN_I" -lt "$SCAN_N" ] && [ "${SCAN_CHARS[$SCAN_I]}" != "$q" ]; do
+                    delim+="${SCAN_CHARS[$SCAN_I]}"
+                    SCAN_I=$((SCAN_I + 1))
+                done
+                [ "${SCAN_CHARS[$SCAN_I]}" = "$q" ] && SCAN_I=$((SCAN_I + 1))
+                ;;
+            $'\\')
+                quoted=1
+                SCAN_I=$((SCAN_I + 1))
+                [ "$SCAN_I" -lt "$SCAN_N" ] && delim+="${SCAN_CHARS[$SCAN_I]}"
+                SCAN_I=$((SCAN_I + 1))
+                ;;
+            *) delim+="$c"; SCAN_I=$((SCAN_I + 1)) ;;
+        esac
+    done
     if [ -n "$delim" ]; then
         H_DELIM+=("$delim")
         H_QUOTED+=("$quoted")
@@ -637,6 +638,11 @@ scan_code() {
             done
             continue
         fi
+        if [ "$c" = '<' ] && [ "$next" = '<' ] && [ "${SCAN_CHARS[$((SCAN_I + 2))]}" = '<' ]; then
+            scan_emit ' <<< '
+            SCAN_I=$((SCAN_I + 3))
+            continue
+        fi
         if [ "$c" = '<' ] && [ "$next" = '<' ]; then
             scan_parse_heredoc_op
             continue
@@ -706,6 +712,80 @@ word_unquote() {
     word="${word//$'\x07'/ }"
     word="${word//$'\x06'/}"
     WORD_VALUE="$word"
+}
+
+collect_embedded_shell_scripts() {
+    local text="$1" line token word base i n previous
+    while IFS= read -r line; do
+        split_segments "$line"
+        previous=""
+        for token in "${SEGMENTS[@]}"; do
+            segment_command_words "$token"
+            n=${#WORDS[@]}
+            if [ -n "$previous" ] && [ "$n" -gt 0 ]; then
+                word_unquote "${WORDS[0]}"
+                base=${WORD_VALUE##*/}
+                if [[ "$base" =~ ^(sh|bash|dash|zsh|ksh|ash)$ ]]; then
+                    segment_command_words "$previous"
+                    if [ "${#WORDS[@]}" -gt 1 ]; then
+                        word_unquote "${WORDS[0]}"
+                        if [[ "$WORD_VALUE" =~ ^(echo|printf)$ ]]; then
+                            token=""
+                            for ((i = 1; i < ${#WORDS[@]}; i++)); do
+                                word_unquote "${WORDS[$i]}"
+                                [ -n "$token" ] && token+=" "
+                                token+="$WORD_VALUE"
+                            done
+                            EXP_SNIPS+=("$token")
+                        fi
+                    fi
+                fi
+            fi
+            previous="$token"
+        done
+        segment_command_words "$line"
+        n=${#WORDS[@]}
+        i=0
+        while [ "$i" -lt "$n" ]; do
+            word_unquote "${WORDS[$i]}"
+            word=$WORD_VALUE
+            base=${word##*/}
+            case "$base" in
+                sh|bash|dash|zsh|ksh|ash)
+                    i=$((i + 1))
+                    while [ "$i" -lt "$n" ]; do
+                        word_unquote "${WORDS[$i]}"
+                        word=$WORD_VALUE
+                        if [ "$word" = "-c" ] || [ "$word" = "--command" ] || [[ "$word" =~ ^-[^-]*c ]]; then
+                            i=$((i + 1))
+                            if [ "$i" -lt "$n" ]; then
+                                word_unquote "${WORDS[$i]}"
+                                EXP_SNIPS+=("$WORD_VALUE")
+                            fi
+                            break
+                        elif [ "$word" = "<<<" ] && [ $((i + 1)) -lt "$n" ]; then
+                            word_unquote "${WORDS[$((i + 1))]}"
+                            EXP_SNIPS+=("$WORD_VALUE")
+                            break
+                        fi
+                        i=$((i + 1))
+                    done
+                    ;;
+                eval)
+                    token=""
+                    i=$((i + 1))
+                    while [ "$i" -lt "$n" ]; do
+                        word_unquote "${WORDS[$i]}"
+                        [ -n "$token" ] && token+=" "
+                        token+="$WORD_VALUE"
+                        i=$((i + 1))
+                    done
+                    [ -n "$token" ] && EXP_SNIPS+=("$token")
+                    ;;
+            esac
+            i=$((i + 1))
+        done
+    done <<< "$text"
 }
 
 word_is_assignment() {
@@ -1061,6 +1141,8 @@ executed_text() {
     if scan_has_heredoc; then
         scan_consume_heredocs
     fi
+    scan_flush
+    collect_embedded_shell_scripts "$SCAN_OUT"
     flush_pending_expansions
     scan_flush
     printf '%s' "$SCAN_OUT"
@@ -1069,6 +1151,9 @@ executed_text() {
 # Skip the walker when the text cannot name a gated manager. Do not match pipeline/going.
 needs_structural_scan() {
     local s="$1"
+    s=${s//\'/}
+    s=${s//\"/}
+    s=${s//\\/}
     local re_named='(npm|npx|pnpm|yarn|pip3|pipx|cargo|poetry|pipenv)'
     local re_pip='(^|[^[:alpha:]])pip([^[:alpha:]]|$)'
     local re_escaped_pip='(^|[^[:alpha:]])p\\?i\\?p([^[:alpha:]]|$)'

@@ -828,6 +828,7 @@ quoted executable	"npm" install foo
 quoted subcommand	pnpm "add" foo
 quoted npx argument	npx "cowsay"
 escaped manager	p\ip install foo
+split manager quotes	pi''p install foo
 npm prefix before verb	npm --prefix x install y
 npm global before verb	npm -g install x
 pip quiet before verb	pip --quiet install foo
@@ -918,6 +919,30 @@ EOF
         pass "Shell-fed heredoc prose stays allowed"
     else
         fail "Shell-fed heredoc prose should be allowed (status=$GATE_STATUS)"
+    fi
+    local embedded
+    for embedded in "bash -c 'cd x && pip install foo'" "eval 'cd /tmp; pip install foo'" "bash <<< 'cd x; pip install foo'" "echo 'pip install foo' | sh" "xargs -I{} sh -c 'cd /; pip install {}' < reqs"; do
+        supply_gate_run "$embedded"
+        if [ "$GATE_STATUS" -eq 2 ]; then
+            pass "Executable shell string is scanned: $embedded"
+        else
+            fail "Executable shell string should block: $embedded (status=$GATE_STATUS)"
+        fi
+    done
+    for embedded in $'cat <<\\EOF\nx\nEOF\npip install foo' $'cat <<E"O"F\nx\nEOF\npip install foo'; do
+        supply_gate_run "$embedded"
+        if [ "$GATE_STATUS" -eq 2 ]; then
+            pass "Quoted heredoc delimiter preserves following commands"
+        else
+            fail "Quoted heredoc delimiter swallowed a command (status=$GATE_STATUS)"
+        fi
+    done
+    embedded=$(printf '%s\n' "cat <<E'OF'" x EOF 'pip install foo')
+    supply_gate_run "$embedded"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Single-quoted heredoc delimiter preserves following commands"
+    else
+        fail "Single-quoted heredoc delimiter swallowed a command (status=$GATE_STATUS)"
     fi
     supply_gate_run 'else pip install foo'
     if [ "$GATE_STATUS" -eq 2 ] && printf '%s\n' "$GATE_OUTPUT" | grep -Fq 'Parsed action: pip install foo'; then

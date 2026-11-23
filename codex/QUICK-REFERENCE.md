@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-11-23-13-05
+**Last Updated:** 2026-11-23-22-13
 
 Complete reference tables for daily workflow.
 
@@ -244,7 +244,7 @@ mv old-file.js garbage/
 |-------|-------------|--------------|
 | `/codex-delegate` | User says "have Codex X" | Injects CODEX.md context, runs Codex autonomously |
 | `/gemini-delegate` | User says "have Gemini X" | Injects CODEX.md context, runs Gemini autonomously |
-| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Codex + Claude + Gemini |
+| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Codex + Gemini + Critic |
 | `/pr-review` | Manual PR review needed | Standard Codex review handoff workflow |
 | `/repo-assessment` | Every 3 PRs | Comprehensive Codex analysis of repo state |
 | `/security-review` | Every 3 PRs (waterfall) or on demand | Dependency audit, secrets scan, trust model check |
@@ -262,6 +262,8 @@ mv old-file.js garbage/
 | `/list-worktrees` | Check active worktrees | Shows all worktrees with status |
 | `/cleanup-worktrees` | Remove old worktrees | Deletes merged/abandoned worktrees |
 | `/cleanup-branches` | Delete old branches | Generates batch script for safe branch deletion |
+| `/cleanup-stashes` | Review stashes | Flags orphaned/superseded/stale stashes, generates drop script |
+| `/cleanup-all` | Full git cleanup | Chains worktrees → branches → stashes with combined summary |
 | `/commit-smart` | User wants commit | Creates good commit message, reviews changes |
 
 ### Development
@@ -285,6 +287,12 @@ mv old-file.js garbage/
 |-------|-------------|--------------|
 | `/napkin` | Record or review recurring repo-specific gotchas | Reads and updates `.claude/napkin.md` |
 | `/update-crosscheck` | Update the installed workflow | Pulls the latest CrossCheck files and syncs skills and agents |
+
+### Knowledge Capture
+
+| Skill | When to Use | What It Does |
+|-------|-------------|--------------|
+| `/capture-skill` | Reusable discovery from a session | Distills discoveries into a reusable skill |
 
 ### Analytics
 

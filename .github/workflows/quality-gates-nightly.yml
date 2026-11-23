@@ -62,6 +62,9 @@ jobs:
       - name: Verify root scripts are mirrored into codex/ and claude/
         run: bash scripts/check-script-mirrors.sh
 
+      - name: Verify required Claude hook fails closed
+        run: python3 .github/scripts/test_script_mirror_audit.py
+
   hook-docs-consistency:
     name: Hook Documentation Consistency
     needs: check-changes

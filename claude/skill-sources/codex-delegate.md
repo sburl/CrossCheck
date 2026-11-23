@@ -4,7 +4,7 @@ description: "Delegate a coding task to OpenAI Claude agent for autonomous execu
 ---
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-11-23-22-03
+**Last Updated:** 2026-11-23-23-20
 
 You are delegating a coding task to a headless Claude agent. Claude will do the actual implementation work.
 
@@ -42,10 +42,10 @@ Rules: Include CLAUDE.md context directly. Be specific about requirements. Do NO
 ### 3. Execute Claude
 
 ```bash
-claude exec --full-auto "YOUR_PROMPT_HERE" 2>&1
+claude -p --permission-mode acceptEdits "YOUR_PROMPT_HERE" 2>&1
 ```
 
-`--full-auto` enables `--sandbox workspace-write` and `-a on-request` (model decides when to ask for approval). Claude auto-applies changes to the workspace.
+`-p` runs a non-interactive session and `acceptEdits` allows workspace edits while retaining the CLI's other permission checks.
 
 ### 4. Report Results
 

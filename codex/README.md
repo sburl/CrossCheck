@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-11-23-23-01
+**Last Updated:** 2026-11-23-23-20
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -180,7 +180,7 @@ git clone https://github.com/sburl/CrossCheck.git
 
 ```bash
 cd CrossCheck
-./scripts/bootstrap-crosscheck.sh
+./codex/scripts/bootstrap-crosscheck.sh
 ```
 
 This installs:

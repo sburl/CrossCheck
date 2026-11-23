@@ -98,8 +98,12 @@ done
 
 # Check 1b: security-sensitive Claude hooks must remain present in the mirror.
 for file in "${CLAUDE_REQUIRED[@]}"; do
-  if [ ! -f "$CLAUDE_SCRIPTS_DIR/$file" ]; then
-    echo "❌ Missing required Claude mirror: claude/scripts/$file"
+  if [ ! -f "$ROOT_SCRIPTS_DIR/$file" ] || [ ! -x "$ROOT_SCRIPTS_DIR/$file" ]; then
+    echo "❌ Missing or non-executable required source: scripts/$file"
+    missing_claude_required=$((missing_claude_required + 1))
+  fi
+  if [ ! -f "$CLAUDE_SCRIPTS_DIR/$file" ] || [ ! -x "$CLAUDE_SCRIPTS_DIR/$file" ]; then
+    echo "❌ Missing or non-executable required Claude mirror: claude/scripts/$file"
     missing_claude_required=$((missing_claude_required + 1))
   fi
 done
@@ -128,7 +132,7 @@ done
 
 if [ "$missing_codemirror" -gt 0 ] || [ "$extra_codemirror" -gt 0 ] || [ "$exec_mode_mismatch" -gt 0 ] || [ "$missing_claude_required" -gt 0 ]; then
   echo ""
-  echo "❌ Codex script mirror check failed"
+  echo "❌ Script mirror check failed"
   exit 1
 fi
 

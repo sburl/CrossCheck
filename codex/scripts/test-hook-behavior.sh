@@ -661,6 +661,473 @@ test_postmerge_waterfall_reminder
 echo ""
 
 # ============================================================
+# Supply-chain PreToolUse gate (GIT-6494)
+# ============================================================
+echo "📋 Category: Supply-chain gate parses executed commands"
+echo ""
+
+supply_gate_run() {
+    GATE_STATUS=0
+    GATE_OUTPUT=""
+    local payload gate
+    gate="$CROSSCHECK_DIR/scripts/preuse-supply-chain-gate.sh"
+    # The gate lives in the canonical scripts/ tree. Mirror suites still run it.
+    if [ ! -f "$gate" ]; then
+        gate="$(cd "$CROSSCHECK_DIR/.." && pwd)/scripts/preuse-supply-chain-gate.sh"
+    fi
+    payload=$(jq -n --arg cmd "$1" '{tool_name:"Bash", tool_input:{command:$cmd}}')
+    set +e
+    if [ "${2:-}" = "fault" ]; then
+        GATE_OUTPUT=$(printf '%s' "$payload" | GATE_TEST_FAULT=1 bash "$gate" 2>&1)
+    else
+        GATE_OUTPUT=$(printf '%s' "$payload" | bash "$gate" 2>&1)
+    fi
+    GATE_STATUS=$?
+    set -e
+}
+
+test_supply_gate_blocks_structured_installs() {
+    local label cmd
+    while IFS=$'\t' read -r label cmd; do
+        [ -z "$label" ] && continue
+        supply_gate_run "$cmd"
+        if [ "$GATE_STATUS" -eq 2 ] && printf '%s\n' "$GATE_OUTPUT" | grep -q "Parsed action:"; then
+            pass "$label"
+        else
+            fail "$label (status=$GATE_STATUS)"
+        fi
+    done <<'EOF'
+if/then install	if true; then pip install foo; fi
+for/do install	for x in a; do pip install foo; done
+bang install	! pip install foo
+process substitution	cat <(pip install foo)
+timeout wrapper	timeout 60 pip install foo
+timeout signal	timeout --signal=TERM 60 pip install foo
+nice wrapper	nice -n 10 pip install foo
+stdbuf wrapper	stdbuf -o L pip install foo
+env chdir	env -C /tmp pip install foo
+escaped double quote	echo "a\"b" ; pip install foo ; echo "c"
+escaped single quote	echo \' ; pip install foo ; echo \'
+quote-glued hash	echo "hi"#; pip install foo
+dollar-quote escape	echo $'a\'b'; pip install foo
+exec dash-a	exec -a x pip install foo
+sudo chdir	sudo -D /tmp pip install foo
+sudo cluster	sudo -iu root pip install foo
+sudo cluster E	sudo -Eu root pip install foo
+sudo cluster n	sudo -nu root npm install x
+sudo attached user	sudo -uroot pip install foo
+leading redirect	2>/dev/null pip install x
+redirect fd	2>&1 pip install x
+sudo long user	sudo --user root pip install foo
+time long format	time --format %e pip install x
+stdbuf long output	stdbuf --output L pip install x
+env cluster	env -iu FOO pip install x
+timeout cluster	timeout -vk 5 10 pip install x
+exec cluster	exec -ca name pip install x
+coproc	coproc pip install x
+function body	function f { pip install x; }
+env altpath	env -P /usr/bin pip install foo
+env split-string	env -S pip install foo
+time format	time -f %e pip install foo
+eval	eval pip install foo
+builtin	builtin pip install foo
+uv run	uv run pip install foo
+poetry run	poetry run pip install foo
+pipenv run	pipenv run pip install foo
+mise exec	mise exec -- npm install foo
+watch	watch pip install foo
+doas	doas pip install foo
+arch	arch -arm64 pip install foo
+caffeinate	caffeinate -i npm install foo
+xcrun	xcrun pip install foo
+flock	flock /tmp/l pip install foo
+script	script -q /dev/null pip install foo
+find exec	find . -exec pip install foo \;
+ssh	ssh host pip install foo
+docker exec	docker exec c pip install foo
+op run --env-file	op run --env-file=.env pip install foo
+docker run	docker run node npm install foo
+docker run flags	docker run --rm node npm install foo
+compose exec	docker compose exec app pip install foo
+podman exec	podman exec c pip install foo
+kubectl exec	kubectl exec pod -- pip install foo
+conda run	conda run pip install foo
+pixi run	pixi run pip install foo
+pyenv exec	pyenv exec pip install foo
+direnv exec	direnv exec . pip install foo
+bundle exec	bundle exec pip install foo
+pnpm exec	pnpm exec pip install foo
+yarn exec	yarn exec pip install foo
+nix develop	nix develop -c pip install foo
+coproc name	coproc NAME { pip install x; }
+arith cmdsub	echo $(( $(pip install foo) ))
+arith backtick	echo $(( `pip install foo` ))
+arith then install	echo $((1+2)); pip install foo
+op run	op run -- pip install foo
+quoted executable	"npm" install foo
+quoted subcommand	pnpm "add" foo
+quoted npx argument	npx "cowsay"
+escaped manager	p\ip install foo
+split manager quotes	pi''p install foo
+npm prefix before verb	npm --prefix x install y
+npm global before verb	npm -g install x
+pip quiet before verb	pip --quiet install foo
+pip late no-deps	pip install foo --no-deps
+npm late offline	npm install foo --offline
+arith command	(( '$(pip install foo)' ))
+EOF
+    supply_gate_run 'echo hi # pip install foo'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Comment after a command is not an install"
+    else
+        fail "Comment should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'npm ci'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "npm ci stays allowed"
+    else
+        fail "npm ci should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'git status'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Commands that name no package manager stay allowed"
+    else
+        fail "git status should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'echo pip install foo'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Unquoted prose that does not execute pip stays allowed"
+    else
+        fail "echo pip install foo should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'git commit -m "pip install foo"'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "git commit prose stays allowed"
+    else
+        fail "git commit prose should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'git bisect run pip install foo'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "git bisect run package install is blocked"
+    else
+        fail "git bisect run package install should be blocked (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'op run -- npm ci'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "A wrapped npm ci stays allowed"
+    else
+        fail "Wrapped npm ci should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'grep -n pip install file'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "grep mentioning an install stays allowed"
+    else
+        fail "grep should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run "$(printf '%s\n' 'cat <<EOF' '$(pip install foo)' 'EOF')"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Unquoted heredoc command substitution is blocked"
+    else
+        fail "Heredoc command substitution should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'sh <<EOF\npip install foo\nEOF'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Shell-fed heredoc install is blocked"
+    else
+        fail "Shell-fed heredoc install should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'bash <<\x27EOF\x27\nnpm install x\nEOF'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Quoted shell-fed heredoc install is blocked"
+    else
+        fail "Quoted shell-fed heredoc install should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'cat <<EOF | sh\npip install foo\nEOF'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Pipeline shell-fed heredoc install is blocked"
+    else
+        fail "Pipeline shell-fed heredoc install should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'python - <<\x27PY\x27\nsubprocess.run(["pip", "install", "foo"])\nPY'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Python stdin install is blocked"
+    else
+        fail "Python stdin install should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'python3 - <<\x27PY\x27\nimport subprocess\nsubprocess.run(["pip", "-q", "install", "x"])\nPY'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Python stdin install with a manager flag is blocked"
+    else
+        fail "Python stdin install with a manager flag should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'uv run python - <<\x27PY\x27\nseen = set()\nfor category in ["a", "b"]:\n    seen.add(category)\nPY'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Python stdin prose with manager-like substrings stays allowed"
+    else
+        fail "Python stdin prose with manager-like substrings should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'cat <<< "npm install x" | sh'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Here-string piped through cat into a shell is blocked"
+    else
+        fail "Here-string piped through cat into a shell should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'sh <<EOF\n# pip install is prose\nprintf "%s" "pip install prose"\nEOF'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Shell-fed heredoc prose stays allowed"
+    else
+        fail "Shell-fed heredoc prose should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'else pip install foo'
+    if [ "$GATE_STATUS" -eq 2 ] && printf '%s\n' "$GATE_OUTPUT" | grep -Fq 'Parsed action: pip install foo'; then
+        pass "Diagnostic omits shell keywords"
+    else
+        fail "Diagnostic should name only the package action (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'pip install foo &>/dev/null'
+    if [ "$GATE_STATUS" -eq 2 ] && printf '%s\n' "$GATE_OUTPUT" | grep -Fq 'Parsed action: pip install foo'; then
+        pass "Diagnostic keeps redirect-free parsed action"
+    else
+        fail "Diagnostic should omit redirects (status=$GATE_STATUS)"
+    fi
+    local big i start
+    big=$'cat <<EOF\n'
+    i=0
+    while [ "$i" -lt 4000 ]; do
+        big+='npm run build'$'\n'
+        i=$((i + 1))
+    done
+    big+=$'EOF'
+    start=$SECONDS
+    supply_gate_run "$big"
+    if [ "$GATE_STATUS" -eq 0 ] && [ $((SECONDS - start)) -le 8 ]; then
+        pass "A 50KB unquoted heredoc stays within the time bound"
+    else
+        fail "Large heredoc status=$GATE_STATUS elapsed=$((SECONDS - start))s"
+    fi
+    big="echo a"
+    i=0
+    while [ "$i" -lt 400 ]; do
+        big+=" && echo a"
+        i=$((i + 1))
+    done
+    big+=" && pip install foo"
+    start=$SECONDS
+    supply_gate_run "$big"
+    if [ "$GATE_STATUS" -eq 2 ] && [ $((SECONDS - start)) -le 8 ]; then
+        pass "A long command chain still blocks within the time bound"
+    else
+        fail "Long chain status=$GATE_STATUS elapsed=$((SECONDS - start))s"
+    fi
+    big=$'cat <<EOF\n'
+    i=0
+    while [ "$i" -lt 1000 ]; do
+        big+='v=$(date)'$'\n'
+        i=$((i + 1))
+    done
+    big+=$'npm ci\nEOF'
+    gate="$CROSSCHECK_DIR/scripts/preuse-supply-chain-gate.sh"
+    if [ ! -f "$gate" ]; then
+        gate="$(cd "$CROSSCHECK_DIR/.." && pwd)/scripts/preuse-supply-chain-gate.sh"
+    fi
+    start=$SECONDS
+    payload=$(jq -n --arg cmd "$big" '{tool_name:"Bash", tool_input:{command:$cmd}}')
+    set +e
+    printf '%s' "$payload" | /bin/bash "$gate" >/dev/null 2>&1
+    GATE_STATUS=$?
+    set -e
+    if [ "$GATE_STATUS" -eq 0 ] && [ $((SECONDS - start)) -le 8 ]; then
+        pass "Heredoc expansions stay within the time bound under /bin/bash"
+    else
+        fail "Expansion heredoc status=$GATE_STATUS elapsed=$((SECONDS - start))s"
+    fi
+    supply_gate_run "pip install foo" fault
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "A scanner fault refuses the command"
+    else
+        fail "A scanner fault should refuse (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_ignores_quoted_install_prose() {
+    supply_gate_run "python3 -c 'print(\"pip install switchyard cannot ever be an acceptance criterion\")'"
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Quoted pip install prose is not an install"
+    else
+        fail "Quoted pip install prose should be allowed (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_ignores_heredoc_body() {
+    supply_gate_run "$(printf '%s\n' 'cat <<EOF' 'pip install foo' 'EOF')"
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Here-document body mentioning pip install is not an install"
+    else
+        fail "Here-document body should be allowed (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_embedded_shell_cases() {
+    local embedded
+    for embedded in "bash -c 'cd x && pip install foo'" "eval 'cd /tmp; pip install foo'" "bash <<< 'cd x; pip install foo'" "echo 'pip install foo' | sh" "printf 'npm install %s\\n' lodash | sh" "xargs -I{} sh -c 'cd /; pip install {}' < reqs" "bash -c -- 'pip install foo'" "fish -c 'pip install foo'" "su -c 'pip install foo'" "script -qc 'pip install foo'" "ssh host 'pip install foo'" "watch 'pip install foo'" "echo 'pip install x' | sudo bash" "echo 'pip install x' | env bash"; do
+        supply_gate_run "$embedded"
+        if [ "$GATE_STATUS" -eq 2 ]; then
+            pass "Executable shell string is scanned: $embedded"
+        else
+            fail "Executable shell string should block: $embedded (status=$GATE_STATUS)"
+        fi
+    done
+    for embedded in 'eval "$(echo npm install x)"' 'eval $(echo npm install x)' '. <(echo npm install x)' 'source <(echo npm install x)' 'bash <(echo npm install x)' 'sh <(printf "npm install x")' "bash -c \"bash -c 'npm install x'\"" "bash -c \"eval 'npm install x'\""; do
+        supply_gate_run "$embedded"
+        if [ "$GATE_STATUS" -eq 2 ]; then
+            pass "Nested shell payload install is blocked: $embedded"
+        else
+            fail "Nested shell payload should block: $embedded (status=$GATE_STATUS)"
+        fi
+    done
+    supply_gate_run 'SAFE_INSTALL_OVERRIDE=1 bash -c "npm install x"'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Command-scoped override carries into a shell -c command"
+    else
+        fail "Command-scoped override should carry into shell -c (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'export SAFE_INSTALL_OVERRIDE=1; npm install x'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Exported override does not bypass the command-scoped gate"
+    else
+        fail "Export-only override should not bypass the gate (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'npm install'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Bare npm install is blocked"
+    else
+        fail "Bare npm install should block (status=$GATE_STATUS)"
+    fi
+    for embedded in $'cat <<\\EOF\nx\nEOF\npip install foo' $'cat <<E"O"F\nx\nEOF\npip install foo'; do
+        supply_gate_run "$embedded"
+        if [ "$GATE_STATUS" -eq 2 ]; then
+            pass "Quoted heredoc delimiter preserves following commands"
+        else
+            fail "Quoted heredoc delimiter swallowed a command (status=$GATE_STATUS)"
+        fi
+    done
+    embedded=$(printf '%s\n' "cat <<E'OF'" x EOF 'pip install foo')
+    supply_gate_run "$embedded"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Single-quoted heredoc delimiter preserves following commands"
+    else
+        fail "Single-quoted heredoc delimiter swallowed a command (status=$GATE_STATUS)"
+    fi
+    embedded=$(printf '%s\n' 'sudo bash <<EOF' 'npm install x' EOF)
+    supply_gate_run "$embedded"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "sudo shell heredoc install is blocked"
+    else
+        fail "sudo shell heredoc install should block (status=$GATE_STATUS)"
+    fi
+    embedded=$(printf '%s\n' 'cat <<EOF | sudo bash' 'npm install x' EOF)
+    supply_gate_run "$embedded"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Piped sudo shell heredoc install is blocked"
+    else
+        fail "Piped sudo shell heredoc install should block (status=$GATE_STATUS)"
+    fi
+    for embedded in "rg 'npm|npx' src" "grep -rE 'yarn|npx' ." 'rg -n "npm;npx" .' "echo bash -c 'pip install x'" "rg bash -c 'pip install x'"; do
+        supply_gate_run "$embedded"
+        if [ "$GATE_STATUS" -eq 0 ]; then
+            pass "Quoted search pattern stays allowed: $embedded"
+        else
+            fail "Quoted search pattern should be allowed: $embedded (status=$GATE_STATUS)"
+        fi
+    done
+}
+
+test_supply_gate_blocks_indirect_heredocs() {
+    local command
+    command=$(printf '%s\n' 'bash -c "$(cat <<'\''EOF'\''' 'pip install evil' 'EOF' ')")')
+    supply_gate_expect_block 'bash -c with cat heredoc substitution' "$command"
+    command=$(printf '%s\n' 'bash -c "$(cat <<EOF' 'pip install evil' 'EOF' ')")')
+    supply_gate_expect_block 'bash -c with unquoted cat heredoc substitution' "$command"
+    command=$(printf '%s\n' 'sh -c "$(cat <<'\''EOF'\''' 'npm install evil' 'EOF' ')")')
+    supply_gate_expect_block 'sh -c with cat heredoc substitution' "$command"
+    command=$(printf '%s\n' 'eval "$(cat <<'\''EOF'\''' 'pip install evil' 'EOF' ')")')
+    supply_gate_expect_block 'eval with cat heredoc substitution' "$command"
+    command=$(printf '%s\n' '$(cat <<'\''EOF'\''' 'pip install evil' 'EOF' ')')
+    supply_gate_expect_block 'command substitution with cat heredoc' "$command"
+    command=$(printf '%s\n' 'bash <(cat <<'\''EOF'\''' 'pip install evil' 'EOF' ')')
+    supply_gate_expect_block 'bash process substitution with cat heredoc' "$command"
+    command=$(printf '%s\n' 'bash -c "$(cat)" <<'\''EOF'\''' 'pip install evil' 'EOF')
+    supply_gate_expect_block 'bash -c cat stdin heredoc' "$command"
+    command=$(printf '%s\n' 'source /dev/stdin <<'\''EOF'\''' 'pip install evil' 'EOF')
+    supply_gate_expect_block 'source stdin heredoc' "$command"
+    command=$(printf '%s\n' '. /dev/stdin <<'\''EOF'\''' 'npm install evil' 'EOF')
+    supply_gate_expect_block 'dot stdin heredoc' "$command"
+}
+
+supply_gate_expect_block() {
+    local label="$1" command="$2"
+    supply_gate_run "$command"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "$label"
+    else
+        fail "$label should block (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_blocks_real_pip_install() {
+    supply_gate_run "pip install foo"
+    if [ "$GATE_STATUS" -eq 2 ] && printf '%s\n' "$GATE_OUTPUT" | grep -q "Parsed action: pip install foo"; then
+        pass "pip install foo is blocked and the parsed action is named"
+    else
+        fail "pip install foo should block with a parsed action (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_blocks_install_after_safe_command() {
+    supply_gate_run "npm ci && pip install evil"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "A later pip install is not masked by npm ci"
+    else
+        fail "npm ci && pip install evil should block (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_override_must_be_assignment() {
+    supply_gate_run "SAFE_INSTALL_OVERRIDE=1 pip install foo"
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "SAFE_INSTALL_OVERRIDE=1 assignment allows the install"
+    else
+        fail "Override assignment should allow the install (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'echo "SAFE_INSTALL_OVERRIDE=1" && pip install evil'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Override text inside quotes does not allow a later install"
+    else
+        fail "Quoted override text should not allow pip install (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_blocks_command_substitution() {
+    supply_gate_run 'echo $(pip install foo)'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Command substitution that installs is blocked"
+    else
+        fail "Command substitution install should block (status=$GATE_STATUS)"
+    fi
+}
+
+test_supply_gate_ignores_quoted_install_prose
+test_supply_gate_ignores_heredoc_body
+test_supply_gate_embedded_shell_cases
+test_supply_gate_blocks_indirect_heredocs
+test_supply_gate_blocks_real_pip_install
+test_supply_gate_blocks_install_after_safe_command
+test_supply_gate_override_must_be_assignment
+test_supply_gate_blocks_command_substitution
+test_supply_gate_blocks_structured_installs
+echo ""
+
+# ============================================================
 # Summary
 # ============================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

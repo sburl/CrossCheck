@@ -1,7 +1,7 @@
 # Installing Codex Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-11-23-13-05
+**Last Updated:** 2026-11-23-21-39
 
 This directory contains all custom skill sources for Codex.
 
@@ -69,7 +69,7 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
 
 ### Repo Operations (2)
 - `/drain-repo` - Drain review-approved PRs via integration-branch process (acorn|firehose|thriftfit|switchyard)
-- `/triage-repo` - Autonomous Linear intake triage and queue allocation for a target repo (acorn|firehose|thriftfit)
+- `/triage-repo` - Autonomous Linear intake triage and queue allocation for a target repo (acorn|firehose|thriftfit|switchyard)
 
 ### Knowledge Capture (1)
 - `/capture-skill` - Distill session discoveries into reusable skills (auto-installs to Claude + Codex)

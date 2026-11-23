@@ -13,8 +13,8 @@ CLAUDE_ONLY=(
   "install-claude-hooks.sh"
 )
 
-# Claude's PreToolUse hook consumes Claude-specific tool payloads, so do not
-# require it in the Codex mirror.
+# Claude's PreToolUse hook consumes Claude-specific tool payloads. Do not
+# require it in the Codex mirror, and reject it if it is copied there.
 CODEX_EXCLUDED=(
   "preuse-supply-chain-gate.sh"
 )
@@ -92,7 +92,10 @@ done
 
 # Check 2: codex extras (anything not in root)
 for file in "${CODEX_FILES[@]}"; do
-  if ! has_item "$file" "${ROOT_FILES[@]}"; then
+  if has_item "$file" "${CODEX_EXCLUDED[@]}"; then
+    echo "❌ Claude-only script present in Codex mirror: scripts/$file"
+    extra_codemirror=$((extra_codemirror + 1))
+  elif ! has_item "$file" "${ROOT_FILES[@]}"; then
     echo "❌ Extra in codex mirror (not in root): scripts/$file"
     extra_codemirror=$((extra_codemirror + 1))
   fi

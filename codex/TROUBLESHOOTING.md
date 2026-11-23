@@ -1,7 +1,7 @@
 # CrossCheck Troubleshooting Guide
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-11-23-13-05
+**Last Updated:** 2026-11-23-21-39
 
 When automation fails, debug it here.
 
@@ -477,7 +477,7 @@ cp -R ~/Documents/Developer/CrossCheck/codex/skills/* ~/.codex/skills/
 
 # Verify installation
 find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
-# Should show 27 skills
+# Should show 34 skills
 
 # Restart Codex
 # Skills should now be available

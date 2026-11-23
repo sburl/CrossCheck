@@ -96,7 +96,12 @@ done
 gh auth status >/dev/null 2>&1 || { echo "❌ gh not authenticated; run 'gh auth login'" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [ -f "$SCRIPT_ROOT/templates/dependabot.yml" ]; then
+    REPO_ROOT="$SCRIPT_ROOT"
+else
+    REPO_ROOT="$(cd "$SCRIPT_ROOT/.." && pwd)"
+fi
 TEMPLATE="$REPO_ROOT/templates/dependabot.yml"
 [ -f "$TEMPLATE" ] || { echo "❌ template missing: $TEMPLATE" >&2; exit 1; }
 

@@ -1,7 +1,7 @@
 # Installing Claude Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-11-23-13-05
+**Last Updated:** 2026-11-23-21-39
 
 This directory contains all custom skill sources for Claude.
 
@@ -44,10 +44,10 @@ mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/com
 - `/webapp-test` - Automated Playwright-based web app testing (screenshot, interact, visual regression)
 
 ### Agent Delegation (5)
-- `/claude-delegate` - Delegate task to Claude agent
+- `/codex-delegate` - Delegate task to Codex agent
 - `/gemini-delegate` - Delegate task to Gemini agent
-- `/ensemble-opinion` - Get multi-model opinions (Claude + Gemini + Critic)
-- `/pr-review` - Initiate autonomous PR review with Claude
+- `/ensemble-opinion` - Get multi-model opinions (Codex + Gemini + Critic)
+- `/pr-review` - Initiate autonomous PR review with Codex
 - `/repo-assessment` - Run comprehensive repo assessment (every 3 PRs)
 
 ### Git Cleanup (6)
@@ -64,19 +64,21 @@ mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/com
 - `/commit-smart` - Atomic Git Commit
 - `/doc-timestamp` - Add/update timestamps in docs
 
-### Memory (2)
-- `/napkin` - Per-repo behavioral memory in `.claude/napkin.md` (corrections, gotchas)
-- `/capture-skill` - Extract a non-obvious discovery from this session as a reusable skill
+### Repo Operations (2)
+- `/drain-repo` - Drain review-approved PRs via integration-branch process (acorn|firehose|thriftfit|switchyard)
+- `/triage-repo` - Autonomous Linear intake triage and queue allocation for a target repo (acorn|firehose|thriftfit|switchyard)
+
+### Knowledge Capture (1)
+- `/capture-skill` - Distill session discoveries into reusable skills
 
 ### Analytics (1)
 - `/ai-usage` - Track token usage, costs, and environmental impact across Claude/Codex/Gemini
 
-### Setup (5)
+### Setup (4)
 - `/setup-automation` - Install all automation for new repo
 - `/setup-plugins` - Install Claude Code plugins alongside CrossCheck
 - `/setup-statusline` - Customize Claude statusline
 - `/garbage-collect` - Manage /garbage folder
-- `/update-crosscheck` - Update CrossCheck to the latest version
 
 ### CrossCheck Maintenance (2)
 - `/napkin` - Read and update per-repo behavioral memory
@@ -137,7 +139,7 @@ git push
 ```
 ~/.claude/
 ├── commands/              ← Active skills (copied from CrossCheck/skill-sources/)
-│   └── *.md              ← 32 skill files
+│   └── *.md              ← 34 skill files
 └── settings.json         ← Global permissions
 
 ~/.crosscheck/                 ← Git repo (source of truth, traditional install)

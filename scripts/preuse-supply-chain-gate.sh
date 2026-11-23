@@ -40,6 +40,23 @@ H_QUOTED=()
 H_TABS=()
 H_LEVEL=()
 EXP_SNIPS=()
+EXP_LEVELS=()
+EXP_CURRENT_LEVEL=0
+
+scan_add_expansion() {
+    EXP_SNIPS+=("$1")
+    EXP_LEVELS+=("$EXP_CURRENT_LEVEL")
+}
+
+scan_add_embedded_script() {
+    if [ "$EXP_CURRENT_LEVEL" -ge 4 ]; then
+        EXP_SNIPS+=("pip install <shell nesting limit>")
+        EXP_LEVELS+=(0)
+    else
+        EXP_SNIPS+=("$1")
+        EXP_LEVELS+=("$((EXP_CURRENT_LEVEL + 1))")
+    fi
+}
 
 scan_emit() {
     SCAN_BUF+=("$1")
@@ -425,7 +442,7 @@ collect_line_commands() {
         if [ "$c" = '$' ] && [ "$nxt" = '(' ]; then
             end_of_parens "$line" $((i + 1))
             len=$((END_POS - i + 1))
-            EXP_SNIPS+=("${line:i:len}")
+            scan_add_expansion "${line:i:len}"
             i=$((END_POS + 1))
             continue
         fi
@@ -442,7 +459,7 @@ collect_line_commands() {
                 j=$((j + 1))
             done
             len=$((j - i - 1))
-            EXP_SNIPS+=("${line:i+1:len}")
+            scan_add_expansion "${line:i+1:len}"
             i=$((j + 1))
             continue
         fi
@@ -451,10 +468,12 @@ collect_line_commands() {
 }
 
 flush_pending_expansions() {
-    local snip idx=0
+    local snip idx=0 out_start new_text
     while [ "$idx" -lt "${#EXP_SNIPS[@]}" ]; do
         snip=${EXP_SNIPS[$idx]}
+        EXP_CURRENT_LEVEL=${EXP_LEVELS[$idx]:-0}
         idx=$((idx + 1))
+        out_start=${#SCAN_OUT}
         scan_flush
         scan_load "$snip"
         SCAN_I=0
@@ -469,7 +488,11 @@ flush_pending_expansions() {
             scan_consume_heredocs
         fi
         scan_emit $'\n'
+        scan_flush
+        new_text=${SCAN_OUT:out_start}
+        collect_embedded_shell_scripts "$new_text"
     done
+    EXP_CURRENT_LEVEL=0
 }
 
 scan_consume_heredocs() {
@@ -520,11 +543,11 @@ scan_consume_heredocs() {
         fi
         if [ "$closed" -eq 1 ]; then
             if [ "$receiver" = "shell" ]; then
-                EXP_SNIPS+=("$body")
+                scan_add_expansion "$body"
             elif [ "$receiver" = "python" ] && [[ "$body" =~ (npm|npx|pnpm|yarn|pip3?|pipx|uv|cargo|gem|go|poetry|pipenv).*(install|add|exec) ]]; then
                 # Python stdin is executable code, not shell syntax. Fail closed
                 # when it names an install-capable manager.
-                EXP_SNIPS+=("pip install <python-stdin-script>")
+                scan_add_expansion "pip install <python-stdin-script>"
             fi
         fi
     done
@@ -667,9 +690,11 @@ scan_code() {
         # <(...) and >(...) run. Same as $(...): the inner command is executed.
         if { [ "$c" = '<' ] || [ "$c" = '>' ]; } && [ "$next" = '(' ]; then
             SCAN_I=$((SCAN_I + 2))
+            scan_emit $'\x0d'
             scan_emit $'\n'
             scan_code paren
             scan_emit $'\n'
+            scan_emit $'\x0e'
             continue
         fi
         if [ "$c" = $'\n' ]; then
@@ -730,8 +755,51 @@ word_unquote() {
 }
 
 collect_embedded_shell_scripts() {
-    local text="$1" line token word base i n previous
+    local text="$1" line token word base i n previous previous_sink first payload line_override
+    previous_sink=0
     while IFS= read -r line; do
+        segment_command_words "$line"
+        n=${#WORDS[@]}
+        first=""
+        line_override=0
+        for ((i = 0; i < n; i++)); do
+            word_unquote "${WORDS[$i]}"
+            if word_is_assignment "${WORDS[$i]}"; then
+                [ "$WORD_VALUE" = "SAFE_INSTALL_OVERRIDE=1" ] && line_override=1
+            else
+                break
+            fi
+        done
+        if [ "$n" -gt 0 ]; then
+            word_unquote "${WORDS[0]}"
+            first=${WORD_VALUE##*/}
+        fi
+        if [ "$previous_sink" -eq 1 ] && [[ "$first" =~ ^(echo|printf)$ ]]; then
+            payload=""
+            local payload_start=1
+            if [ "$first" = "printf" ] && [ "$n" -gt 2 ]; then payload_start=2; fi
+            for ((i = payload_start; i < n; i++)); do
+                word_unquote "${WORDS[$i]}"
+                [ -n "$payload" ] && payload+=" "
+                payload+="$WORD_VALUE"
+            done
+            if [[ "$payload" =~ (npm|npx|pnpm|yarn|pip3?|pipx|uv|cargo|gem|go|poetry|pipenv).*(install|add|exec) ]]; then
+                scan_add_embedded_script "$payload"
+            fi
+            previous_sink=0
+        fi
+        case "$first" in
+            eval|source|.) previous_sink=1 ;;
+            sh|bash|dash|zsh|ksh|ash|fish)
+                for ((i = 1; i < n; i++)); do
+                    word_unquote "${WORDS[$i]}"
+                    if [ "$WORD_VALUE" = "-c" ] || [ "$WORD_VALUE" = "--command" ] || [[ "$WORD_VALUE" =~ ^-[^-]*c ]] || [[ "$WORD_VALUE" = *$'\x0d'* ]]; then
+                        previous_sink=1
+                        break
+                    fi
+                done
+                ;;
+        esac
         split_segments "$line"
         previous=""
         for token in "${SEGMENTS[@]}"; do
@@ -758,7 +826,7 @@ collect_embedded_shell_scripts() {
                                 [ -n "$token" ] && token+=" "
                                 token+="$WORD_VALUE"
                             done
-                            EXP_SNIPS+=("$token")
+                            scan_add_embedded_script "$token"
                         fi
                     fi
                 fi
@@ -781,20 +849,20 @@ collect_embedded_shell_scripts() {
                         if [ "$word" = "-c" ] || [ "$word" = "--command" ] || [[ "$word" =~ ^-[^-]*c ]]; then
                             i=$((i + 1))
                             if [ "${WORDS[$i]:-}" = "--" ]; then i=$((i + 1)); fi
-                            if [ "$i" -lt "$n" ]; then
+                            if [ "$line_override" -eq 0 ] && [ "$i" -lt "$n" ]; then
                                 word_unquote "${WORDS[$i]}"
-                                EXP_SNIPS+=("$WORD_VALUE")
+                                scan_add_embedded_script "$WORD_VALUE"
                             fi
                             break
                         elif [ "$word" = "<<<" ] && [ $((i + 1)) -lt "$n" ]; then
                             word_unquote "${WORDS[$((i + 1))]}"
-                            EXP_SNIPS+=("$WORD_VALUE")
+                            [ "$line_override" -eq 0 ] && scan_add_embedded_script "$WORD_VALUE"
                             break
                         fi
                         i=$((i + 1))
                     done
                     ;;
-                eval|su|script|ssh|watch)
+                eval|source|.|su|script|ssh|watch)
                     token=""
                     i=$((i + 1))
                     while [ "$i" -lt "$n" ]; do
@@ -803,7 +871,7 @@ collect_embedded_shell_scripts() {
                         token+="$WORD_VALUE"
                         i=$((i + 1))
                     done
-                    [ -n "$token" ] && EXP_SNIPS+=("$token")
+                    [ -n "$token" ] && scan_add_embedded_script "$token"
                     ;;
             esac
             i=$((i + 1))
@@ -1159,6 +1227,8 @@ executed_text() {
     H_TABS=()
     H_LEVEL=()
     EXP_SNIPS=()
+    EXP_LEVELS=()
+    EXP_CURRENT_LEVEL=0
     scan_code eof
     # A here-doc opened on the last line still has a body after EOF.
     if scan_has_heredoc; then

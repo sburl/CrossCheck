@@ -959,6 +959,32 @@ test_supply_gate_embedded_shell_cases() {
             fail "Executable shell string should block: $embedded (status=$GATE_STATUS)"
         fi
     done
+    for embedded in 'eval "$(echo npm install x)"' 'eval $(echo npm install x)' '. <(echo npm install x)' 'source <(echo npm install x)' 'bash <(echo npm install x)' 'sh <(printf "npm install x")' "bash -c \"bash -c 'npm install x'\"" "bash -c \"eval 'npm install x'\""; do
+        supply_gate_run "$embedded"
+        if [ "$GATE_STATUS" -eq 2 ]; then
+            pass "Nested shell payload install is blocked: $embedded"
+        else
+            fail "Nested shell payload should block: $embedded (status=$GATE_STATUS)"
+        fi
+    done
+    supply_gate_run 'SAFE_INSTALL_OVERRIDE=1 bash -c "npm install x"'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Command-scoped override carries into a shell -c command"
+    else
+        fail "Command-scoped override should carry into shell -c (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'export SAFE_INSTALL_OVERRIDE=1; npm install x'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Exported override does not bypass the command-scoped gate"
+    else
+        fail "Export-only override should not bypass the gate (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'npm install'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Bare npm install is blocked"
+    else
+        fail "Bare npm install should block (status=$GATE_STATUS)"
+    fi
     for embedded in $'cat <<\\EOF\nx\nEOF\npip install foo' $'cat <<E"O"F\nx\nEOF\npip install foo'; do
         supply_gate_run "$embedded"
         if [ "$GATE_STATUS" -eq 2 ]; then

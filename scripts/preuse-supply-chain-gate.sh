@@ -9,9 +9,10 @@
 # The match is on the shell command that will actually execute. Quoted
 # arguments, comments, and here-document bodies are not installs. Command
 # substitutions and process substitutions are, because the shell runs them.
-# Shell keywords and a bounded set of wrappers (sudo, env, eval, ssh,
-# docker exec, and the others in classify_segment) are unwrapped. A quoted
-# script passed to bash -c or eval is not re-parsed; GIT-8227 tracks that.
+# Echo, printf, and other text commands may mention an install. Any
+# other command is blocked when its arguments run a package manager, so
+# wrappers do not need their own flag lists. A quoted script passed to
+# bash -c or eval is not re-parsed; GIT-8227 tracks that.
 #
 # Exit codes (Claude Code contract):
 #   0 = allow
@@ -35,6 +36,7 @@ H_DELIM=()
 H_QUOTED=()
 H_TABS=()
 H_LEVEL=()
+EXP_SNIPS=()
 
 scan_emit() {
     SCAN_BUF+=("$1")
@@ -279,6 +281,111 @@ scan_read_line() {
     return 0
 }
 
+# Index of the matching close paren. Quotes hide parens; the full scan
+# still sees command substitutions inside those quotes.
+end_of_parens() {
+    local s="$1" j="$2" depth=0 c
+    local n=${#s}
+    END_POS=$n
+    while [ "$j" -lt "$n" ]; do
+        c=${s:j:1}
+        if [ "$c" = '\' ]; then
+            j=$((j + 2))
+            continue
+        fi
+        if [ "$c" = "'" ]; then
+            j=$((j + 1))
+            while [ "$j" -lt "$n" ] && [ "${s:j:1}" != "'" ]; do
+                j=$((j + 1))
+            done
+            j=$((j + 1))
+            continue
+        fi
+        if [ "$c" = '"' ]; then
+            j=$((j + 1))
+            while [ "$j" -lt "$n" ] && [ "${s:j:1}" != '"' ]; do
+                if [ "${s:j:1}" = '\' ]; then
+                    j=$((j + 2))
+                    continue
+                fi
+                j=$((j + 1))
+            done
+            j=$((j + 1))
+            continue
+        fi
+        if [ "$c" = '(' ]; then
+            depth=$((depth + 1))
+        elif [ "$c" = ')' ]; then
+            depth=$((depth - 1))
+            if [ "$depth" -eq 0 ]; then
+                END_POS=$j
+                return 0
+            fi
+        fi
+        j=$((j + 1))
+    done
+}
+
+collect_line_commands() {
+    local line="$1" i=0 c nxt j len
+    local n=${#line}
+    while [ "$i" -lt "$n" ]; do
+        c=${line:i:1}
+        if [ "$c" = '\' ]; then
+            i=$((i + 2))
+            continue
+        fi
+        nxt=${line:i+1:1}
+        if [ "$c" = '$' ] && [ "$nxt" = '(' ]; then
+            end_of_parens "$line" $((i + 1))
+            len=$((END_POS - i + 1))
+            EXP_SNIPS+=("${line:i:len}")
+            i=$((END_POS + 1))
+            continue
+        fi
+        if [ "$c" = '`' ]; then
+            j=$((i + 1))
+            while [ "$j" -lt "$n" ]; do
+                if [ "${line:j:1}" = '\' ]; then
+                    j=$((j + 2))
+                    continue
+                fi
+                if [ "${line:j:1}" = '`' ]; then
+                    break
+                fi
+                j=$((j + 1))
+            done
+            len=$((j - i - 1))
+            EXP_SNIPS+=("${line:i+1:len}")
+            i=$((j + 1))
+            continue
+        fi
+        i=$((i + 1))
+    done
+}
+
+flush_pending_expansions() {
+    local snip idx=0
+    while [ "$idx" -lt "${#EXP_SNIPS[@]}" ]; do
+        snip=${EXP_SNIPS[$idx]}
+        idx=$((idx + 1))
+        scan_flush
+        scan_load "$snip"
+        SCAN_I=0
+        SCAN_DEPTH=0
+        H_DELIM=()
+        H_QUOTED=()
+        H_TABS=()
+        H_LEVEL=()
+        scan_emit $'\n'
+        scan_code eof
+        if scan_has_heredoc; then
+            scan_consume_heredocs
+        fi
+        scan_emit $'\n'
+    done
+}
+
 scan_consume_heredocs() {
     while scan_peek_heredoc; do
         local delim="$HD_DELIM"
@@ -304,23 +411,9 @@ scan_consume_heredocs() {
                     *'$('*|*'`'*) ;;
                     *) continue ;;
                 esac
-                scan_flush
-                local saved_n="$SCAN_N" saved_i="$SCAN_I" saved_out="$SCAN_OUT"
-                local saved_chars=("${SCAN_CHARS[@]}")
-                scan_load "$SCAN_LINE"
-                SCAN_I=0
-                scan_reset_out
-                scan_expansions_only
-                scan_flush
-                local extra="$SCAN_OUT"
-                SCAN_CHARS=("${saved_chars[@]}")
-                SCAN_N="$saved_n"
-                SCAN_I="$saved_i"
-                SCAN_OUT="$saved_out"
-                SCAN_BUF=()
-                if [ -n "$extra" ]; then
-                    scan_emit $'\n'"$extra"$'\n'
-                fi
+                # Collect the snippet and scan it after the outer walk.
+                # Copying SCAN_CHARS once per line is quadratic.
+                collect_line_commands "$SCAN_LINE"
             fi
         done
         # EOF before the delimiter: drop it so the loop cannot spin.
@@ -436,6 +529,12 @@ scan_code() {
             scan_parse_heredoc_op
             continue
         fi
+        # (( arithmetic command )). bash runs expansions inside it, quotes too.
+        if [ "$c" = '(' ] && [ "$next" = '(' ]; then
+            SCAN_I=$((SCAN_I + 2))
+            scan_arith
+            continue
+        fi
         # <(...) and >(...) run. Same as $(...): the inner command is executed.
         if { [ "$c" = '<' ] || [ "$c" = '>' ]; } && [ "$next" = '(' ]; then
             SCAN_I=$((SCAN_I + 2))
@@ -494,73 +593,42 @@ word_is_assignment() {
     [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]
 }
 
-# A redirect is not the executable. Operators with no target consume the next word.
-skip_one_redirect() {
-    local w="${WORDS[$i]}"
-    local op_re='^[0-9]*([<>]|&[<>]|[<>]&|[<>]{2,3})'
-    local bare_re='^[0-9]*([<>]|&[<>]|[<>]&|[<>]{2,3})$'
-    [[ "$w" =~ $op_re ]] || return 1
-    if [[ "$w" =~ $bare_re ]]; then
-        i=$((i + 2))
-    else
-        i=$((i + 1))
-    fi
-    return 0
-}
-
-word_is_duration() {
-    local re='^([0-9]+([.][0-9]+)?[smhd]?|infinity)$'
-    [[ "$1" =~ $re ]]
-}
-
-# $1 word, $2 value-taking short letters, $3 boolean short letters.
-# -iu is a cluster whose last letter takes a value. -uroot is an attached value.
-short_cluster_takes_value() {
-    local w="$1" vals="$2" bools="$3" rest last ch allowed k
-    [[ "$w" =~ ^-[A-Za-z]+$ ]] || return 1
-    rest="${w#-}"
-    last="${rest: -1}"
-    [[ "$vals" == *"$last"* ]] || return 1
-    allowed="${vals}${bools}"
-    k=0
-    while [ "$k" -lt "${#rest}" ]; do
-        ch="${rest:$k:1}"
-        [[ "$allowed" == *"$ch"* ]] || return 1
-        k=$((k + 1))
-    done
-    return 0
-}
-
-# Updates the caller's i/w. $1 flags that take the next word, $2 attached-value globs.
-# $3/$4 are the short letters used to spot a cluster like sudo -iu.
-unwrap_flags() {
-    local takes="${1:-}" glued="${2:-}" cvals="${3:-}" cbools="${4:-}"
-    i=$((i + 1))
-    while [ "$i" -lt "$n" ]; do
-        w="${WORDS[$i]}"
-        if [ "$w" = "--" ]; then
-            i=$((i + 1))
+# Text utilities do not execute their arguments.
+prose_command() {
+    case "$1" in
+        echo|printf|cat|head|tail|less|more|grep|rg|sed|awk|cut|tr|sort|uniq|diff|wc|ls|cd|pwd|true|false|test|'['|':')
             return 0
-        fi
-        [[ "$w" == -* ]] || return 0
-        if [ -n "$takes" ] && [[ "$w" == @($takes) ]]; then
-            i=$((i + 2))
-            continue
-        fi
-        if [ -n "$cvals" ] && short_cluster_takes_value "$w" "$cvals" "$cbools"; then
-            i=$((i + 2))
-            continue
-        fi
-        # glued is an extglob of attached values, for example --signal=*
-        # shellcheck disable=SC2053
-        if [ -n "$glued" ] && [[ "$w" == $glued ]]; then
-            i=$((i + 1))
-            continue
-        fi
-        i=$((i + 1))
-    done
+            ;;
+    esac
+    return 1
 }
-# Print the offending simple command, or nothing when the segment is allowed.
+
+# A later manager word is the command a wrapper runs. classify_manager applies
+# the historical allow rules (npm ci, offline, frozen lockfile, --no-deps).
+scan_trailing_managers() {
+    local j="$1" seg="$2" b override=0 nwords=${#WORDS[@]}
+    while [ "$j" -lt "$nwords" ]; do
+        if [ "${WORDS[$j]}" = "SAFE_INSTALL_OVERRIDE=1" ]; then
+            override=1
+            j=$((j + 1))
+            continue
+        fi
+        b=${WORDS[$j]##*/}
+        case "$b" in
+            npm|npx|pnpm|yarn|pip|pip3|pipx|uv|cargo|gem|go|poetry|pipenv)
+                if [ "$override" -eq 1 ]; then
+                    return 0
+                fi
+                classify_manager "$b" "$((j + 1))" "$nwords" "$seg"
+                if [ "$?" -ne 0 ]; then
+                    return 1
+                fi
+                ;;
+        esac
+        j=$((j + 1))
+    done
+    return 0
+}
 
 classify_segment() {
     local seg
@@ -570,7 +638,7 @@ classify_segment() {
     local i=0
     local n=${#WORDS[@]}
     local override=0
-    local w base nxt
+    local w base
     while [ "$i" -lt "$n" ]; do
         w="${WORDS[$i]}"
         if word_is_assignment "$w"; then
@@ -587,145 +655,12 @@ classify_segment() {
                 i=$((i + 2))
                 continue
                 ;;
-            coproc)
-                # `coproc NAME { ... }` runs the compound command. A bare
-                # `coproc NAME cmd` runs NAME, so only skip a braced name.
-                i=$((i + 1))
-                nxt="${WORDS[$((i + 1))]:-}"
-                if [ "$nxt" = "{" ] || [ "$nxt" = "(" ]; then
-                    i=$((i + 1))
-                fi
-                continue
-                ;;
-            if|then|else|elif|fi|for|do|done|while|until|case|'esac'|select|'!'|'('|')'|'{'|'}')
+            if|then|else|elif|fi|for|do|done|while|until|case|'esac'|select|'!'|'('|')'|'{'|'}'|coproc)
                 i=$((i + 1))
                 continue
                 ;;
         esac
-        if skip_one_redirect; then
-            continue
-        fi
-        base=${w##*/}
-        case "$base" in
-            sudo)
-                unwrap_flags '--user|--group|--chdir|--prompt|--close-from|--host|--role|--type|--other-user|--chroot|--command-timeout|-u|-g|-p|-C|-D|-h|-r|-t|-T|-U|-R' '' 'ugpCDhrtTUR' 'AbEeiHkKnPsSvV'
-                continue
-                ;;
-            exec)
-                unwrap_flags '-a' '' 'a' 'cl'
-                continue
-                ;;
-            time)
-                unwrap_flags '--format|--output|-f|-o' '' 'fo' 'p'
-                continue
-                ;;
-            command|nohup)
-                unwrap_flags '' ''
-                continue
-                ;;
-            timeout)
-                unwrap_flags '-k|-s|--kill-after|--signal' '--kill-after=*|--signal=*' 'ks' 'vf'
-                if [ "$i" -lt "$n" ] && word_is_duration "${WORDS[$i]}"; then
-                    i=$((i + 1))
-                fi
-                continue
-                ;;
-            nice)
-                unwrap_flags '-n|--adjustment' '--adjustment=*'
-                continue
-                ;;
-            stdbuf)
-                unwrap_flags '--input|--output|--error|-i|-o|-e' '--input=*|--output=*|--error=*'
-                continue
-                ;;
-            env)
-                # -S / --split-string is the command itself when the value is unquoted.
-                unwrap_flags '-u|-C|-P|--chdir|--unset' '--chdir=*|--unset=*' 'uCP' 'i0v'
-                continue
-                ;;
-            eval|builtin)
-                i=$((i + 1))
-                continue
-                ;;
-            watch)
-                unwrap_flags '-n|--interval' '--interval=*'
-                continue
-                ;;
-            doas)
-                unwrap_flags '-a|-C|-u'
-                continue
-                ;;
-            arch|xcrun)
-                unwrap_flags '-sdk|--sdk|-find|--find|-log|--log' '--sdk=*|--find=*|--log=*'
-                continue
-                ;;
-            caffeinate)
-                unwrap_flags '-t|-w'
-                continue
-                ;;
-            flock)
-                unwrap_flags '-w|-E'
-                # -c takes a shell command. Otherwise the next word is the lock file.
-                if [ "$i" -lt "$n" ] && { [ "${WORDS[$i]}" = "-c" ] || [ "${WORDS[$i]}" = "--command" ]; }; then
-                    i=$((i + 1))
-                elif [ "$i" -lt "$n" ]; then
-                    i=$((i + 1))
-                    if [ "$i" -lt "$n" ] && { [ "${WORDS[$i]}" = "-c" ] || [ "${WORDS[$i]}" = "--command" ]; }; then
-                        i=$((i + 1))
-                    fi
-                fi
-                continue
-                ;;
-            script)
-                unwrap_flags '-F|-t'
-                # The next word is the typescript file. The rest is the command.
-                [ "$i" -lt "$n" ] && i=$((i + 1))
-                continue
-                ;;
-            find)
-                i=$((i + 1))
-                while [ "$i" -lt "$n" ]; do
-                    case "${WORDS[$i]}" in
-                        -exec|-execdir|-ok|-okdir) i=$((i + 1)); break ;;
-                    esac
-                    i=$((i + 1))
-                done
-                continue
-                ;;
-            ssh)
-                unwrap_flags '-b|-c|-D|-E|-e|-F|-i|-J|-L|-l|-m|-O|-o|-p|-R|-S|-W|-w'
-                [ "$i" -lt "$n" ] && i=$((i + 1))
-                continue
-                ;;
-            docker)
-                if [ "${WORDS[$((i + 1))]:-}" != "exec" ]; then
-                    break
-                fi
-                i=$((i + 1))
-                unwrap_flags '-u|-w|-e|--user|--workdir|--env' '--user=*|--workdir=*|--env=*'
-                [ "$i" -lt "$n" ] && i=$((i + 1))
-                continue
-                ;;
-            mise)
-                if [ "${WORDS[$((i + 1))]:-}" != "exec" ]; then
-                    break
-                fi
-                i=$((i + 1))
-                unwrap_flags '-c|-j|-t|--command|--jobs|--tool' '--command=*|--jobs=*|--tool=*'
-                continue
-                ;;
-            uv|poetry|pipenv)
-                if [ "${WORDS[$((i + 1))]:-}" != "run" ]; then
-                    break
-                fi
-                i=$((i + 1))
-                unwrap_flags '-p|-C|--python|--with|--directory' '--python=*|--with=*|--directory=*'
-                continue
-                ;;
-            *)
-                break
-                ;;
-        esac
+        break
     done
     if [ "$override" -eq 1 ]; then
         return 0
@@ -735,6 +670,9 @@ classify_segment() {
     case "$base" in
         socket|npm-safe-install) return 0 ;;
     esac
+    if prose_command "$base"; then
+        return 0
+    fi
     local rest_start=$((i + 1))
     if [[ "$base" =~ ^python([0-9]+(\.[0-9]+)*)?$ ]]; then
         local j=$rest_start
@@ -745,17 +683,17 @@ classify_segment() {
             fi
             j=$((j + 1))
         done
-        return 0
     fi
     case "$base" in
         npm|npx|pnpm|yarn|pip|pip3|pipx|uv|cargo|gem|go|poetry|pipenv)
             classify_manager "$base" "$rest_start" "$n" "$seg"
-            return $?
-            ;;
-        *)
-            return 0
+            if [ "$?" -ne 0 ]; then
+                return 1
+            fi
             ;;
     esac
+    scan_trailing_managers "$rest_start" "$seg"
+    return $?
 }
 
 args_include() {
@@ -919,11 +857,13 @@ executed_text() {
     H_QUOTED=()
     H_TABS=()
     H_LEVEL=()
+    EXP_SNIPS=()
     scan_code eof
     # A here-doc opened on the last line still has a body after EOF.
     if scan_has_heredoc; then
         scan_consume_heredocs
     fi
+    flush_pending_expansions
     scan_flush
     printf '%s' "$SCAN_OUT"
 }

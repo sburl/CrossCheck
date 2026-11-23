@@ -809,6 +809,22 @@ coproc name	coproc NAME { pip install x; }
 arith cmdsub	echo $(( $(pip install foo) ))
 arith backtick	echo $(( `pip install foo` ))
 arith then install	echo $((1+2)); pip install foo
+op run	op run -- pip install foo
+op env file	op run --env-file=x -- npm install foo
+docker run	docker run img pip install foo
+docker run flags	docker run --rm -it img npm install foo
+compose exec	docker compose exec web pip install foo
+podman exec	podman exec c pip install foo
+kubectl exec	kubectl exec p -- pip install foo
+conda run	conda run -n x pip install foo
+pixi run	pixi run pip install foo
+pyenv exec	pyenv exec pip install foo
+direnv exec	direnv exec . pip install foo
+bundle exec	bundle exec gem install foo
+pnpm exec pip	pnpm exec pip install foo
+yarn exec pip	yarn exec pip install foo
+nix develop	nix develop -c pip install foo
+arith command	(( '$(pip install foo)' ))
 EOF
     supply_gate_run 'echo hi # pip install foo'
     if [ "$GATE_STATUS" -eq 0 ]; then
@@ -834,11 +850,29 @@ EOF
     else
         fail "echo pip install foo should be allowed (status=$GATE_STATUS)"
     fi
-    supply_gate_run 'coproc NAME pip install x'
+    supply_gate_run 'git commit -m "pip install foo"'
     if [ "$GATE_STATUS" -eq 0 ]; then
-        pass "coproc NAME runs NAME, not the following words"
+        pass "git commit prose stays allowed"
     else
-        fail "coproc NAME should be allowed (status=$GATE_STATUS)"
+        fail "git commit prose should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'git bisect run pip install foo'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "git bisect run package install is blocked"
+    else
+        fail "git bisect run package install should be blocked (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'op run -- npm ci'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "A wrapped npm ci stays allowed"
+    else
+        fail "Wrapped npm ci should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'grep -n pip install file'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "grep mentioning an install stays allowed"
+    else
+        fail "grep should be allowed (status=$GATE_STATUS)"
     fi
     supply_gate_run "$(printf '%s\n' 'cat <<EOF' '$(pip install foo)' 'EOF')"
     if [ "$GATE_STATUS" -eq 2 ]; then
@@ -874,6 +908,28 @@ EOF
         pass "A long command chain still blocks within the time bound"
     else
         fail "Long chain status=$GATE_STATUS elapsed=$((SECONDS - start))s"
+    fi
+    big=$'cat <<EOF\n'
+    i=0
+    while [ "$i" -lt 2000 ]; do
+        big+='v=$(date)'$'\n'
+        i=$((i + 1))
+    done
+    big+=$'npm ci\nEOF'
+    gate="$CROSSCHECK_DIR/scripts/preuse-supply-chain-gate.sh"
+    if [ ! -f "$gate" ]; then
+        gate="$(cd "$CROSSCHECK_DIR/.." && pwd)/scripts/preuse-supply-chain-gate.sh"
+    fi
+    start=$SECONDS
+    payload=$(jq -n --arg cmd "$big" '{tool_name:"Bash", tool_input:{command:$cmd}}')
+    set +e
+    printf '%s' "$payload" | /bin/bash "$gate" >/dev/null 2>&1
+    GATE_STATUS=$?
+    set -e
+    if [ "$GATE_STATUS" -eq 0 ] && [ $((SECONDS - start)) -le 8 ]; then
+        pass "Heredoc expansions stay within the time bound under /bin/bash"
+    else
+        fail "Expansion heredoc status=$GATE_STATUS elapsed=$((SECONDS - start))s"
     fi
     supply_gate_run "pip install foo" fault
     if [ "$GATE_STATUS" -eq 2 ]; then

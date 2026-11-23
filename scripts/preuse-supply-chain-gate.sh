@@ -6,8 +6,8 @@
 # unless they're routed through the supply-chain-safe wrapper (socket / npm-safe-install)
 # or explicitly overridden with SAFE_INSTALL_OVERRIDE=1 on that command.
 #
-# The match is on the shell command that will actually execute. Quoted
-# Literal quoted payloads, comments, and here-document bodies are not installs.
+# The match is on the shell command that will actually execute. Literal quoted
+# payloads, comments, and here-document bodies are not installs.
 # Shell-fed here-documents are inspected as scripts. Command substitutions and
 # process substitutions are checked because the shell runs them.
 # Echo, printf, and other text commands may mention an install. Any
@@ -20,6 +20,8 @@
 #   2 = block, surface stderr back to the model so it self-corrects
 set -u
 shopt -s extglob
+# Keep replacement text literal on Bash versions that enable this newer option.
+shopt -u patsub_replacement 2>/dev/null || :
 
 input=$(cat)
 tool=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)
@@ -127,7 +129,11 @@ scan_skip_single() {
         fi
         local c="${SCAN_CHARS[$SCAN_I]}"
         case "$c" in
-            ' '|$'\t'|$'\n') scan_emit $'\x07' ;;
+            ' '|$'\t') scan_emit $'\x07' ;;
+            ';') scan_emit $'\x08' ;;
+            '|') scan_emit $'\x09' ;;
+            '&') scan_emit $'\x0b' ;;
+            $'\n') scan_emit $'\x0c' ;;
             *) scan_emit "$c" ;;
         esac
         SCAN_I=$((SCAN_I + 1))
@@ -149,7 +155,11 @@ scan_skip_dollar_single() {
         fi
         local c="${SCAN_CHARS[$SCAN_I]}"
         case "$c" in
-            ' '|$'\t'|$'\n') scan_emit $'\x07' ;;
+            ' '|$'\t') scan_emit $'\x07' ;;
+            ';') scan_emit $'\x08' ;;
+            '|') scan_emit $'\x09' ;;
+            '&') scan_emit $'\x0b' ;;
+            $'\n') scan_emit $'\x0c' ;;
             *) scan_emit "$c" ;;
         esac
         SCAN_I=$((SCAN_I + 1))
@@ -191,7 +201,11 @@ scan_double() {
             continue
         fi
         case "$c" in
-            ' '|$'\t'|$'\n') scan_emit $'\x07' ;;
+            ' '|$'\t') scan_emit $'\x07' ;;
+            ';') scan_emit $'\x08' ;;
+            '|') scan_emit $'\x09' ;;
+            '&') scan_emit $'\x0b' ;;
+            $'\n') scan_emit $'\x0c' ;;
             *) scan_emit "$c" ;;
         esac
         SCAN_I=$((SCAN_I + 1))
@@ -314,33 +328,29 @@ scan_read_line() {
 }
 
 heredoc_receiver() {
-    local header="$1" seg i n word base python_index
+    local header="$1" seg i n word base first python_index
     HEREDOC_SHELL=0
     HEREDOC_PYTHON=0
     split_segments "$header"
     for seg in "${SEGMENTS[@]}"; do
         segment_command_words "$seg"
-        i=0
         n=${#WORDS[@]}
-        while [ "$i" -lt "$n" ]; do
+        [ "$n" -eq 0 ] && continue
+        word_unquote "${WORDS[0]}"
+        first=${WORD_VALUE##*/}
+        if prose_command "$first"; then
+            continue
+        fi
+        for ((i = 0; i < n; i++)); do
             word_unquote "${WORDS[$i]}"
             word=$WORD_VALUE
-            if word_is_assignment "${WORDS[$i]}"; then
-                i=$((i + 1))
-                continue
-            fi
-            case "$word" in
-                command|exec|env) i=$((i + 1)); continue ;;
-            esac
-            break
-        done
-        [ "$i" -ge "$n" ] && continue
-        base=${word##*/}
-        case "$base" in
-            sh|bash|dash|zsh|ksh|ash)
+            base=${word##*/}
+            case "$base" in
+                sh|bash|dash|zsh|ksh|ash|fish)
                 HEREDOC_SHELL=1
+                break
                 ;;
-            python|python[0-9]*|pypy|pypy[0-9]*)
+                python|python[0-9]*|pypy|pypy[0-9]*)
                 python_index=$((i + 1))
                 while [ "$python_index" -lt "$n" ]; do
                     word_unquote "${WORDS[$python_index]}"
@@ -352,7 +362,8 @@ heredoc_receiver() {
                     python_index=$((python_index + 1))
                 done
                 ;;
-        esac
+            esac
+        done
     done
 }
 
@@ -710,6 +721,10 @@ segment_command_words() {
 word_unquote() {
     local word="$1"
     word="${word//$'\x07'/ }"
+    word="${word//$'\x08'/;}"
+    word="${word//$'\x09'/|}"
+    word="${word//$'\x0b'/&}"
+    word="${word//$'\x0c'/$'\n'}"
     word="${word//$'\x06'/}"
     WORD_VALUE="$word"
 }
@@ -723,9 +738,16 @@ collect_embedded_shell_scripts() {
             segment_command_words "$token"
             n=${#WORDS[@]}
             if [ -n "$previous" ] && [ "$n" -gt 0 ]; then
-                word_unquote "${WORDS[0]}"
-                base=${WORD_VALUE##*/}
-                if [[ "$base" =~ ^(sh|bash|dash|zsh|ksh|ash)$ ]]; then
+                local receiver_shell=0
+                for ((i = 0; i < n; i++)); do
+                    word_unquote "${WORDS[$i]}"
+                    base=${WORD_VALUE##*/}
+                    if [[ "$base" =~ ^(sh|bash|dash|zsh|ksh|ash|fish)$ ]]; then
+                        receiver_shell=1
+                        break
+                    fi
+                done
+                if [ "$receiver_shell" -eq 1 ]; then
                     segment_command_words "$previous"
                     if [ "${#WORDS[@]}" -gt 1 ]; then
                         word_unquote "${WORDS[0]}"
@@ -751,13 +773,14 @@ collect_embedded_shell_scripts() {
             word=$WORD_VALUE
             base=${word##*/}
             case "$base" in
-                sh|bash|dash|zsh|ksh|ash)
+                sh|bash|dash|zsh|ksh|ash|fish)
                     i=$((i + 1))
                     while [ "$i" -lt "$n" ]; do
                         word_unquote "${WORDS[$i]}"
                         word=$WORD_VALUE
                         if [ "$word" = "-c" ] || [ "$word" = "--command" ] || [[ "$word" =~ ^-[^-]*c ]]; then
                             i=$((i + 1))
+                            if [ "${WORDS[$i]:-}" = "--" ]; then i=$((i + 1)); fi
                             if [ "$i" -lt "$n" ]; then
                                 word_unquote "${WORDS[$i]}"
                                 EXP_SNIPS+=("$WORD_VALUE")
@@ -771,7 +794,7 @@ collect_embedded_shell_scripts() {
                         i=$((i + 1))
                     done
                     ;;
-                eval)
+                eval|su|script|ssh|watch)
                     token=""
                     i=$((i + 1))
                     while [ "$i" -lt "$n" ]; do

@@ -921,7 +921,7 @@ EOF
         fail "Shell-fed heredoc prose should be allowed (status=$GATE_STATUS)"
     fi
     local embedded
-    for embedded in "bash -c 'cd x && pip install foo'" "eval 'cd /tmp; pip install foo'" "bash <<< 'cd x; pip install foo'" "echo 'pip install foo' | sh" "xargs -I{} sh -c 'cd /; pip install {}' < reqs"; do
+    for embedded in "bash -c 'cd x && pip install foo'" "eval 'cd /tmp; pip install foo'" "bash <<< 'cd x; pip install foo'" "echo 'pip install foo' | sh" "xargs -I{} sh -c 'cd /; pip install {}' < reqs" "bash -c -- 'pip install foo'" "fish -c 'pip install foo'" "su -c 'pip install foo'" "script -qc 'pip install foo'" "ssh host 'pip install foo'" "watch 'pip install foo'" "echo 'pip install x' | sudo bash" "echo 'pip install x' | env bash"; do
         supply_gate_run "$embedded"
         if [ "$GATE_STATUS" -eq 2 ]; then
             pass "Executable shell string is scanned: $embedded"
@@ -944,6 +944,28 @@ EOF
     else
         fail "Single-quoted heredoc delimiter swallowed a command (status=$GATE_STATUS)"
     fi
+    embedded=$(printf '%s\n' 'sudo bash <<EOF' 'npm install x' EOF)
+    supply_gate_run "$embedded"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "sudo shell heredoc install is blocked"
+    else
+        fail "sudo shell heredoc install should block (status=$GATE_STATUS)"
+    fi
+    embedded=$(printf '%s\n' 'cat <<EOF | sudo bash' 'npm install x' EOF)
+    supply_gate_run "$embedded"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Piped sudo shell heredoc install is blocked"
+    else
+        fail "Piped sudo shell heredoc install should block (status=$GATE_STATUS)"
+    fi
+    for embedded in "rg 'npm|npx' src" "grep -rE 'yarn|npx' ." 'rg -n "npm;npx" .'; do
+        supply_gate_run "$embedded"
+        if [ "$GATE_STATUS" -eq 0 ]; then
+            pass "Quoted search pattern stays allowed: $embedded"
+        else
+            fail "Quoted search pattern should be allowed: $embedded (status=$GATE_STATUS)"
+        fi
+    done
     supply_gate_run 'else pip install foo'
     if [ "$GATE_STATUS" -eq 2 ] && printf '%s\n' "$GATE_OUTPUT" | grep -Fq 'Parsed action: pip install foo'; then
         pass "Diagnostic omits shell keywords"

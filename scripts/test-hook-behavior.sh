@@ -957,6 +957,18 @@ EOF
     else
         fail "Python stdin install should block (status=$GATE_STATUS)"
     fi
+    supply_gate_run $'uv run python - <<\x27PY\x27\nseen = set()\nfor category in ["a", "b"]:\n    seen.add(category)\nPY'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Python stdin prose with manager-like substrings stays allowed"
+    else
+        fail "Python stdin prose with manager-like substrings should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'cat <<< "npm install x" | sh'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Here-string piped through cat into a shell is blocked"
+    else
+        fail "Here-string piped through cat into a shell should block (status=$GATE_STATUS)"
+    fi
     supply_gate_run $'sh <<EOF\n# pip install is prose\nprintf "%s" "pip install prose"\nEOF'
     if [ "$GATE_STATUS" -eq 0 ]; then
         pass "Shell-fed heredoc prose stays allowed"

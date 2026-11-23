@@ -575,9 +575,9 @@ scan_consume_heredocs() {
         if [ "$closed" -eq 1 ]; then
             if [ "$receiver" = "shell" ]; then
                 scan_add_expansion "$body"
-            elif [ "$receiver" = "python" ] && [[ "$body" =~ (npm|npx|pnpm|yarn|pip3?|pipx|uv|cargo|gem|go|poetry|pipenv).*(install|add|exec) ]]; then
+            elif [ "$receiver" = "python" ] && [[ "$body" =~ (^|[^[:alnum:]_])(npm|npx|pnpm|yarn|pip3?|pipx|uv|cargo|gem|go|poetry|pipenv)([[:space:][:punct:]]+)(install|add|exec)([^[:alnum:]_]|$) ]]; then
                 # Python stdin is executable code, not shell syntax. Fail closed
-                # when it names an install-capable manager.
+                # when a single line names a whole manager and install verb.
                 scan_add_expansion "pip install <python-stdin-script>"
             fi
         fi
@@ -853,14 +853,27 @@ collect_embedded_shell_scripts() {
                     segment_command_words "$previous"
                     if [ "${#WORDS[@]}" -gt 1 ]; then
                         word_unquote "${WORDS[0]}"
-                        if [[ "$WORD_VALUE" =~ ^(echo|printf)$ ]]; then
+                        if [[ "$WORD_VALUE" =~ ^(echo|printf|cat)$ ]]; then
                             token=""
-                            for ((i = 1; i < ${#WORDS[@]}; i++)); do
+                            local payload_start=1
+                            if [ "$WORD_VALUE" = "cat" ]; then
+                                while [ "$payload_start" -lt "${#WORDS[@]}" ]; do
+                                    word_unquote "${WORDS[$payload_start]}"
+                                    if [ "$WORD_VALUE" = "<<<" ]; then
+                                        payload_start=$((payload_start + 1))
+                                        break
+                                    fi
+                                    payload_start=$((payload_start + 1))
+                                done
+                            elif [ "$WORD_VALUE" = "printf" ] && [ "${#WORDS[@]}" -gt 2 ]; then
+                                payload_start=2
+                            fi
+                            for ((i = payload_start; i < ${#WORDS[@]}; i++)); do
                                 word_unquote "${WORDS[$i]}"
                                 [ -n "$token" ] && token+=" "
                                 token+="$WORD_VALUE"
                             done
-                            scan_add_embedded_script "$token"
+                            [ -n "$token" ] && scan_add_embedded_script "$token"
                         fi
                     fi
                 fi

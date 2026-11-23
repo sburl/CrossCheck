@@ -1,7 +1,7 @@
 # Advanced CrossCheck Configuration
 
 **Created:** 2026-02-09-16-52
-**Last Updated:** 2026-11-23-22-03
+**Last Updated:** 2026-11-23-15-54
 
 Deep customization, multi-agent workflows, and power-user features.
 
@@ -24,7 +24,7 @@ Use Claude for security reviews, architecture analysis, and deep code inspection
 
 **How it works:**
 1. Claude reads CLAUDE.md and injects context
-2. Claude runs autonomously with `--full-auto` flag
+2. Claude runs in print mode with `claude -p --permission-mode acceptEdits`
 3. Results reported back to Claude
 4. Claude continues with Claude findings
 

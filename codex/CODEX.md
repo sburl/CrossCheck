@@ -1,7 +1,7 @@
 # Codex Workflow
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-25-00-00
+**Last Updated:** 2026-11-23-15-54
 
 ---
 
@@ -154,4 +154,4 @@ Each worktree is fully autonomous: own branch, own context, own PR counter. No c
 
 **NEVER bypass branch protections.** If a PR is blocked by branch protection, that is working as intended. Do not use `--admin`, do not modify GitHub rulesets, do not weaken review requirements. Get a legitimate review from a separate account. See `docs/rules/trust-model.md` for details.
 
-**Gotchas:** `~/.codex/settings.json` is global | CODEX.md is per-repo | Check `which tool` before using CLI tools
+**Gotchas:** `~/.codex/settings.json` and `~/.codex/AGENTS.md` are global | the CrossCheck `CODEX.md` workflow loads through that managed instruction pointer | check `which tool` before using CLI tools

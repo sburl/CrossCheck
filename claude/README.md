@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-11-23-23-28
+**Last Updated:** 2026-11-23-15-54
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -182,7 +182,7 @@ cd CrossCheck
 This installs:
 - Skills to `~/.claude/commands/` (available in all projects)
 - Global `CLAUDE.md` in your projects folder (full workflow)
-- Claude settings with proper permissions
+- Claude settings with proper permissions and a checkout-specific supply-chain `PreToolUse` gate
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
 
 ### 3. Enable CrossCheck for Your Project(s)

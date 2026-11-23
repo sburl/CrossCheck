@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-11-23-23-28
+**Last Updated:** 2026-11-23-15-54
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -185,7 +185,7 @@ cd CrossCheck
 
 This installs:
 - Codex-native skills from `codex/skills/` to `~/.codex/skills/<name>/SKILL.md`
-- `CODEX.md` copied to your projects folder if it does not already exist
+- A managed pointer in `~/.codex/AGENTS.md` to `codex/CODEX.md`, where Codex discovers global instructions
 - Agent settings with proper permissions
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
 
@@ -218,8 +218,6 @@ CrossCheck uses a **single source of truth** pattern:
 
 ```
 ~/Documents/Developer/          # Your projects folder
-├── CODEX.md                   # Global workflow (copied from CrossCheck/codex/CODEX.md)
-│
 ├── CrossCheck/                # 🎯 Source repository
 │   ├── codex/CODEX.md        # Source of truth for Codex workflow
 │   ├── QUICK-REFERENCE.md    # Supporting reference (34 skills, tables)
@@ -228,11 +226,13 @@ CrossCheck uses a **single source of truth** pattern:
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
-    ├── CODEX.md (optional)   # Project-specific instructions
+    ├── AGENTS.md (optional)  # Project-specific instructions
     └── .git/hooks/           # Installed per-project
+
+~/.codex/AGENTS.md             # Managed pointer to CrossCheck's global workflow
 ```
 
-**Key insight:** The bootstrap copies `CODEX.md` and native skills into their active locations. Rerun the Codex bootstrap to refresh skills; copy `codex/CODEX.md` again when you want to update the global workflow. Supporting docs stay in CrossCheck. Hooks install per-project.
+**Key insight:** Codex discovers `~/.codex/AGENTS.md`; the bootstrap adds or refreshes a managed pointer there while preserving the rest of that file. Rerun the Codex bootstrap to refresh copied native skills and the workflow pointer. Supporting docs stay in CrossCheck. Hooks install per-project.
 
 ### GitHub Branch Protection Setup
 

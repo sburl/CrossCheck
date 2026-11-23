@@ -11,6 +11,7 @@ CLAUDE_ONLY=(
   "claude-approve-commit.sh"
   "claude-commit-review.sh"
   "install-claude-hooks.sh"
+  "install-supply-chain-hook.sh"
 )
 
 # Claude's supply-chain gate is required by its native PreToolUse hook.

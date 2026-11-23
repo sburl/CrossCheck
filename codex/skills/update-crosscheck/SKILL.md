@@ -1,10 +1,10 @@
 ---
 name: update-crosscheck
-description: Update CrossCheck to the latest version — pulls from main. Skills and agents update instantly via symlinks; new ones get linked automatically.
+description: Update CrossCheck to the latest version, including copied Codex-native skills and newly added legacy skills and agents.
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-02-24-13-46
+**Last Updated:** 2026-11-23-15-54
 
 # Update CrossCheck
 
@@ -158,7 +158,28 @@ them in place. This step only needs to create symlinks for files that were
 SKIP_FILE="$HOME/.crosscheck/skip-skills"
 NEW_LINKED=0
 
-# New skills
+# Codex-native skills are copied into ~/.codex/skills, so refresh existing installs.
+if [ -d "$CROSSCHECK_DIR/codex/skills" ]; then
+    NATIVE_SKILLS_DIR="$CROSSCHECK_DIR/codex/skills"
+else
+    NATIVE_SKILLS_DIR="$CROSSCHECK_DIR/skills"
+fi
+mkdir -p "$HOME/.codex/skills"
+NATIVE_UPDATED=0
+for skill_dir in "$NATIVE_SKILLS_DIR"/*; do
+    [ -d "$skill_dir" ] || continue
+    [ -f "$skill_dir/SKILL.md" ] || continue
+    skill_name="$(basename "$skill_dir")"
+    if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
+        continue
+    fi
+    mkdir -p "$HOME/.codex/skills/$skill_name"
+    cp -R "$skill_dir/." "$HOME/.codex/skills/$skill_name/"
+    NATIVE_UPDATED=$((NATIVE_UPDATED + 1))
+done
+echo "   ✅ Refreshed $NATIVE_UPDATED Codex-native skill(s)"
+
+# New legacy skills
 for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
     skill_name="$(basename "$skill_file" .md)"
     [ "$skill_name" = "INSTALL" ] && continue
@@ -212,9 +233,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 ## Notes
 
-- **Skills and agents update instantly** — they're symlinked to CrossCheck, so
-  `git pull` is the update. No re-run needed for existing files; new files get
-  symlinked by Step 6.
+- **Codex-native skills are copied**, so Step 6 refreshes their installed files.
+- **Legacy Claude/Codex commands and agents are symlinked** in multi-project
+  mode, so `git pull` updates existing links and Step 6 creates missing links.
 - **CLAUDE.md updates instantly** — symlinked in multi-project mode; git pull
   propagates changes to all sessions automatically.
 - **Settings are not overwritten,** but **critical deny rules are synced.** Step 3

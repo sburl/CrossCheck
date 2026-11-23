@@ -17,7 +17,7 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/CLAUDE.md" ]; then
     # Running from cloned repo - multi-project mode
     INSTALL_MODE="multi-project"
     CROSSCHECK_DIR="$SCRIPT_DIR"
-    PROJECTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+    PROJECTS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
     echo "📍 Multi-project mode detected"
     echo "   CrossCheck: $CROSSCHECK_DIR"
     echo "   Projects folder: $PROJECTS_DIR"
@@ -132,6 +132,22 @@ else
         echo "   ✅ Added $DENY_UPDATED critical security rule(s)"
     fi
 fi
+echo ""
+
+# Keep the native Bash PreToolUse gate pointed at this checkout, even when
+# settings already existed before bootstrap.
+CLAUDE_INSTALL_DIR="$CROSSCHECK_DIR"
+if [ -x "$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh" ]; then
+    CLAUDE_INSTALL_DIR="$CROSSCHECK_DIR/claude"
+fi
+if [ ! -x "$CLAUDE_INSTALL_DIR/scripts/install-supply-chain-hook.sh" ]; then
+    echo "   ❌ Claude supply-chain hook installer not found under $CLAUDE_INSTALL_DIR" >&2
+    exit 1
+fi
+"$CLAUDE_INSTALL_DIR/scripts/install-supply-chain-hook.sh" \
+    "$HOME/.claude/settings.json" \
+    "$CLAUDE_INSTALL_DIR/scripts/preuse-supply-chain-gate.sh"
+echo "   ✅ Claude supply-chain hook points to $CLAUDE_INSTALL_DIR/scripts/preuse-supply-chain-gate.sh"
 echo ""
 
 # 4. Install all hooks

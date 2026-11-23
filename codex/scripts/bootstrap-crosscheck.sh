@@ -86,22 +86,47 @@ else
     echo ""
 fi
 
-# 2. Copy full CODEX.md to global location (multi-project mode only)
-if [ "$INSTALL_MODE" = "multi-project" ]; then
-    echo "📝 Step 2: Copy CODEX.md to global location..."
-
-    # Copy full CODEX.md to projects folder
-    if [ ! -f "$PROJECTS_DIR/CODEX.md" ]; then
-        cp "$CROSSCHECK_DIR/CODEX.md" "$PROJECTS_DIR/CODEX.md"
-        echo "   ✅ Copied CODEX.md to $PROJECTS_DIR/CODEX.md"
-        echo "   📖 Full workflow available globally"
-        echo "   📚 Supporting docs in CrossCheck/ (QUICK-REFERENCE.md, rules/, skills/)"
-    else
-        echo "   ℹ️  Global CODEX.md already exists"
-        echo "   💡 To update: cp $CROSSCHECK_DIR/CODEX.md $PROJECTS_DIR/CODEX.md"
-    fi
-    echo ""
+# Resolve the Codex-native files for either the multi-project or ~/.crosscheck layout.
+if [ -f "$CROSSCHECK_DIR/CODEX.md" ]; then
+    CODEX_SOURCE_DIR="$CROSSCHECK_DIR"
+else
+    CODEX_SOURCE_DIR="$CROSSCHECK_DIR/codex"
 fi
+if [ -f "$CROSSCHECK_DIR/VERSION" ]; then
+    CROSSCHECK_ROOT_DIR="$CROSSCHECK_DIR"
+else
+    CROSSCHECK_ROOT_DIR="$(cd "$CROSSCHECK_DIR/.." && pwd)"
+fi
+
+# 2. Install a managed pointer in Codex's discovered global instruction file.
+echo "📝 Step 2: Register the global Codex workflow..."
+CODEX_AGENTS_FILE="$HOME/.codex/AGENTS.md"
+mkdir -p "$HOME/.codex"
+python3 - "$CODEX_AGENTS_FILE" "$CODEX_SOURCE_DIR/CODEX.md" <<'PY'
+from pathlib import Path
+import sys
+
+agents_file = Path(sys.argv[1])
+workflow = Path(sys.argv[2]).expanduser().resolve()
+start = "<!-- BEGIN CrossCheck managed workflow -->"
+end = "<!-- END CrossCheck managed workflow -->"
+block = f"{start}\nRead and follow the CrossCheck Codex workflow at {workflow}.\n{end}"
+text = agents_file.read_text() if agents_file.exists() else ""
+has_start = start in text
+has_end = end in text
+if has_start != has_end or text.count(start) > 1 or text.count(end) > 1:
+    raise SystemExit(f"Malformed CrossCheck workflow markers in {agents_file}")
+if has_start:
+    before, remainder = text.split(start, 1)
+    _, after = remainder.split(end, 1)
+    updated = before.rstrip() + "\n\n" + block + after
+else:
+    updated = text.rstrip() + ("\n\n" if text.strip() else "") + block + "\n"
+agents_file.write_text(updated)
+PY
+echo "   ✅ Registered workflow in $CODEX_AGENTS_FILE"
+echo "   📖 Workflow source: $CODEX_SOURCE_DIR/CODEX.md"
+echo ""
 
 # 3. Copy settings template if needed
 echo "📝 Step 3: Configure settings..."
@@ -176,7 +201,7 @@ if [ -f "$SKIP_FILE" ]; then
     [ -n "$SKIP_DISPLAY" ] && echo "   Skipping (per ~/.crosscheck/skip-skills): $SKIP_DISPLAY"
 fi
 # Copy skill folders from skills/<name>/SKILL.md
-for skill_dir in "$CROSSCHECK_DIR/skills/"*; do
+for skill_dir in "$CODEX_SOURCE_DIR/skills/"*; do
     [ -d "$skill_dir" ] || continue
     [ -f "$skill_dir/SKILL.md" ] || continue
     skill_name="$(basename "$skill_dir")"
@@ -223,16 +248,16 @@ echo ""
 
 # 7. Install agents (optional)
 echo "📝 Step 7: Install agents..."
-if [ -d "$CROSSCHECK_DIR/agents" ]; then
+if [ -d "$CODEX_SOURCE_DIR/agents" ]; then
     mkdir -p "$HOME/.codex/agents"
-    if cp -r "$CROSSCHECK_DIR/agents/"* "$HOME/.codex/agents/" 2>/dev/null; then
+    if cp -r "$CODEX_SOURCE_DIR/agents/"* "$HOME/.codex/agents/" 2>/dev/null; then
         agent_count=$(ls "$HOME/.codex/agents/" 2>/dev/null | wc -l | tr -d ' ')
         echo "   ✅ Installed $agent_count agents to ~/.codex/agents/"
     else
         echo "   ⚠️  Failed to copy agents (check permissions)"
     fi
 else
-    echo "   ⚠️  No agents directory found in $CROSSCHECK_DIR"
+    echo "   ⚠️  No agents directory found in $CODEX_SOURCE_DIR"
 fi
 
 echo ""
@@ -243,7 +268,7 @@ echo ""
 echo "📚 What was installed:"
 if [ "$INSTALL_MODE" = "multi-project" ]; then
     echo "   • CrossCheck workflow at $CROSSCHECK_DIR"
-    echo "   • Global CODEX.md at $PROJECTS_DIR/CODEX.md"
+    echo "   • Global workflow pointer at $CODEX_AGENTS_FILE"
 else
     echo "   • CrossCheck workflow at ~/.crosscheck/"
 fi
@@ -261,14 +286,9 @@ echo "   1. Start Codex in any repo:"
 echo "      cd ~/your-project"
 echo "      codex"
 echo ""
-if [ "$INSTALL_MODE" = "multi-project" ]; then
-    echo "   2. Codex will automatically load CODEX.md workflow"
-    echo "      from $PROJECTS_DIR/CODEX.md (full workflow)"
-    echo "      Supporting docs: $CROSSCHECK_DIR/QUICK-REFERENCE.md, docs/rules/"
-else
-    echo "   2. Codex will automatically load CODEX.md workflow"
-    echo "      from ~/.crosscheck/"
-fi
+echo "   2. Codex will load the workflow through $CODEX_AGENTS_FILE"
+echo "      Source: $CODEX_SOURCE_DIR/CODEX.md"
+echo "      Supporting docs: $CROSSCHECK_ROOT_DIR/QUICK-REFERENCE.md, docs/rules/"
 echo ""
 echo "   3. Set up a repo for autonomous work:"
 echo "      codex '/setup-automation'"

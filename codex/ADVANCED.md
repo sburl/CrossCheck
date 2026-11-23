@@ -1,7 +1,7 @@
 # Advanced CrossCheck Configuration
 
 **Created:** 2026-02-09-16-52
-**Last Updated:** 2026-02-16-00-00
+**Last Updated:** 2026-11-23-15-54
 
 Deep customization, multi-agent workflows, and power-user features.
 
@@ -23,7 +23,7 @@ Use Codex for security reviews, architecture analysis, and deep code inspection:
 ```
 
 **How it works:**
-1. Codex reads CODEX.md and injects context
+1. Codex loads `~/.codex/AGENTS.md`, which points to the CrossCheck workflow in `codex/CODEX.md`
 2. Codex runs autonomously with `--full-auto` flag
 3. Results reported back to Codex
 4. Codex continues with Codex findings

@@ -1,7 +1,7 @@
 # Installing Codex Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-11-23-23-28
+**Last Updated:** 2026-11-23-15-54
 
 This directory contains legacy flat Markdown command sources. Codex-native
 skills live under `codex/skills/` and install as
@@ -95,6 +95,7 @@ Don't want a specific skill? Add its name to `~/.crosscheck/skip-skills` (one pe
 
 ```bash
 # Create skip list
+mkdir -p ~/.crosscheck
 echo "ai-usage" >> ~/.crosscheck/skip-skills
 
 # Remove an existing native Codex install

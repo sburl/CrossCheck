@@ -1,7 +1,7 @@
 # CrossCheck System Architecture
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-16-00-00
+**Last Updated:** 2026-11-23-22-03
 
 Deep dive into how the multi-agent development system works.
 
@@ -200,7 +200,7 @@ Attempted push to main → GitHub checks:
 User request → Claude pattern matches:
     ├─ "create PR" → /submit-pr
     ├─ "commit" → /commit-smart
-    ├─ "have Claude X" → /claude-delegate
+    ├─ "have Claude X" → /codex-delegate
     └─ Complex task → /plan
          ↓
     Skill executes:

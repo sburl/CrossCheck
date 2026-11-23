@@ -1,10 +1,10 @@
 ---
-name: claude-delegate
+name: codex-delegate
 description: "Delegate a coding task to OpenAI Claude agent for autonomous execution"
 ---
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-16-00-00
+**Last Updated:** 2026-11-23-22-03
 
 You are delegating a coding task to a headless Claude agent. Claude will do the actual implementation work.
 

@@ -1,7 +1,7 @@
 # Claude Workflow
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-25-00-00
+**Last Updated:** 2026-11-23-22-03
 
 ---
 
@@ -16,7 +16,7 @@ The user decides *what* to build and reviews PRs. You do *everything else*. Don'
 **Escalation ladder:**
 
 1. Fix it yourself (try 2x)
-2. Ask Claude for a second opinion (`/claude-delegate`)
+2. Ask Claude for a second opinion (`/codex-delegate`)
 3. Try a different approach entirely
 4. Only escalate to the user after exhausting 1-3
 
@@ -45,7 +45,7 @@ If a skill exists for what you're doing, use it. Skills save context and ensure 
 `/submit-pr` (full PR workflow) | `/pre-pr-check` (checklist) | `/techdebt` (find debt) | `/commit-smart` (good messages) | `/security-review` (security audit) | `/bug-review` (failure mode audit)
 
 **Agent Delegation:**
-`/claude-delegate` (Claude review) | `/gemini-delegate` (Gemini) | `/ensemble-opinion` (multi-model) | `/pr-review` (Claude PR review) | `/repo-assessment` (every 3 PRs)
+`/codex-delegate` (Claude review) | `/gemini-delegate` (Gemini) | `/ensemble-opinion` (multi-model) | `/pr-review` (Claude PR review) | `/repo-assessment` (every 3 PRs)
 
 **Development:**
 `/plan` (design first, >3 files) | `/do-work` (process task queue) | `/doc-timestamp` (update timestamps)
@@ -105,7 +105,7 @@ Every file read, every test dump, every long exploration burns tokens. The main 
 - **Prototyping** - `rapid-prototyper` (fast MVPs, 6-day cycles)
 - **Tool decisions** - `tool-evaluator` (tech stack comparison)
 - **Planning** - `coach` (strategic coordination, agent orchestration)
-- **Debugging** - Claude via `/claude-delegate`
+- **Debugging** - Claude via `/codex-delegate`
 
 **Main window is for:** orchestration, small focused tasks, reviewing subagent output, communicating with the user.
 

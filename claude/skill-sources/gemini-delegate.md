@@ -4,11 +4,11 @@ description: "Delegate a coding task to Google Gemini agent for autonomous execu
 ---
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-16-00-00
+**Last Updated:** 2026-11-23-22-03
 
 You are delegating a coding task to Gemini CLI. Gemini will analyze and execute the task.
 
-## Delegation Pattern (shared with /claude-delegate)
+## Delegation Pattern (shared with /codex-delegate)
 
 ### 1. Identify Task
 

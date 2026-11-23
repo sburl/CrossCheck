@@ -1,7 +1,7 @@
 # Installing Claude Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-11-23-21-39
+**Last Updated:** 2026-11-23-22-03
 
 This directory contains all custom skill sources for Claude.
 
@@ -44,7 +44,7 @@ mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/com
 - `/webapp-test` - Automated Playwright-based web app testing (screenshot, interact, visual regression)
 
 ### Agent Delegation (5)
-- `/codex-delegate` - Delegate task to Codex agent
+- `/codex-delegate` - Delegate task to Claude agent
 - `/gemini-delegate` - Delegate task to Gemini agent
 - `/ensemble-opinion` - Get multi-model opinions (Codex + Gemini + Critic)
 - `/pr-review` - Initiate autonomous PR review with Codex

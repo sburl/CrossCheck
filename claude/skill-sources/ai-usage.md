@@ -4,7 +4,7 @@ description: "Track AI coding tool token usage, costs, and environmental impact"
 ---
 
 **Created:** 2026-02-18-00-00
-**Last Updated:** 2026-02-19-00-00
+**Last Updated:** 2026-11-23-22-03
 
 # AI Usage Tracker & Impact Dashboard
 
@@ -104,5 +104,5 @@ If `ccusage` is not installed, inform the user and suggest `npm i -g ccusage`.
 ## Related Commands
 
 - `/repo-assessment` - Comprehensive repo health check
-- `/claude-delegate` - Delegate tasks to Claude
+- `/codex-delegate` - Delegate tasks to Claude
 - `/gemini-delegate` - Delegate tasks to Gemini

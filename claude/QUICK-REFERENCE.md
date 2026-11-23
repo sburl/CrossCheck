@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-11-23-13-05
+**Last Updated:** 2026-11-23-22-03
 
 Complete reference tables for daily workflow.
 
@@ -16,7 +16,7 @@ When user requests these tasks, invoke the corresponding skill:
 | "create pr", "submit pr", "open pr" | `/submit-pr` | Complete workflow: techdebt → pre-check → PR → Claude review |
 | "commit", "save changes" | `/commit-smart` | Good commit messages, reviews changes |
 | Complex task (>3 files) | `/plan` | Design before implementation |
-| "have Claude do X" | `/claude-delegate` | Proper context injection |
+| "have Claude do X" | `/codex-delegate` | Proper context injection |
 | "have Gemini do X" | `/gemini-delegate` | Proper context injection |
 | "get opinions", "ask other models" | `/ensemble-opinion` | Multi-model perspectives |
 | "review", "Claude review" | `/pr-review` | Standard Claude review handoff |
@@ -67,7 +67,7 @@ When user requests these tasks, invoke the corresponding skill:
 | **Claude review** | Auto loop - fix issues autonomously |
 | **Stuck 10+ rounds** | Ask user for input |
 | **Every 3 PRs** | INVOKE `/repo-assessment` → refactor PR |
-| **Delegate to Claude** | INVOKE `/claude-delegate` with context |
+| **Delegate to Claude** | INVOKE `/codex-delegate` with context |
 | **Delegate to Gemini** | INVOKE `/gemini-delegate` with context |
 | **Multiple AI opinions** | INVOKE `/ensemble-opinion` |
 | **Parallel work needed** | INVOKE `/create-worktree` |
@@ -242,7 +242,7 @@ mv old-file.js garbage/
 
 | Skill | When to Use | What It Does |
 |-------|-------------|--------------|
-| `/claude-delegate` | User says "have Claude X" | Injects CLAUDE.md context, runs Claude autonomously |
+| `/codex-delegate` | User says "have Claude X" | Injects CLAUDE.md context, runs Claude autonomously |
 | `/gemini-delegate` | User says "have Gemini X" | Injects CLAUDE.md context, runs Gemini autonomously |
 | `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Claude + Codex + Gemini |
 | `/pr-review` | Manual PR review needed | Standard Claude review handoff workflow |

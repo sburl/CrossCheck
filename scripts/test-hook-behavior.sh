@@ -957,6 +957,12 @@ EOF
     else
         fail "Python stdin install should block (status=$GATE_STATUS)"
     fi
+    supply_gate_run $'python3 - <<\x27PY\x27\nimport subprocess\nsubprocess.run(["pip", "-q", "install", "x"])\nPY'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Python stdin install with a manager flag is blocked"
+    else
+        fail "Python stdin install with a manager flag should block (status=$GATE_STATUS)"
+    fi
     supply_gate_run $'uv run python - <<\x27PY\x27\nseen = set()\nfor category in ["a", "b"]:\n    seen.add(category)\nPY'
     if [ "$GATE_STATUS" -eq 0 ]; then
         pass "Python stdin prose with manager-like substrings stays allowed"
@@ -976,7 +982,7 @@ EOF
         fail "Shell-fed heredoc prose should be allowed (status=$GATE_STATUS)"
     fi
     local embedded
-    for embedded in "bash -c 'cd x && pip install foo'" "eval 'cd /tmp; pip install foo'" "bash <<< 'cd x; pip install foo'" "echo 'pip install foo' | sh" "xargs -I{} sh -c 'cd /; pip install {}' < reqs" "bash -c -- 'pip install foo'" "fish -c 'pip install foo'" "su -c 'pip install foo'" "script -qc 'pip install foo'" "ssh host 'pip install foo'" "watch 'pip install foo'" "echo 'pip install x' | sudo bash" "echo 'pip install x' | env bash"; do
+    for embedded in "bash -c 'cd x && pip install foo'" "eval 'cd /tmp; pip install foo'" "bash <<< 'cd x; pip install foo'" "echo 'pip install foo' | sh" "printf 'npm install %s\\n' lodash | sh" "xargs -I{} sh -c 'cd /; pip install {}' < reqs" "bash -c -- 'pip install foo'" "fish -c 'pip install foo'" "su -c 'pip install foo'" "script -qc 'pip install foo'" "ssh host 'pip install foo'" "watch 'pip install foo'" "echo 'pip install x' | sudo bash" "echo 'pip install x' | env bash"; do
         supply_gate_run "$embedded"
         if [ "$GATE_STATUS" -eq 2 ]; then
             pass "Executable shell string is scanned: $embedded"

@@ -575,7 +575,7 @@ scan_consume_heredocs() {
         if [ "$closed" -eq 1 ]; then
             if [ "$receiver" = "shell" ]; then
                 scan_add_expansion "$body"
-            elif [ "$receiver" = "python" ] && [[ "$body" =~ (^|[^[:alnum:]_])(npm|npx|pnpm|yarn|pip3?|pipx|uv|cargo|gem|go|poetry|pipenv)([[:space:][:punct:]]+)(install|add|exec)([^[:alnum:]_]|$) ]]; then
+            elif [ "$receiver" = "python" ] && [[ "$body" =~ (^|[^[:alnum:]_])(npm|npx|pnpm|yarn|pip3?|pipx|uv|cargo|gem|go|poetry|pipenv)([[:space:][:punct:]]+(-[[:alnum:]_-]+[[:space:][:punct:]]+)*)?(install|add|exec)([^[:alnum:]_]|$) ]]; then
                 # Python stdin is executable code, not shell syntax. Fail closed
                 # when a single line names a whole manager and install verb.
                 scan_add_expansion "pip install <python-stdin-script>"
@@ -811,7 +811,6 @@ collect_embedded_shell_scripts() {
         if [ "$previous_sink" -eq 1 ] && [[ "$first" =~ ^(echo|printf)$ ]]; then
             payload=""
             local payload_start=1
-            if [ "$first" = "printf" ] && [ "$n" -gt 2 ]; then payload_start=2; fi
             for ((i = payload_start; i < n; i++)); do
                 word_unquote "${WORDS[$i]}"
                 [ -n "$payload" ] && payload+=" "
@@ -865,8 +864,6 @@ collect_embedded_shell_scripts() {
                                     fi
                                     payload_start=$((payload_start + 1))
                                 done
-                            elif [ "$WORD_VALUE" = "printf" ] && [ "${#WORDS[@]}" -gt 2 ]; then
-                                payload_start=2
                             fi
                             for ((i = payload_start; i < ${#WORDS[@]}; i++)); do
                                 word_unquote "${WORDS[$i]}"

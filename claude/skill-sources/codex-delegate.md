@@ -4,7 +4,7 @@ description: "Delegate a coding task to OpenAI Claude agent for autonomous execu
 ---
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-16-00-00
+**Last Updated:** 2026-11-22-22-15
 
 You are delegating a coding task to a headless Claude agent. Claude will do the actual implementation work.
 
@@ -65,3 +65,14 @@ claude exec --full-auto "YOUR_PROMPT_HERE" 2>&1
 - Inject CLAUDE.md content DIRECTLY into the prompt (don't create AGENTS.md)
 - If Claude fails, report what happened and suggest fixes
 - You can run Claude multiple times with refined prompts
+
+## Orchestrator Diff Verification
+
+An agent's green checks are necessary, not sufficient. Before reporting a delegated change as done, inspect the diff yourself; do not substitute another test run for this review.
+
+- Confirm every changed file is within the task's intended scope. Investigate unexpected files.
+- Inspect removed or weakened assertions. Decide from the surrounding behavior whether each change strengthens coverage or drops it.
+- Audit suppression markers and their justifications against the exact code they cite. A non-empty check must cover the collection the loop actually iterates.
+- Treat a high suppression-to-fix ratio as a reason to read more closely, not as an automatic failure or approval.
+- For pure-movement refactors, compare the moved source before and after to verify behavior did not change.
+- If a guard fails, treat it as a possible real bug. Do not suppress or weaken the guard; leave it failing and report the evidence.

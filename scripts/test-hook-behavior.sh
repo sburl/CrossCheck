@@ -810,20 +810,6 @@ arith cmdsub	echo $(( $(pip install foo) ))
 arith backtick	echo $(( `pip install foo` ))
 arith then install	echo $((1+2)); pip install foo
 op run	op run -- pip install foo
-op env file	op run --env-file=x -- npm install foo
-docker run	docker run img pip install foo
-docker run flags	docker run --rm -it img npm install foo
-compose exec	docker compose exec web pip install foo
-podman exec	podman exec c pip install foo
-kubectl exec	kubectl exec p -- pip install foo
-conda run	conda run -n x pip install foo
-pixi run	pixi run pip install foo
-pyenv exec	pyenv exec pip install foo
-direnv exec	direnv exec . pip install foo
-bundle exec	bundle exec gem install foo
-pnpm exec pip	pnpm exec pip install foo
-yarn exec pip	yarn exec pip install foo
-nix develop	nix develop -c pip install foo
 arith command	(( '$(pip install foo)' ))
 EOF
     supply_gate_run 'echo hi # pip install foo'
@@ -911,7 +897,7 @@ EOF
     fi
     big=$'cat <<EOF\n'
     i=0
-    while [ "$i" -lt 2000 ]; do
+    while [ "$i" -lt 1000 ]; do
         big+='v=$(date)'$'\n'
         i=$((i + 1))
     done

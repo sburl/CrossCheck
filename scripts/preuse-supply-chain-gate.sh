@@ -7,12 +7,13 @@
 # or explicitly overridden with SAFE_INSTALL_OVERRIDE=1 on that command.
 #
 # The match is on the shell command that will actually execute. Quoted
-# arguments, comments, and here-document bodies are not installs. Command
-# substitutions and process substitutions are, because the shell runs them.
+# Literal quoted payloads, comments, and here-document bodies are not installs.
+# Shell-fed here-documents are inspected as scripts. Command substitutions and
+# process substitutions are checked because the shell runs them.
 # Echo, printf, and other text commands may mention an install. Any
 # other command is blocked when its arguments run a package manager, so
-# wrappers do not need their own flag lists. A quoted script passed to
-# bash -c or eval is not re-parsed; GIT-8227 tracks that.
+# wrappers do not need their own flag lists. Quoted code passed to an
+# interpreter is treated as data unless it is supplied through a here-doc.
 #
 # Exit codes (Claude Code contract):
 #   0 = allow
@@ -121,10 +122,17 @@ scan_skip_single() {
     while [ "$SCAN_I" -lt "$SCAN_N" ]; do
         if [ "${SCAN_CHARS[$SCAN_I]}" = "'" ]; then
             SCAN_I=$((SCAN_I + 1))
+            scan_emit $'\x06'
             return 0
         fi
+        local c="${SCAN_CHARS[$SCAN_I]}"
+        case "$c" in
+            ' '|$'\t'|$'\n') scan_emit $'\x07' ;;
+            *) scan_emit "$c" ;;
+        esac
         SCAN_I=$((SCAN_I + 1))
     done
+    scan_emit $'\x06'
 }
 
 # $'...' treats \' as a literal quote. A plain quote walk would swallow the rest.
@@ -136,10 +144,17 @@ scan_skip_dollar_single() {
         fi
         if [ "${SCAN_CHARS[$SCAN_I]}" = "'" ]; then
             SCAN_I=$((SCAN_I + 1))
+            scan_emit $'\x06'
             return 0
         fi
+        local c="${SCAN_CHARS[$SCAN_I]}"
+        case "$c" in
+            ' '|$'\t'|$'\n') scan_emit $'\x07' ;;
+            *) scan_emit "$c" ;;
+        esac
         SCAN_I=$((SCAN_I + 1))
     done
+    scan_emit $'\x06'
 }
 
 scan_double() {
@@ -148,6 +163,7 @@ scan_double() {
         local next="${SCAN_CHARS[$((SCAN_I + 1))]}"
         if [ "$c" = '"' ]; then
             SCAN_I=$((SCAN_I + 1))
+            scan_emit $'\x06'
             return 0
         fi
         if [ "$c" = $'\\' ]; then
@@ -155,7 +171,11 @@ scan_double() {
                 SCAN_I=$((SCAN_I + 2))
                 continue
             fi
-            # Escaped character is literal prose, including \$ and \`.
+            # Keep the value of an escaped character in the same shell word.
+            case "$next" in
+                '$'|'`'|'"'|'\\') scan_emit "$next" ;;
+                *) scan_emit "\\$next" ;;
+            esac
             SCAN_I=$((SCAN_I + 2))
             continue
         fi
@@ -170,6 +190,10 @@ scan_double() {
             scan_emit $'\n'
             continue
         fi
+        case "$c" in
+            ' '|$'\t'|$'\n') scan_emit $'\x07' ;;
+            *) scan_emit "$c" ;;
+        esac
         SCAN_I=$((SCAN_I + 1))
     done
 }
@@ -196,6 +220,13 @@ scan_arith() {
         local c="${SCAN_CHARS[$SCAN_I]}"
         local next="${SCAN_CHARS[$((SCAN_I + 1))]}"
         if [ "$c" = $'\\' ]; then
+            local escaped="${SCAN_CHARS[$((SCAN_I + 1))]}"
+            if [ "$escaped" != $'\n' ]; then
+                case "$escaped" in
+                    ' '|$'\t') scan_emit $'\x07' ;;
+                    *) scan_emit "$escaped" ;;
+                esac
+            fi
             SCAN_I=$((SCAN_I + 2))
             continue
         fi
@@ -279,6 +310,49 @@ scan_read_line() {
         SCAN_I=$((SCAN_I + 1))
     fi
     return 0
+}
+
+heredoc_receiver() {
+    local header="$1" seg i n word base python_index
+    HEREDOC_SHELL=0
+    HEREDOC_PYTHON=0
+    split_segments "$header"
+    for seg in "${SEGMENTS[@]}"; do
+        segment_command_words "$seg"
+        i=0
+        n=${#WORDS[@]}
+        while [ "$i" -lt "$n" ]; do
+            word_unquote "${WORDS[$i]}"
+            word=$WORD_VALUE
+            if word_is_assignment "${WORDS[$i]}"; then
+                i=$((i + 1))
+                continue
+            fi
+            case "$word" in
+                command|exec|env) i=$((i + 1)); continue ;;
+            esac
+            break
+        done
+        [ "$i" -ge "$n" ] && continue
+        base=${word##*/}
+        case "$base" in
+            sh|bash|dash|zsh|ksh|ash)
+                HEREDOC_SHELL=1
+                ;;
+            python|python[0-9]*|pypy|pypy[0-9]*)
+                python_index=$((i + 1))
+                while [ "$python_index" -lt "$n" ]; do
+                    word_unquote "${WORDS[$python_index]}"
+                    word=$WORD_VALUE
+                    if [ "$word" = "-" ]; then
+                        HEREDOC_PYTHON=1
+                        break
+                    fi
+                    python_index=$((python_index + 1))
+                done
+                ;;
+        esac
+    done
 }
 
 # Index of the matching close paren. Quotes hide parens; the full scan
@@ -387,11 +461,22 @@ flush_pending_expansions() {
 }
 
 scan_consume_heredocs() {
+    local header body receiver
+    if scan_peek_heredoc; then
+        scan_flush
+        header=${SCAN_OUT%$'\n'}
+        header=${header##*$'\n'}
+        heredoc_receiver "$header"
+        receiver=none
+        [ "$HEREDOC_SHELL" -eq 1 ] && receiver=shell
+        [ "$HEREDOC_PYTHON" -eq 1 ] && receiver=python
+    fi
     while scan_peek_heredoc; do
         local delim="$HD_DELIM"
         local quoted="$HD_QUOTED"
         local tabs="$HD_TABS"
         local closed=0
+        body=""
         while scan_read_line; do
             local compare="$SCAN_LINE"
             if [ "$tabs" = "1" ]; then
@@ -404,6 +489,7 @@ scan_consume_heredocs() {
                 closed=1
                 break
             fi
+            body+="$SCAN_LINE"$'\n'
             if [ "$quoted" = "0" ] && [ -n "$SCAN_LINE" ]; then
                 # Unquoted body: quotes are literal, but $(...) and backticks run.
                 # Lines with neither must not snapshot the outer character array.
@@ -420,6 +506,15 @@ scan_consume_heredocs() {
         if [ "$closed" -eq 0 ] && scan_peek_heredoc; then
             scan_drop_peeked_heredoc
         fi
+        if [ "$closed" -eq 1 ]; then
+            if [ "$receiver" = "shell" ]; then
+                EXP_SNIPS+=("$body")
+            elif [ "$receiver" = "python" ] && [[ "$body" =~ (npm|npx|pnpm|yarn|pip3?|pipx|uv|cargo|gem|go|poetry|pipenv).*(install|add|exec) ]]; then
+                # Python stdin is executable code, not shell syntax. Fail closed
+                # when it names an install-capable manager.
+                EXP_SNIPS+=("pip install <python-stdin-script>")
+            fi
+        fi
     done
 }
 
@@ -428,6 +523,13 @@ scan_expansions_only() {
         local c="${SCAN_CHARS[$SCAN_I]}"
         local next="${SCAN_CHARS[$((SCAN_I + 1))]}"
         if [ "$c" = $'\\' ]; then
+            local escaped="${SCAN_CHARS[$((SCAN_I + 1))]}"
+            if [ "$escaped" != $'\n' ]; then
+                case "$escaped" in
+                    ' '|$'\t') scan_emit $'\x07' ;;
+                    *) scan_emit "$escaped" ;;
+                esac
+            fi
             SCAN_I=$((SCAN_I + 2))
             continue
         fi
@@ -490,10 +592,18 @@ scan_code() {
             continue
         fi
         if [ "$c" = $'\\' ]; then
+            local escaped="${SCAN_CHARS[$((SCAN_I + 1))]}"
+            if [ "$escaped" != $'\n' ]; then
+                case "$escaped" in
+                    ' '|$'\t') scan_emit $'\x07' ;;
+                    *) scan_emit "$escaped" ;;
+                esac
+            fi
             SCAN_I=$((SCAN_I + 2))
             continue
         fi
         if [ "$c" = '$' ] && [ "$next" = "'" ]; then
+            scan_emit $'\x06'
             SCAN_I=$((SCAN_I + 2))
             scan_skip_dollar_single
             continue
@@ -510,11 +620,13 @@ scan_code() {
             continue
         fi
         if [ "$c" = "'" ]; then
+            scan_emit $'\x06'
             SCAN_I=$((SCAN_I + 1))
             scan_skip_single
             continue
         fi
         if [ "$c" = '"' ]; then
+            scan_emit $'\x06'
             SCAN_I=$((SCAN_I + 1))
             scan_double
             continue
@@ -574,7 +686,7 @@ trim_ws() {
     local s="$1"
     s="${s#"${s%%[![:space:]]*}"}"
     s="${s%"${s##*[![:space:]]}"}"
-    printf '%s' "$s"
+    TRIMMED="$s"
 }
 
 segment_command_words() {
@@ -589,8 +701,17 @@ segment_command_words() {
     IFS=$old_ifs
 }
 
+word_unquote() {
+    local word="$1"
+    word="${word//$'\x07'/ }"
+    word="${word//$'\x06'/}"
+    WORD_VALUE="$word"
+}
+
 word_is_assignment() {
-    [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]
+    case "$1" in $'\x06'*) return 1 ;; esac
+    word_unquote "$1"
+    [[ "$WORD_VALUE" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]
 }
 
 # Text utilities do not execute their arguments.
@@ -608,18 +729,26 @@ prose_command() {
 scan_trailing_managers() {
     local j="$1" seg="$2" b override=0 nwords=${#WORDS[@]}
     while [ "$j" -lt "$nwords" ]; do
-        if [ "${WORDS[$j]}" = "SAFE_INSTALL_OVERRIDE=1" ]; then
+        local word
+        word_unquote "${WORDS[$j]}"
+        word=$WORD_VALUE
+        if word_is_assignment "${WORDS[$j]}" && [ "$word" = "SAFE_INSTALL_OVERRIDE=1" ]; then
             override=1
             j=$((j + 1))
             continue
         fi
-        b=${WORDS[$j]##*/}
+        b=${word##*/}
         case "$b" in
             npm|npx|pnpm|yarn|pip|pip3|pipx|uv|cargo|gem|go|poetry|pipenv)
                 if [ "$override" -eq 1 ]; then
                     return 0
                 fi
-                classify_manager "$b" "$((j + 1))" "$nwords" "$seg"
+                if [ "$b" = "npx" ]; then
+                    MANAGER_SUB="$((j + 1))"
+                else
+                    manager_subcommand "$b" "$((j + 1))" "$nwords"
+                fi
+                classify_manager "$b" "$MANAGER_SUB" "$nwords" "$seg" "$j"
                 if [ "$?" -ne 0 ]; then
                     return 1
                 fi
@@ -630,9 +759,51 @@ scan_trailing_managers() {
     return 0
 }
 
+manager_subcommand() {
+    local manager="$1" j="$2" n="$3" word next
+    while [ "$j" -lt "$n" ]; do
+        word_unquote "${WORDS[$j]}"
+        word=$WORD_VALUE
+        [ "$word" = "--" ] && { MANAGER_SUB="$((j + 1))"; return 0; }
+        case "$word" in
+            --prefix|--workspace|-w|--location|--registry|--cache|--userconfig|--loglevel|--script-shell|--tag|--install-strategy|--omit|--include|--index-url|-i|--extra-index-url|--trusted-host|--no-binary|--only-binary|--find-links|-f|--proxy|--timeout|--retries|--dest|-t|--root|--requirement|-r|--constraint|-c)
+                j=$((j + 2))
+                continue
+                ;;
+            -*|'' )
+                j=$((j + 1))
+                continue
+                ;;
+            *)
+                MANAGER_SUB="$j"
+                return 0
+                ;;
+        esac
+    done
+    MANAGER_SUB="$n"
+}
+
+set_class_action() {
+    local manager_index="$1" n="$2" j word
+    CLASS_ACTION=""
+    for ((j = manager_index; j < n; j++)); do
+        word_unquote "${WORDS[$j]}"
+        word=$WORD_VALUE
+        [ -z "$word" ] && continue
+        case "$word" in
+            '&>'*|'>'*|'<'*) break ;;
+        esac
+        if [ -n "$CLASS_ACTION" ]; then
+            CLASS_ACTION+=" "
+        fi
+        CLASS_ACTION+="$word"
+    done
+}
+
 classify_segment() {
     local seg
-    seg=$(trim_ws "$1")
+    trim_ws "$1"
+    seg=$TRIMMED
     [ -z "$seg" ] && return 0
     segment_command_words "$seg"
     local i=0
@@ -640,8 +811,9 @@ classify_segment() {
     local override=0
     local w base
     while [ "$i" -lt "$n" ]; do
-        w="${WORDS[$i]}"
-        if word_is_assignment "$w"; then
+        word_unquote "${WORDS[$i]}"
+        w=$WORD_VALUE
+        if word_is_assignment "${WORDS[$i]}"; then
             if [ "$w" = "SAFE_INSTALL_OVERRIDE=1" ]; then
                 override=1
             fi
@@ -666,7 +838,9 @@ classify_segment() {
         return 0
     fi
     [ "$i" -ge "$n" ] && return 0
-    base=${WORDS[$i]##*/}
+    word_unquote "${WORDS[$i]}"
+    base=$WORD_VALUE
+    base=${base##*/}
     case "$base" in
         socket|npm-safe-install) return 0 ;;
     esac
@@ -677,8 +851,15 @@ classify_segment() {
     if [[ "$base" =~ ^python([0-9]+(\.[0-9]+)*)?$ ]]; then
         local j=$rest_start
         while [ "$j" -lt "$n" ]; do
-            if [ "${WORDS[$j]}" = "-m" ] && [ $((j + 1)) -lt "$n" ] && [ "${WORDS[$((j + 1))]}" = "pip" ]; then
-                classify_manager pip "$((j + 2))" "$n" "$seg"
+            word_unquote "${WORDS[$j]}"
+            local python_arg=$WORD_VALUE
+            if [ "$python_arg" = "-m" ] && [ $((j + 1)) -lt "$n" ]; then
+                word_unquote "${WORDS[$((j + 1))]}"
+            else
+                WORD_VALUE=""
+            fi
+            if [ "$python_arg" = "-m" ] && [ $((j + 1)) -lt "$n" ] && [ "$WORD_VALUE" = "pip" ]; then
+                classify_manager pip "$((j + 2))" "$n" "$seg" "$((j + 1))"
                 return $?
             fi
             j=$((j + 1))
@@ -686,7 +867,12 @@ classify_segment() {
     fi
     case "$base" in
         npm|npx|pnpm|yarn|pip|pip3|pipx|uv|cargo|gem|go|poetry|pipenv)
-            classify_manager "$base" "$rest_start" "$n" "$seg"
+            if [ "$base" = "npx" ]; then
+                MANAGER_SUB="$rest_start"
+            else
+                manager_subcommand "$base" "$rest_start" "$n"
+            fi
+            classify_manager "$base" "$MANAGER_SUB" "$n" "$seg" "$i"
             if [ "$?" -ne 0 ]; then
                 return 1
             fi
@@ -702,7 +888,8 @@ args_include() {
     local n="$3"
     local k=$start
     while [ "$k" -lt "$n" ]; do
-        if [ "${WORDS[$k]}" = "$needle" ]; then
+        word_unquote "${WORDS[$k]}"
+        if [ "$WORD_VALUE" = "$needle" ]; then
             return 0
         fi
         k=$((k + 1))
@@ -710,31 +897,40 @@ args_include() {
     return 1
 }
 
+arg_is() {
+    local index="$1" needle="$2"
+    [ "$index" -lt "${#WORDS[@]}" ] || return 1
+    word_unquote "${WORDS[$index]}"
+    [ "$WORD_VALUE" = "$needle" ]
+}
+
 classify_manager() {
     local manager="$1"
     local start="$2"
     local n="$3"
     local seg="$4"
+    local manager_index="${5:-$((start - 1))}"
     local sub=""
     if [ "$start" -lt "$n" ]; then
-        sub="${WORDS[$start]}"
+        word_unquote "${WORDS[$start]}"
+        sub=$WORD_VALUE
     fi
     case "$manager" in
         npm)
             case "$sub" in
                 ci) return 0 ;;
                 install|i|add|create)
-                    if args_include "--offline" "$start" "$n" || args_include "--prefer-offline" "$start" "$n"; then
+                    if arg_is "$((start + 1))" "--offline" || arg_is "$((start + 1))" "--prefer-offline"; then
                         return 0
                     fi
-                    CLASS_ACTION="$seg"
+                    set_class_action "$manager_index" "$n"
                     return 1
                     ;;
                 exec)
-                    if args_include "--offline" "$start" "$n"; then
+                    if arg_is "$((start + 1))" "--offline"; then
                         return 0
                     fi
-                    CLASS_ACTION="$seg"
+                    set_class_action "$manager_index" "$n"
                     return 1
                     ;;
                 *) return 0 ;;
@@ -744,7 +940,7 @@ classify_manager() {
             # Preserve the historical rule: block only when the first argument
             # does not look like a flag (`npx cowsay`, not `npx --yes cowsay`).
             if [ -n "$sub" ] && [ "${sub#-}" = "$sub" ]; then
-                CLASS_ACTION="$seg"
+                set_class_action "$manager_index" "$n"
                 return 1
             fi
             return 0
@@ -752,14 +948,14 @@ classify_manager() {
         pnpm)
             case "$sub" in
                 add)
-                    CLASS_ACTION="$seg"
+                    set_class_action "$manager_index" "$n"
                     return 1
                     ;;
                 install)
-                    if args_include "--frozen-lockfile" "$start" "$n"; then
+                    if arg_is "$((start + 1))" "--frozen-lockfile"; then
                         return 0
                     fi
-                    CLASS_ACTION="$seg"
+                    set_class_action "$manager_index" "$n"
                     return 1
                     ;;
                 *) return 0 ;;
@@ -768,11 +964,11 @@ classify_manager() {
         yarn)
             case "$sub" in
                 add)
-                    CLASS_ACTION="$seg"
+                    set_class_action "$manager_index" "$n"
                     return 1
                     ;;
                 install)
-                    if args_include "--frozen-lockfile" "$start" "$n"; then
+                    if arg_is "$((start + 1))" "--frozen-lockfile"; then
                         return 0
                     fi
                     # `yarn install` without a frozen lockfile was previously allowed.
@@ -783,28 +979,28 @@ classify_manager() {
             ;;
         pip|pip3)
             if [ "$sub" = "install" ]; then
-                if args_include "--no-deps" "$start" "$n"; then
+                if arg_is "$((start + 1))" "--no-deps"; then
                     return 0
                 fi
-                CLASS_ACTION="$seg"
+                set_class_action "$manager_index" "$n"
                 return 1
             fi
             return 0
             ;;
         pipx)
             if [ "$sub" = "install" ]; then
-                CLASS_ACTION="$seg"
+                set_class_action "$manager_index" "$n"
                 return 1
             fi
             return 0
             ;;
         uv)
             if [ "$sub" = "add" ]; then
-                CLASS_ACTION="$seg"
+                set_class_action "$manager_index" "$n"
                 return 1
             fi
-            if [ "$sub" = "pip" ] && [ $((start + 1)) -lt "$n" ] && [ "${WORDS[$((start + 1))]}" = "install" ]; then
-                CLASS_ACTION="$seg"
+            if [ "$sub" = "pip" ] && arg_is "$((start + 1))" "install"; then
+                set_class_action "$manager_index" "$n"
                 return 1
             fi
             if [ "$sub" = "sync" ]; then
@@ -814,7 +1010,7 @@ classify_manager() {
             ;;
         cargo|gem)
             if [ "$sub" = "install" ]; then
-                CLASS_ACTION="$seg"
+                set_class_action "$manager_index" "$n"
                 return 1
             fi
             return 0
@@ -824,8 +1020,10 @@ classify_manager() {
             # `go install .` stays allowed.
             if [ "$sub" = "install" ] && [ $((start + 1)) -lt "$n" ]; then
                 local target="${WORDS[$((start + 1))]}"
+                word_unquote "$target"
+                target=$WORD_VALUE
                 if [[ "$target" =~ ^[a-zA-Z] ]]; then
-                    CLASS_ACTION="$seg"
+                    set_class_action "$manager_index" "$n"
                     return 1
                 fi
             fi
@@ -873,11 +1071,13 @@ needs_structural_scan() {
     local s="$1"
     local re_named='(npm|npx|pnpm|yarn|pip3|pipx|cargo|poetry|pipenv)'
     local re_pip='(^|[^[:alpha:]])pip([^[:alpha:]]|$)'
+    local re_escaped_pip='(^|[^[:alpha:]])p\\?i\\?p([^[:alpha:]]|$)'
     local re_uv='(^|[^[:alpha:]])uv([^[:alpha:]]|$)'
     local re_gem='(^|[^[:alpha:]])gem([^[:alpha:]]|$)'
     local re_go='go[[:space:]]+install'
     [[ "$s" =~ $re_named ]] && return 0
     [[ "$s" =~ $re_pip ]] && return 0
+    [[ "$s" =~ $re_escaped_pip ]] && return 0
     [[ "$s" =~ $re_uv ]] && return 0
     [[ "$s" =~ $re_gem ]] && return 0
     [[ "$s" =~ $re_go ]] && return 0
@@ -902,7 +1102,7 @@ split_segments() {
     fi
     for i in "${!SEGMENTS[@]}"; do
         s=${SEGMENTS[$i]}
-        s=${s//$'\x01'/&>}
+        s=${s//$'\x01'/'&>'}
         SEGMENTS[$i]=${s//$'\x02'/'>&'}
     done
 }

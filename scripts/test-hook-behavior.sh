@@ -805,11 +805,34 @@ script	script -q /dev/null pip install foo
 find exec	find . -exec pip install foo \;
 ssh	ssh host pip install foo
 docker exec	docker exec c pip install foo
+op run --env-file	op run --env-file=.env pip install foo
+docker run	docker run node npm install foo
+docker run flags	docker run --rm node npm install foo
+compose exec	docker compose exec app pip install foo
+podman exec	podman exec c pip install foo
+kubectl exec	kubectl exec pod -- pip install foo
+conda run	conda run pip install foo
+pixi run	pixi run pip install foo
+pyenv exec	pyenv exec pip install foo
+direnv exec	direnv exec . pip install foo
+bundle exec	bundle exec pip install foo
+pnpm exec	pnpm exec pip install foo
+yarn exec	yarn exec pip install foo
+nix develop	nix develop -c pip install foo
 coproc name	coproc NAME { pip install x; }
 arith cmdsub	echo $(( $(pip install foo) ))
 arith backtick	echo $(( `pip install foo` ))
 arith then install	echo $((1+2)); pip install foo
 op run	op run -- pip install foo
+quoted executable	"npm" install foo
+quoted subcommand	pnpm "add" foo
+quoted npx argument	npx "cowsay"
+escaped manager	p\ip install foo
+npm prefix before verb	npm --prefix x install y
+npm global before verb	npm -g install x
+pip quiet before verb	pip --quiet install foo
+pip late no-deps	pip install foo --no-deps
+npm late offline	npm install foo --offline
 arith command	(( '$(pip install foo)' ))
 EOF
     supply_gate_run 'echo hi # pip install foo'
@@ -865,6 +888,48 @@ EOF
         pass "Unquoted heredoc command substitution is blocked"
     else
         fail "Heredoc command substitution should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'sh <<EOF\npip install foo\nEOF'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Shell-fed heredoc install is blocked"
+    else
+        fail "Shell-fed heredoc install should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'bash <<\x27EOF\x27\nnpm install x\nEOF'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Quoted shell-fed heredoc install is blocked"
+    else
+        fail "Quoted shell-fed heredoc install should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'cat <<EOF | sh\npip install foo\nEOF'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Pipeline shell-fed heredoc install is blocked"
+    else
+        fail "Pipeline shell-fed heredoc install should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'python - <<\x27PY\x27\nsubprocess.run(["pip", "install", "foo"])\nPY'
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Python stdin install is blocked"
+    else
+        fail "Python stdin install should block (status=$GATE_STATUS)"
+    fi
+    supply_gate_run $'sh <<EOF\n# pip install is prose\nprintf "%s" "pip install prose"\nEOF'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Shell-fed heredoc prose stays allowed"
+    else
+        fail "Shell-fed heredoc prose should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'else pip install foo'
+    if [ "$GATE_STATUS" -eq 2 ] && printf '%s\n' "$GATE_OUTPUT" | grep -Fq 'Parsed action: pip install foo'; then
+        pass "Diagnostic omits shell keywords"
+    else
+        fail "Diagnostic should name only the package action (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'pip install foo &>/dev/null'
+    if [ "$GATE_STATUS" -eq 2 ] && printf '%s\n' "$GATE_OUTPUT" | grep -Fq 'Parsed action: pip install foo'; then
+        pass "Diagnostic keeps redirect-free parsed action"
+    else
+        fail "Diagnostic should omit redirects (status=$GATE_STATUS)"
     fi
     local big i start
     big=$'cat <<EOF\n'

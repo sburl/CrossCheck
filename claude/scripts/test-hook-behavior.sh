@@ -1014,7 +1014,7 @@ test_supply_gate_embedded_shell_cases() {
     else
         fail "Piped sudo shell heredoc install should block (status=$GATE_STATUS)"
     fi
-    for embedded in "rg 'npm|npx' src" "grep -rE 'yarn|npx' ." 'rg -n "npm;npx" .'; do
+    for embedded in "rg 'npm|npx' src" "grep -rE 'yarn|npx' ." 'rg -n "npm;npx" .' "echo bash -c 'pip install x'" "rg bash -c 'pip install x'"; do
         supply_gate_run "$embedded"
         if [ "$GATE_STATUS" -eq 0 ]; then
             pass "Quoted search pattern stays allowed: $embedded"
@@ -1022,6 +1022,38 @@ test_supply_gate_embedded_shell_cases() {
             fail "Quoted search pattern should be allowed: $embedded (status=$GATE_STATUS)"
         fi
     done
+}
+
+test_supply_gate_blocks_indirect_heredocs() {
+    local command
+    command=$(printf '%s\n' 'bash -c "$(cat <<'\''EOF'\''' 'pip install evil' 'EOF' ')")')
+    supply_gate_expect_block 'bash -c with cat heredoc substitution' "$command"
+    command=$(printf '%s\n' 'bash -c "$(cat <<EOF' 'pip install evil' 'EOF' ')")')
+    supply_gate_expect_block 'bash -c with unquoted cat heredoc substitution' "$command"
+    command=$(printf '%s\n' 'sh -c "$(cat <<'\''EOF'\''' 'npm install evil' 'EOF' ')")')
+    supply_gate_expect_block 'sh -c with cat heredoc substitution' "$command"
+    command=$(printf '%s\n' 'eval "$(cat <<'\''EOF'\''' 'pip install evil' 'EOF' ')")')
+    supply_gate_expect_block 'eval with cat heredoc substitution' "$command"
+    command=$(printf '%s\n' '$(cat <<'\''EOF'\''' 'pip install evil' 'EOF' ')')
+    supply_gate_expect_block 'command substitution with cat heredoc' "$command"
+    command=$(printf '%s\n' 'bash <(cat <<'\''EOF'\''' 'pip install evil' 'EOF' ')')
+    supply_gate_expect_block 'bash process substitution with cat heredoc' "$command"
+    command=$(printf '%s\n' 'bash -c "$(cat)" <<'\''EOF'\''' 'pip install evil' 'EOF')
+    supply_gate_expect_block 'bash -c cat stdin heredoc' "$command"
+    command=$(printf '%s\n' 'source /dev/stdin <<'\''EOF'\''' 'pip install evil' 'EOF')
+    supply_gate_expect_block 'source stdin heredoc' "$command"
+    command=$(printf '%s\n' '. /dev/stdin <<'\''EOF'\''' 'npm install evil' 'EOF')
+    supply_gate_expect_block 'dot stdin heredoc' "$command"
+}
+
+supply_gate_expect_block() {
+    local label="$1" command="$2"
+    supply_gate_run "$command"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "$label"
+    else
+        fail "$label should block (status=$GATE_STATUS)"
+    fi
 }
 
 test_supply_gate_blocks_real_pip_install() {
@@ -1069,6 +1101,7 @@ test_supply_gate_blocks_command_substitution() {
 test_supply_gate_ignores_quoted_install_prose
 test_supply_gate_ignores_heredoc_body
 test_supply_gate_embedded_shell_cases
+test_supply_gate_blocks_indirect_heredocs
 test_supply_gate_blocks_real_pip_install
 test_supply_gate_blocks_install_after_safe_command
 test_supply_gate_override_must_be_assignment

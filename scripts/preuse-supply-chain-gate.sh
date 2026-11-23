@@ -35,6 +35,7 @@ SCAN_I=0
 SCAN_OUT=""
 SCAN_BUF=()
 SCAN_DEPTH=0
+SCAN_SUBSTITUTION_SINK=0
 H_DELIM=()
 H_QUOTED=()
 H_TABS=()
@@ -231,16 +232,20 @@ scan_double() {
 
 scan_dollar_paren() {
     local third="${SCAN_CHARS[$((SCAN_I + 2))]}"
+    local previous_sink=$SCAN_SUBSTITUTION_SINK
+    scan_context_expects_code && SCAN_SUBSTITUTION_SINK=1
     if [ "$third" = '(' ]; then
         # $(( arithmetic )). Command substitutions inside it still run.
         SCAN_I=$((SCAN_I + 3))
         scan_arith
+        SCAN_SUBSTITUTION_SINK=$previous_sink
         return 0
     fi
     SCAN_I=$((SCAN_I + 2))
     scan_emit $'\n'
     scan_code paren
     scan_emit $'\n'
+    SCAN_SUBSTITUTION_SINK=$previous_sink
 }
 
 # depth starts at 2 because the caller already consumed "$((".
@@ -348,6 +353,9 @@ heredoc_receiver() {
     local header="$1" seg i n word base first python_index
     HEREDOC_SHELL=0
     HEREDOC_PYTHON=0
+    if [ "$SCAN_SUBSTITUTION_SINK" -eq 1 ] && [[ "$header" = *"cat <<"* ]]; then
+        HEREDOC_SHELL=1
+    fi
     split_segments "$header"
     for seg in "${SEGMENTS[@]}"; do
         segment_command_words "$seg"
@@ -355,8 +363,17 @@ heredoc_receiver() {
         [ "$n" -eq 0 ] && continue
         word_unquote "${WORDS[0]}"
         first=${WORD_VALUE##*/}
+        if [ "$first" = "source" ] || [ "$first" = "." ]; then
+            word_unquote "${WORDS[1]:-}"
+            if [ "$WORD_VALUE" = "/dev/stdin" ] || [ "$WORD_VALUE" = "-" ]; then
+                HEREDOC_SHELL=1
+            fi
+        fi
+        if [ "$first" = "cat" ] && [ "$SCAN_SUBSTITUTION_SINK" -eq 1 ]; then
+            HEREDOC_SHELL=1
+        fi
         if prose_command "$first"; then
-            continue
+            [ "$HEREDOC_SHELL" -eq 1 ] || continue
         fi
         for ((i = 0; i < n; i++)); do
             word_unquote "${WORDS[$i]}"
@@ -366,6 +383,12 @@ heredoc_receiver() {
                 sh|bash|dash|zsh|ksh|ash|fish)
                 HEREDOC_SHELL=1
                 break
+                ;;
+                cat)
+                if [ "$SCAN_SUBSTITUTION_SINK" -eq 1 ]; then
+                    HEREDOC_SHELL=1
+                    break
+                fi
                 ;;
                 python|python[0-9]*|pypy|pypy[0-9]*)
                 python_index=$((i + 1))
@@ -499,8 +522,16 @@ scan_consume_heredocs() {
     local header body receiver
     if scan_peek_heredoc; then
         scan_flush
-        header=${SCAN_OUT%$'\n'}
-        header=${header##*$'\n'}
+        local header_end=$((SCAN_I - 2)) header_start=$((SCAN_I - 2))
+        while [ "$header_start" -ge 0 ] && [ "${SCAN_CHARS[$header_start]}" != $'\n' ]; do
+            header_start=$((header_start - 1))
+        done
+        header_start=$((header_start + 1))
+        header=""
+        while [ "$header_start" -le "$header_end" ]; do
+            header+="${SCAN_CHARS[$header_start]}"
+            header_start=$((header_start + 1))
+        done
         heredoc_receiver "$header"
         receiver=none
         [ "$HEREDOC_SHELL" -eq 1 ] && receiver=shell
@@ -689,12 +720,15 @@ scan_code() {
         fi
         # <(...) and >(...) run. Same as $(...): the inner command is executed.
         if { [ "$c" = '<' ] || [ "$c" = '>' ]; } && [ "$next" = '(' ]; then
+            local previous_sink=$SCAN_SUBSTITUTION_SINK
+            scan_context_expects_code && SCAN_SUBSTITUTION_SINK=1
             SCAN_I=$((SCAN_I + 2))
             scan_emit $'\x0d'
             scan_emit $'\n'
             scan_code paren
             scan_emit $'\n'
             scan_emit $'\x0e'
+            SCAN_SUBSTITUTION_SINK=$previous_sink
             continue
         fi
         if [ "$c" = $'\n' ]; then
@@ -836,6 +870,18 @@ collect_embedded_shell_scripts() {
         segment_command_words "$line"
         n=${#WORDS[@]}
         i=0
+        while [ "$i" -lt "$n" ] && word_is_assignment "${WORDS[$i]}"; do i=$((i + 1)); done
+        local executable_base=""
+        if [ "$i" -lt "$n" ]; then
+            word_unquote "${WORDS[$i]}"
+            executable_base=${WORD_VALUE##*/}
+        fi
+        case "$executable_base" in
+            sh|bash|dash|zsh|ksh|ash|fish|eval|source|.|sudo|doas|env|command|exec|timeout|nice|nohup|stdbuf|time|xargs|script|ssh|su|watch|docker|podman|kubectl|find|git|conda|pixi|pyenv|direnv|bundle|nix)
+                ;;
+            *) n=0 ;;
+        esac
+        i=0
         while [ "$i" -lt "$n" ]; do
             word_unquote "${WORDS[$i]}"
             word=$WORD_VALUE
@@ -877,6 +923,41 @@ collect_embedded_shell_scripts() {
             i=$((i + 1))
         done
     done <<< "$text"
+}
+
+scan_context_expects_code() {
+    local prefix segment first i word n
+    scan_flush
+    # Only the current simple-command suffix matters. Keeping this bounded
+    # avoids quadratic work on long commands with many substitutions.
+    prefix=${SCAN_OUT: -512}
+    prefix=${prefix##*$'\n'}
+    prefix=${prefix##*;}
+    prefix=${prefix##*|}
+    prefix=${prefix##*&}
+    split_segments "$prefix"
+    [ "${#SEGMENTS[@]}" -eq 0 ] && return 0
+    segment="${SEGMENTS[$((${#SEGMENTS[@]} - 1))]}"
+    segment_command_words "$segment"
+    n=${#WORDS[@]}
+    [ "$n" -eq 0 ] && return 0
+    i=0
+    while [ "$i" -lt "$n" ]; do
+        word_unquote "${WORDS[$i]}"
+        word=$WORD_VALUE
+        if word_is_assignment "${WORDS[$i]}"; then
+            i=$((i + 1))
+            continue
+        fi
+        break
+    done
+    [ "$i" -ge "$n" ] && return 0
+    first=${word##*/}
+    case "$first" in
+        eval|source|.) return 0 ;;
+        sh|bash|dash|zsh|ksh|ash|fish) return 0 ;;
+    esac
+    return 1
 }
 
 word_is_assignment() {

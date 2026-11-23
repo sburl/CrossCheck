@@ -1,7 +1,7 @@
 # CrossCheck Troubleshooting Guide
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-11-23-13-05
 
 When automation fails, debug it here.
 
@@ -477,7 +477,7 @@ cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.claude/commands/
 
 # Verify installation
 ls ~/.claude/commands/ | wc -l
-# Should show 28 files (27 skills + INSTALL.md)
+# Should show 35 files (34 skills + INSTALL.md)
 
 # Restart Claude
 # Skills should now be available

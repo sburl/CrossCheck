@@ -13,6 +13,12 @@ CLAUDE_ONLY=(
   "install-claude-hooks.sh"
 )
 
+# Claude's PreToolUse hook consumes Claude-specific tool payloads, so do not
+# require it in the Codex mirror.
+CODEX_EXCLUDED=(
+  "preuse-supply-chain-gate.sh"
+)
+
 has_item() {
   local needle="$1"
   shift
@@ -49,28 +55,31 @@ missing_claudemirror=0
 extra_codemirror=0
 exec_mode_mismatch=0
 
-# Check 1: every root script should exist in codex mirror; warn if missing from claude mirror.
+# Check 1: every root script should exist in its target agent mirror.
 for file in "${ROOT_FILES[@]}"; do
   ROOT_FILE="$ROOT_SCRIPTS_DIR/$file"
   CODEX_FILE="$CODEX_SCRIPTS_DIR/$file"
   CLAUDE_FILE="$CLAUDE_SCRIPTS_DIR/$file"
 
-  if [ -x "$ROOT_FILE" ] && [ ! -x "$CODEX_FILE" ]; then
-    echo "❌ Codex mirror exec mismatch: scripts/$file (missing executable bit)"
-    exec_mode_mismatch=$((exec_mode_mismatch + 1))
-  elif [ ! -x "$ROOT_FILE" ] && [ -x "$CODEX_FILE" ]; then
-    echo "❌ Codex mirror exec mismatch: scripts/$file (extra executable bit)"
-    exec_mode_mismatch=$((exec_mode_mismatch + 1))
+  if ! has_item "$file" "${CODEX_EXCLUDED[@]}"; then
+    if [ -x "$ROOT_FILE" ] && [ ! -x "$CODEX_FILE" ]; then
+      echo "❌ Codex mirror exec mismatch: scripts/$file (missing executable bit)"
+      exec_mode_mismatch=$((exec_mode_mismatch + 1))
+    elif [ ! -x "$ROOT_FILE" ] && [ -x "$CODEX_FILE" ]; then
+      echo "❌ Codex mirror exec mismatch: scripts/$file (extra executable bit)"
+      exec_mode_mismatch=$((exec_mode_mismatch + 1))
+    fi
+
+    if [ ! -f "$CODEX_FILE" ]; then
+      echo "❌ Missing in codex mirror: scripts/$file"
+      missing_codemirror=$((missing_codemirror + 1))
+    fi
   fi
+
   if [ -x "$ROOT_FILE" ] && [ -f "$CLAUDE_FILE" ] && [ ! -x "$CLAUDE_FILE" ]; then
     echo "⚠️  Claude mirror exec mismatch: scripts/$file (missing executable bit)"
   elif [ ! -x "$ROOT_FILE" ] && [ -f "$CLAUDE_FILE" ] && [ -x "$CLAUDE_FILE" ]; then
     echo "⚠️  Claude mirror exec mismatch: scripts/$file (extra executable bit)"
-  fi
-
-  if [ ! -f "$CODEX_SCRIPTS_DIR/$file" ]; then
-    echo "❌ Missing in codex mirror: scripts/$file"
-    missing_codemirror=$((missing_codemirror + 1))
   fi
 
   if [ ! -f "$CLAUDE_SCRIPTS_DIR/$file" ]; then

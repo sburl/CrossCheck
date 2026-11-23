@@ -1,7 +1,7 @@
 # Installing Claude Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-11-23-13-05
 
 This directory contains all custom skill sources for Claude.
 
@@ -30,7 +30,7 @@ ls ~/.claude/commands/
 mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
 ```
 
-## Available Skills (32 total)
+## Available Skills (34 total)
 
 ### PR Workflow (9)
 - `/submit-pr` - Automated PR submission with checks
@@ -77,6 +77,10 @@ mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/com
 - `/setup-statusline` - Customize Claude statusline
 - `/garbage-collect` - Manage /garbage folder
 - `/update-crosscheck` - Update CrossCheck to the latest version
+
+### CrossCheck Maintenance (2)
+- `/napkin` - Read and update per-repo behavioral memory
+- `/update-crosscheck` - Pull the latest CrossCheck workflow and sync installed skills and agents
 
 ## Opting Out of Skills
 

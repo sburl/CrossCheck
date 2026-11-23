@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-11-23-13-05
 
 Complete reference tables for daily workflow.
 
@@ -33,6 +33,10 @@ When user requests these tasks, invoke the corresponding skill:
 | "setup automation" | `/setup-automation` | Install hooks + CI |
 | "customize statusline" | `/setup-statusline` | Configure status bar |
 | "do the work", "process tasks" | `/do-work` | Process task queue from do-work/ folder |
+| "update crosscheck", "update skills" | `/update-crosscheck` | Pull latest from main, sync skills and agents |
+| "repo memory", "napkin", "record a recurring gotcha" | `/napkin` | Read or update per-repo behavioral memory |
+| "triage repo", "triage Linear queue", "intake sweep" | `/triage-repo` | Autonomous Linear intake triage and queue allocation for a target repo |
+| "drain repo", "drain approved PRs", "merge wave" | `/drain-repo` | Drain review-approved PRs for a repo via integration-branch process |
 | "cleanup garbage" | `/garbage-collect` | Review /garbage folder |
 | "usage", "tokens", "how much AI", "spending" | `/ai-usage` | Token usage, cost, and impact dashboard |
 | "test webapp", "browser test", "screenshot" | `/webapp-test` | Automated Playwright-based web app testing |
@@ -267,6 +271,20 @@ mv old-file.js garbage/
 | `/plan` | Complex task (>3 files) | Enters plan mode, designs before implementation |
 | `/do-work` | Process task queue | Reads do-work/ folder, executes tasks autonomously |
 | `/doc-timestamp` | Modified .md file | Updates "Last Updated:" timestamp |
+
+### Repo Operations
+
+| Skill | When to Use | What It Does |
+|-------|-------------|--------------|
+| `/drain-repo` | Drain review-approved PRs | Validates the integration branch and drains approved PRs in waves |
+| `/triage-repo` | Triage a repo's Linear intake | Dedupes, enriches, and routes issues for a supported repo |
+
+### CrossCheck Maintenance
+
+| Skill | When to Use | What It Does |
+|-------|-------------|--------------|
+| `/napkin` | Record or review recurring repo-specific gotchas | Reads and updates `.claude/napkin.md` |
+| `/update-crosscheck` | Update the installed workflow | Pulls the latest CrossCheck files and syncs skills and agents |
 
 ### Analytics
 

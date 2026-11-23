@@ -1,7 +1,7 @@
 # Installing Codex Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-06-11-00-00
+**Last Updated:** 2026-11-23-13-05
 
 This directory contains all custom skill sources for Codex.
 
@@ -33,7 +33,7 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
   cp ~/.crosscheck/skill-sources/*.md ~/.codex/commands/
 ```
 
-## Available Skills (32 total)
+## Available Skills (34 total)
 
 ### PR Workflow (9)
 - `/submit-pr` - Automated PR submission with checks
@@ -82,6 +82,10 @@ mkdir -p ~/.claude/commands ~/.codex/commands && \
 - `/setup-plugins` - Install Claude Code plugins alongside CrossCheck
 - `/setup-statusline` - Customize Codex statusline
 - `/garbage-collect` - Manage /garbage folder
+
+### CrossCheck Maintenance (2)
+- `/napkin` - Read and update per-repo behavioral memory
+- `/update-crosscheck` - Pull the latest CrossCheck workflow and sync installed skills and agents
 
 ## Opting Out of Skills
 
@@ -138,11 +142,11 @@ git push
 ```
 ~/.claude/
 ├── commands/              ← Active skills for Claude Code
-│   └── *.md              ← 30 skill files
+│   └── *.md              ← 34 skill files
 
 ~/.codex/
 ├── commands/              ← Active skills for Codex
-│   └── *.md              ← 30 skill files
+│   └── *.md              ← 34 skill files
 └── settings.json         ← Global permissions
 
 ~/.crosscheck/                 ← Git repo (source of truth, traditional install)

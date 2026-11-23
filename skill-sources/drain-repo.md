@@ -10,8 +10,8 @@ date: 2026-06-11
 source: ~/Desktop/integration-drain-prompt.md (GIT-2633 Acorn + FireHose drain sessions)
 ---
 
-**Created:** 2026-06-11
-**Last Updated:** 2026-06-11
+**Created:** 2026-06-11-03-53
+**Last Updated:** 2026-11-23-13-05
 
 # Drain Repo — Integration-Branch Drain / Triage
 

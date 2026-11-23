@@ -1,8 +1,7 @@
 #!/bin/bash
 # CrossCheck Bootstrap - One command to set up everything
 # Usage:
-#   Method 1 (Multi-project): cd CrossCheck && ./scripts/bootstrap-crosscheck.sh
-#   Method 2 (Traditional): curl -fsSL https://raw.githubusercontent.com/sburl/CrossCheck/main/scripts/bootstrap-crosscheck.sh | bash
+#   Multi-project: cd CrossCheck && ./codex/scripts/bootstrap-crosscheck.sh
 
 set -e
 
@@ -34,9 +33,9 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/CODEX.md" ]; then
     # Running from cloned repo - multi-project mode
     INSTALL_MODE="multi-project"
     CROSSCHECK_DIR="$SCRIPT_DIR"
-    PROJECTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+    PROJECTS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
     echo "📍 Multi-project mode detected"
-    echo "   CrossCheck: $CROSSCHECK_DIR"
+    echo "   Codex config: $CROSSCHECK_DIR"
     echo "   Projects folder: $PROJECTS_DIR"
     echo ""
 else

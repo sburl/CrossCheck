@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-11-23-23-20
+**Last Updated:** 2026-11-23-23-28
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -185,7 +185,7 @@ cd CrossCheck
 
 This installs:
 - Codex-native skills from `codex/skills/` to `~/.codex/skills/<name>/SKILL.md`
-- Global `CLAUDE.md` symlinked in your projects folder (full workflow, updates on `git pull`)
+- `CODEX.md` copied to your projects folder if it does not already exist
 - Agent settings with proper permissions
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
 
@@ -218,21 +218,21 @@ CrossCheck uses a **single source of truth** pattern:
 
 ```
 ~/Documents/Developer/          # Your projects folder
-├── CLAUDE.md                 # Global workflow (symlink → CrossCheck/CLAUDE.md)
+├── CODEX.md                   # Global workflow (copied from CrossCheck/codex/CODEX.md)
 │
 ├── CrossCheck/                # 🎯 Source repository
-│   ├── CLAUDE.md            # Source of truth for global workflow
+│   ├── codex/CODEX.md        # Source of truth for Codex workflow
 │   ├── QUICK-REFERENCE.md    # Supporting reference (34 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history, memory)
 │   ├── codex/skills/         # 34 native skills (installed under ~/.codex/skills/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
-    ├── CLAUDE.md (optional) # Project-specific overrides
+    ├── CODEX.md (optional)   # Project-specific instructions
     └── .git/hooks/           # Installed per-project
 ```
 
-**Key insight:** Skills and `CLAUDE.md` are symlinked — `git pull` in CrossCheck updates everything instantly everywhere. Supporting docs (QUICK-REFERENCE.md, rules/) stay in CrossCheck. Hooks install per-project.
+**Key insight:** The bootstrap copies `CODEX.md` and native skills into their active locations. Rerun the Codex bootstrap to refresh skills; copy `codex/CODEX.md` again when you want to update the global workflow. Supporting docs stay in CrossCheck. Hooks install per-project.
 
 ### GitHub Branch Protection Setup
 

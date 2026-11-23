@@ -9,9 +9,9 @@
 # The match is on the shell command that will actually execute. Quoted
 # arguments, comments, and here-document bodies are not installs. Command
 # substitutions and process substitutions are, because the shell runs them.
-# Shell keywords and the wrappers sudo, command, exec, env, time, timeout,
-# nohup, nice, and stdbuf are unwrapped. A quoted script passed to bash -c /
-# eval is not re-parsed (GIT-6494); GIT-8227 tracks that residue.
+# Shell keywords and a bounded set of wrappers (sudo, env, eval, ssh,
+# docker exec, and the others in classify_segment) are unwrapped. A quoted
+# script passed to bash -c or eval is not re-parsed; GIT-8227 tracks that.
 #
 # Exit codes (Claude Code contract):
 #   0 = allow
@@ -175,24 +175,46 @@ scan_double() {
 scan_dollar_paren() {
     local third="${SCAN_CHARS[$((SCAN_I + 2))]}"
     if [ "$third" = '(' ]; then
-        # $(( arithmetic )), not a command.
+        # $(( arithmetic )). Command substitutions inside it still run.
         SCAN_I=$((SCAN_I + 3))
-        local depth=1
-        while [ "$SCAN_I" -lt "$SCAN_N" ] && [ "$depth" -gt 0 ]; do
-            local c="${SCAN_CHARS[$SCAN_I]}"
-            if [ "$c" = '(' ]; then
-                depth=$((depth + 1))
-            elif [ "$c" = ')' ]; then
-                depth=$((depth - 1))
-            fi
-            SCAN_I=$((SCAN_I + 1))
-        done
+        scan_arith
         return 0
     fi
     SCAN_I=$((SCAN_I + 2))
     scan_emit $'\n'
     scan_code paren
     scan_emit $'\n'
+}
+
+# depth starts at 2 because the caller already consumed "$((".
+# Quotes do not hide expansions here: bash runs them before evaluating.
+scan_arith() {
+    local depth=2
+    while [ "$SCAN_I" -lt "$SCAN_N" ] && [ "$depth" -gt 0 ]; do
+        local c="${SCAN_CHARS[$SCAN_I]}"
+        local next="${SCAN_CHARS[$((SCAN_I + 1))]}"
+        if [ "$c" = $'\\' ]; then
+            SCAN_I=$((SCAN_I + 2))
+            continue
+        fi
+        if [ "$c" = '$' ] && [ "$next" = '(' ]; then
+            scan_dollar_paren
+            continue
+        fi
+        if [ "$c" = '`' ]; then
+            SCAN_I=$((SCAN_I + 1))
+            scan_emit $'\n'
+            scan_code btick
+            scan_emit $'\n'
+            continue
+        fi
+        if [ "$c" = '(' ]; then
+            depth=$((depth + 1))
+        elif [ "$c" = ')' ]; then
+            depth=$((depth - 1))
+        fi
+        SCAN_I=$((SCAN_I + 1))
+    done
 }
 
 scan_parse_heredoc_op() {
@@ -277,6 +299,11 @@ scan_consume_heredocs() {
             fi
             if [ "$quoted" = "0" ] && [ -n "$SCAN_LINE" ]; then
                 # Unquoted body: quotes are literal, but $(...) and backticks run.
+                # Lines with neither must not snapshot the outer character array.
+                case "$SCAN_LINE" in
+                    *'$('*|*'`'*) ;;
+                    *) continue ;;
+                esac
                 scan_flush
                 local saved_n="$SCAN_N" saved_i="$SCAN_I" saved_out="$SCAN_OUT"
                 local saved_chars=("${SCAN_CHARS[@]}")
@@ -430,7 +457,9 @@ scan_code() {
                 SCAN_I=$((SCAN_I + 1))
                 ;;
             '('|'{'|'}')
-                scan_append_literal_gap
+                # Own word, so `coproc NAME { ... }` stays distinct from a simple
+                # command, and a glued `{pip` still classifies pip.
+                scan_emit " $c "
                 SCAN_I=$((SCAN_I + 1))
                 ;;
             *)
@@ -505,7 +534,7 @@ short_cluster_takes_value() {
 # Updates the caller's i/w. $1 flags that take the next word, $2 attached-value globs.
 # $3/$4 are the short letters used to spot a cluster like sudo -iu.
 unwrap_flags() {
-    local takes="$1" glued="$2" cvals="${3:-}" cbools="${4:-}"
+    local takes="${1:-}" glued="${2:-}" cvals="${3:-}" cbools="${4:-}"
     i=$((i + 1))
     while [ "$i" -lt "$n" ]; do
         w="${WORDS[$i]}"
@@ -541,7 +570,7 @@ classify_segment() {
     local i=0
     local n=${#WORDS[@]}
     local override=0
-    local w base
+    local w base nxt
     while [ "$i" -lt "$n" ]; do
         w="${WORDS[$i]}"
         if word_is_assignment "$w"; then
@@ -558,7 +587,17 @@ classify_segment() {
                 i=$((i + 2))
                 continue
                 ;;
-            coproc|if|then|else|elif|fi|for|do|done|while|until|case|'esac'|select|'!'|'{'|'}')
+            coproc)
+                # `coproc NAME { ... }` runs the compound command. A bare
+                # `coproc NAME cmd` runs NAME, so only skip a braced name.
+                i=$((i + 1))
+                nxt="${WORDS[$((i + 1))]:-}"
+                if [ "$nxt" = "{" ] || [ "$nxt" = "(" ]; then
+                    i=$((i + 1))
+                fi
+                continue
+                ;;
+            if|then|else|elif|fi|for|do|done|while|until|case|'esac'|select|'!'|'('|')'|'{'|'}')
                 i=$((i + 1))
                 continue
                 ;;
@@ -566,7 +605,7 @@ classify_segment() {
         if skip_one_redirect; then
             continue
         fi
-        base=$(basename "$w")
+        base=${w##*/}
         case "$base" in
             sudo)
                 unwrap_flags '--user|--group|--chdir|--prompt|--close-from|--host|--role|--type|--other-user|--chroot|--command-timeout|-u|-g|-p|-C|-D|-h|-r|-t|-T|-U|-R' '' 'ugpCDhrtTUR' 'AbEeiHkKnPsSvV'
@@ -604,6 +643,85 @@ classify_segment() {
                 unwrap_flags '-u|-C|-P|--chdir|--unset' '--chdir=*|--unset=*' 'uCP' 'i0v'
                 continue
                 ;;
+            eval|builtin)
+                i=$((i + 1))
+                continue
+                ;;
+            watch)
+                unwrap_flags '-n|--interval' '--interval=*'
+                continue
+                ;;
+            doas)
+                unwrap_flags '-a|-C|-u'
+                continue
+                ;;
+            arch|xcrun)
+                unwrap_flags '-sdk|--sdk|-find|--find|-log|--log' '--sdk=*|--find=*|--log=*'
+                continue
+                ;;
+            caffeinate)
+                unwrap_flags '-t|-w'
+                continue
+                ;;
+            flock)
+                unwrap_flags '-w|-E'
+                # -c takes a shell command. Otherwise the next word is the lock file.
+                if [ "$i" -lt "$n" ] && { [ "${WORDS[$i]}" = "-c" ] || [ "${WORDS[$i]}" = "--command" ]; }; then
+                    i=$((i + 1))
+                elif [ "$i" -lt "$n" ]; then
+                    i=$((i + 1))
+                    if [ "$i" -lt "$n" ] && { [ "${WORDS[$i]}" = "-c" ] || [ "${WORDS[$i]}" = "--command" ]; }; then
+                        i=$((i + 1))
+                    fi
+                fi
+                continue
+                ;;
+            script)
+                unwrap_flags '-F|-t'
+                # The next word is the typescript file. The rest is the command.
+                [ "$i" -lt "$n" ] && i=$((i + 1))
+                continue
+                ;;
+            find)
+                i=$((i + 1))
+                while [ "$i" -lt "$n" ]; do
+                    case "${WORDS[$i]}" in
+                        -exec|-execdir|-ok|-okdir) i=$((i + 1)); break ;;
+                    esac
+                    i=$((i + 1))
+                done
+                continue
+                ;;
+            ssh)
+                unwrap_flags '-b|-c|-D|-E|-e|-F|-i|-J|-L|-l|-m|-O|-o|-p|-R|-S|-W|-w'
+                [ "$i" -lt "$n" ] && i=$((i + 1))
+                continue
+                ;;
+            docker)
+                if [ "${WORDS[$((i + 1))]:-}" != "exec" ]; then
+                    break
+                fi
+                i=$((i + 1))
+                unwrap_flags '-u|-w|-e|--user|--workdir|--env' '--user=*|--workdir=*|--env=*'
+                [ "$i" -lt "$n" ] && i=$((i + 1))
+                continue
+                ;;
+            mise)
+                if [ "${WORDS[$((i + 1))]:-}" != "exec" ]; then
+                    break
+                fi
+                i=$((i + 1))
+                unwrap_flags '-c|-j|-t|--command|--jobs|--tool' '--command=*|--jobs=*|--tool=*'
+                continue
+                ;;
+            uv|poetry|pipenv)
+                if [ "${WORDS[$((i + 1))]:-}" != "run" ]; then
+                    break
+                fi
+                i=$((i + 1))
+                unwrap_flags '-p|-C|--python|--with|--directory' '--python=*|--with=*|--directory=*'
+                continue
+                ;;
             *)
                 break
                 ;;
@@ -613,7 +731,7 @@ classify_segment() {
         return 0
     fi
     [ "$i" -ge "$n" ] && return 0
-    base=$(basename "${WORDS[$i]}")
+    base=${WORDS[$i]##*/}
     case "$base" in
         socket|npm-safe-install) return 0 ;;
     esac
@@ -671,14 +789,14 @@ classify_manager() {
                     if args_include "--offline" "$start" "$n" || args_include "--prefer-offline" "$start" "$n"; then
                         return 0
                     fi
-                    printf '%s' "$seg"
+                    CLASS_ACTION="$seg"
                     return 1
                     ;;
                 exec)
                     if args_include "--offline" "$start" "$n"; then
                         return 0
                     fi
-                    printf '%s' "$seg"
+                    CLASS_ACTION="$seg"
                     return 1
                     ;;
                 *) return 0 ;;
@@ -688,7 +806,7 @@ classify_manager() {
             # Preserve the historical rule: block only when the first argument
             # does not look like a flag (`npx cowsay`, not `npx --yes cowsay`).
             if [ -n "$sub" ] && [ "${sub#-}" = "$sub" ]; then
-                printf '%s' "$seg"
+                CLASS_ACTION="$seg"
                 return 1
             fi
             return 0
@@ -696,14 +814,14 @@ classify_manager() {
         pnpm)
             case "$sub" in
                 add)
-                    printf '%s' "$seg"
+                    CLASS_ACTION="$seg"
                     return 1
                     ;;
                 install)
                     if args_include "--frozen-lockfile" "$start" "$n"; then
                         return 0
                     fi
-                    printf '%s' "$seg"
+                    CLASS_ACTION="$seg"
                     return 1
                     ;;
                 *) return 0 ;;
@@ -712,7 +830,7 @@ classify_manager() {
         yarn)
             case "$sub" in
                 add)
-                    printf '%s' "$seg"
+                    CLASS_ACTION="$seg"
                     return 1
                     ;;
                 install)
@@ -730,25 +848,25 @@ classify_manager() {
                 if args_include "--no-deps" "$start" "$n"; then
                     return 0
                 fi
-                printf '%s' "$seg"
+                CLASS_ACTION="$seg"
                 return 1
             fi
             return 0
             ;;
         pipx)
             if [ "$sub" = "install" ]; then
-                printf '%s' "$seg"
+                CLASS_ACTION="$seg"
                 return 1
             fi
             return 0
             ;;
         uv)
             if [ "$sub" = "add" ]; then
-                printf '%s' "$seg"
+                CLASS_ACTION="$seg"
                 return 1
             fi
             if [ "$sub" = "pip" ] && [ $((start + 1)) -lt "$n" ] && [ "${WORDS[$((start + 1))]}" = "install" ]; then
-                printf '%s' "$seg"
+                CLASS_ACTION="$seg"
                 return 1
             fi
             if [ "$sub" = "sync" ]; then
@@ -758,7 +876,7 @@ classify_manager() {
             ;;
         cargo|gem)
             if [ "$sub" = "install" ]; then
-                printf '%s' "$seg"
+                CLASS_ACTION="$seg"
                 return 1
             fi
             return 0
@@ -769,7 +887,7 @@ classify_manager() {
             if [ "$sub" = "install" ] && [ $((start + 1)) -lt "$n" ]; then
                 local target="${WORDS[$((start + 1))]}"
                 if [[ "$target" =~ ^[a-zA-Z] ]]; then
-                    printf '%s' "$seg"
+                    CLASS_ACTION="$seg"
                     return 1
                 fi
             fi
@@ -828,45 +946,25 @@ needs_structural_scan() {
 
 split_segments() {
     SEGMENTS=()
-    local s="$1"
-    local cur=""
-    local i=0
-    local n=${#s}
-    while [ "$i" -lt "$n" ]; do
-        local two="${s:$i:2}"
-        local c="${s:$i:1}"
-        if [ "$two" = "&&" ] || [ "$two" = "||" ]; then
-            SEGMENTS+=("$cur")
-            cur=""
-            i=$((i + 2))
-            continue
-        fi
-        if [ "$c" = '&' ]; then
-            # >& and &> are redirects, not a background operator.
-            local prev=""
-            if [ -n "$cur" ]; then
-                prev="${cur: -1}"
-            fi
-            local nxt="${s:$((i + 1)):1}"
-            if [ "$prev" = '>' ] || [ "$nxt" = '>' ]; then
-                cur+="$c"
-                i=$((i + 1))
-                continue
-            fi
-        fi
-        case "$c" in
-            ';'|'|'|'&'|$'\n')
-                SEGMENTS+=("$cur")
-                cur=""
-                i=$((i + 1))
-                ;;
-            *)
-                cur+="$c"
-                i=$((i + 1))
-                ;;
-        esac
+    local s="$1" old i
+    # >& and &> are redirects. Hide them so '&' can be a separator.
+    s=${s//&>/$'\x01'}
+    s=${s//>&/$'\x02'}
+    old=$IFS
+    IFS=$';|&\n'
+    set -f
+    # shellcheck disable=SC2206
+    SEGMENTS=($s)
+    set +f
+    IFS=$old
+    if [ "${#SEGMENTS[@]}" -eq 0 ]; then
+        SEGMENTS=("")
+    fi
+    for i in "${!SEGMENTS[@]}"; do
+        s=${SEGMENTS[$i]}
+        s=${s//$'\x01'/&>}
+        SEGMENTS[$i]=${s//$'\x02'/'>&'}
     done
-    SEGMENTS+=("$cur")
 }
 if ! needs_structural_scan "$cmd"; then
     exit 0
@@ -875,12 +973,14 @@ set +e
 blocked_action=$(
     text=$(executed_text "$cmd") || exit 1
     split_segments "$text"
+    CLASS_ACTION=""
     for seg in "${SEGMENTS[@]+"${SEGMENTS[@]}"}"; do
-        action=$(classify_segment "$seg")
+        CLASS_ACTION=""
+        classify_segment "$seg"
         class_status=$?
         if [ "$class_status" -ne 0 ]; then
-            if [ -n "$action" ]; then
-                printf '%s' "$action"
+            if [ -n "$CLASS_ACTION" ]; then
+                printf '%s' "$CLASS_ACTION"
                 exit 0
             fi
             exit 1

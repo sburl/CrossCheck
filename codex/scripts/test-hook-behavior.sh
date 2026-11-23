@@ -729,6 +729,26 @@ function body	function f { pip install x; }
 env altpath	env -P /usr/bin pip install foo
 env split-string	env -S pip install foo
 time format	time -f %e pip install foo
+eval	eval pip install foo
+builtin	builtin pip install foo
+uv run	uv run pip install foo
+poetry run	poetry run pip install foo
+pipenv run	pipenv run pip install foo
+mise exec	mise exec -- npm install foo
+watch	watch pip install foo
+doas	doas pip install foo
+arch	arch -arm64 pip install foo
+caffeinate	caffeinate -i npm install foo
+xcrun	xcrun pip install foo
+flock	flock /tmp/l pip install foo
+script	script -q /dev/null pip install foo
+find exec	find . -exec pip install foo \;
+ssh	ssh host pip install foo
+docker exec	docker exec c pip install foo
+coproc name	coproc NAME { pip install x; }
+arith cmdsub	echo $(( $(pip install foo) ))
+arith backtick	echo $(( `pip install foo` ))
+arith then install	echo $((1+2)); pip install foo
 EOF
     supply_gate_run 'echo hi # pip install foo'
     if [ "$GATE_STATUS" -eq 0 ]; then
@@ -747,6 +767,53 @@ EOF
         pass "Commands that name no package manager stay allowed"
     else
         fail "git status should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'echo pip install foo'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "Unquoted prose that does not execute pip stays allowed"
+    else
+        fail "echo pip install foo should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run 'coproc NAME pip install x'
+    if [ "$GATE_STATUS" -eq 0 ]; then
+        pass "coproc NAME runs NAME, not the following words"
+    else
+        fail "coproc NAME should be allowed (status=$GATE_STATUS)"
+    fi
+    supply_gate_run "$(printf '%s\n' 'cat <<EOF' '$(pip install foo)' 'EOF')"
+    if [ "$GATE_STATUS" -eq 2 ]; then
+        pass "Unquoted heredoc command substitution is blocked"
+    else
+        fail "Heredoc command substitution should block (status=$GATE_STATUS)"
+    fi
+    local big i start
+    big=$'cat <<EOF\n'
+    i=0
+    while [ "$i" -lt 4000 ]; do
+        big+='npm run build'$'\n'
+        i=$((i + 1))
+    done
+    big+=$'EOF'
+    start=$SECONDS
+    supply_gate_run "$big"
+    if [ "$GATE_STATUS" -eq 0 ] && [ $((SECONDS - start)) -le 8 ]; then
+        pass "A 50KB unquoted heredoc stays within the time bound"
+    else
+        fail "Large heredoc status=$GATE_STATUS elapsed=$((SECONDS - start))s"
+    fi
+    big="echo a"
+    i=0
+    while [ "$i" -lt 400 ]; do
+        big+=" && echo a"
+        i=$((i + 1))
+    done
+    big+=" && pip install foo"
+    start=$SECONDS
+    supply_gate_run "$big"
+    if [ "$GATE_STATUS" -eq 2 ] && [ $((SECONDS - start)) -le 8 ]; then
+        pass "A long command chain still blocks within the time bound"
+    else
+        fail "Long chain status=$GATE_STATUS elapsed=$((SECONDS - start))s"
     fi
     supply_gate_run "pip install foo" fault
     if [ "$GATE_STATUS" -eq 2 ]; then

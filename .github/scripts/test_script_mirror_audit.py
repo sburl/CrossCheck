@@ -1,6 +1,7 @@
 """Regression tests for fail-closed security-hook mirror checks."""
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -96,7 +97,20 @@ class ScriptMirrorAuditTests(unittest.TestCase):
             "hooks": {"PreToolUse": [
                 {
                     "matcher": "Bash",
-                    "hooks": [{"type": "command", "command": "bash old/preuse-supply-chain-gate.sh"}],
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": "for c in \"$HOME/Developer/CrossCheck/scripts/preuse-supply-chain-gate.sh\"; do [ -x \"$c\" ] && exec bash \"$c\"; done; echo 'CrossCheck supply-chain hook not found' >&2; exit 2",
+                        },
+                        {
+                            "type": "command",
+                            "command": "echo preuse-supply-chain-gate.sh in an audit log is unrelated",
+                        },
+                        {
+                            "type": "command",
+                            "command": "bash scripts/backup-preuse-supply-chain-gate.sh",
+                        },
+                    ],
                 },
                 {"matcher": "Write", "hooks": [{"type": "command", "command": "keep-this-hook"}]},
             ]},
@@ -115,9 +129,11 @@ class ScriptMirrorAuditTests(unittest.TestCase):
         updated = json.loads(settings.read_text())
         self.assertEqual(updated["custom"], {"retained": True})
         self.assertEqual(updated["hooks"]["PreToolUse"][1], original["hooks"]["PreToolUse"][1])
-        command = updated["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        bash_hooks = updated["hooks"]["PreToolUse"][0]["hooks"]
+        command = bash_hooks[0]["command"]
         self.assertIn("bash -c", command)
         self.assertIn(r"exit\ 2", command)
+        self.assertEqual(bash_hooks[1:], original["hooks"]["PreToolUse"][0]["hooks"][1:])
 
         hook_file.write_text("#!/usr/bin/env bash\nexit 0\n")
         hook_file.chmod(0o755)
@@ -150,6 +166,20 @@ class ScriptMirrorAuditTests(unittest.TestCase):
         self.assertEqual(failing_hook.returncode, 2, failing_hook.stdout + failing_hook.stderr)
         self.assertIn("gate failed (7)", failing_hook.stderr)
 
+        errexit_failure = subprocess.run(
+            ["bash", "-c", command],
+            capture_output=True,
+            check=False,
+            env={**os.environ, "SHELLOPTS": "errexit"},
+            text=True,
+        )
+        self.assertEqual(
+            errexit_failure.returncode,
+            2,
+            errexit_failure.stdout + errexit_failure.stderr,
+        )
+        self.assertIn("gate failed (7)", errexit_failure.stderr)
+
         fresh_settings = fixture / "fresh-settings.json"
         fresh_settings.write_text("{}")
         result = subprocess.run(
@@ -163,7 +193,7 @@ class ScriptMirrorAuditTests(unittest.TestCase):
         self.assertEqual(fresh["hooks"]["PreToolUse"][0]["matcher"], "Bash")
         self.assertEqual(fresh["hooks"]["PreToolUse"][0]["hooks"][0]["command"], command)
 
-    def test_filename_mention_in_other_matcher_is_preserved_and_bash_is_added(self) -> None:
+    def test_filename_mentions_in_unrelated_hooks_are_preserved_and_bash_is_added(self) -> None:
         fixture = self.make_fixture(ROOT)
         settings = fixture / "settings.json"
         hook_file = fixture / "claude/scripts" / HOOK
@@ -191,6 +221,41 @@ class ScriptMirrorAuditTests(unittest.TestCase):
             "preuse-supply-chain-gate.sh",
             installed[1]["hooks"][0]["command"],
         )
+
+    def test_filename_mentions_in_same_bash_matcher_are_not_migrated(self) -> None:
+        fixture = self.make_fixture(ROOT)
+        settings = fixture / "settings.json"
+        hook_file = fixture / "claude/scripts" / HOOK
+        unrelated_hooks = [
+            {"type": "command", "command": "echo preuse-supply-chain-gate.sh in an audit log"},
+            {"type": "command", "command": "bash scripts/backup-preuse-supply-chain-gate.sh"},
+        ]
+        settings.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {"matcher": "Bash", "hooks": unrelated_hooks},
+                        ],
+                    },
+                }
+            )
+        )
+
+        result = subprocess.run(
+            ["bash", str(HOOK_INSTALLER), str(settings), str(hook_file)],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        installed = json.loads(settings.read_text())["hooks"]["PreToolUse"]
+        self.assertEqual(len(installed), 1)
+        self.assertEqual(installed[0]["matcher"], "Bash")
+        self.assertEqual(installed[0]["hooks"][:2], unrelated_hooks)
+        self.assertEqual(installed[0]["hooks"][2]["type"], "command")
+        self.assertIn(HOOK, installed[0]["hooks"][2]["command"])
 
     def test_symlinked_settings_target_is_updated_without_replacing_symlink(self) -> None:
         fixture = self.make_fixture(ROOT)

@@ -20,20 +20,29 @@ else
   SETTINGS_MODE="$(stat -f '%Lp' "$SETTINGS_TARGET")"
 fi
 
-HOOK_RUNNER='hook=$1; if [[ ! -x "$hook" ]]; then printf "Claude supply-chain gate unavailable or non-executable: %s\\n" "$hook" >&2; exit 2; fi; bash "$hook"; status=$?; if [[ "$status" -ne 0 && "$status" -ne 2 ]]; then printf "Claude supply-chain gate failed (%d): %s\\n" "$status" "$hook" >&2; exit 2; fi; exit "$status"'
+HOOK_RUNNER='hook=$1; if [[ ! -x "$hook" ]]; then printf "Claude supply-chain gate unavailable or non-executable: %s\\n" "$hook" >&2; exit 2; fi; if bash "$hook"; then status=0; else status=$?; fi; if [[ "$status" -ne 0 && "$status" -ne 2 ]]; then printf "Claude supply-chain gate failed (%d): %s\\n" "$status" "$hook" >&2; exit 2; fi; exit "$status"'
 printf -v HOOK_COMMAND 'bash -c %q -- %q' "$HOOK_RUNNER" "$HOOK_FILE"
 TEMP_FILE="${SETTINGS_TARGET}.tmp.$$"
 trap 'rm -f "$TEMP_FILE"' EXIT
 
 if ! jq --arg hook "$HOOK_COMMAND" '
   def is_supply_chain_hook:
-    .type == "command" and ((.command // "") | contains("preuse-supply-chain-gate.sh"));
+    .type == "command" and (
+      ((.command // "") | startswith("for c in ") and contains("preuse-supply-chain-gate.sh") and contains("CrossCheck supply-chain hook not found")) or
+      ((.command // "") | startswith("hook=$1; if [[ ! -x \"$hook\" ]]; then") and contains("preuse-supply-chain-gate.sh") and contains("bash \"$hook\""))
+    );
   def install_hook($command):
     if any(.[]?; .matcher == "Bash" and any(.hooks[]?; is_supply_chain_hook)) then
       map(
         if .matcher == "Bash" then
           .hooks |= map(if is_supply_chain_hook then .command = $command else . end)
         else . end
+      )
+    elif any(.[]?; .matcher == "Bash") then
+      reduce .[] as $entry ([];
+        if $entry.matcher == "Bash" and (any(.[]; .matcher == "Bash") | not) then
+          . + [$entry + {"hooks": (($entry.hooks // []) + [{"type":"command","command":$command}])}]
+        else . + [$entry] end
       )
     else
       . + [{"matcher":"Bash","hooks":[{"type":"command","command":$command}]}]

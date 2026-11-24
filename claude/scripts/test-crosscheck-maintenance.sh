@@ -674,6 +674,7 @@ python3 - "$REPO_ROOT/scripts/atomic-publish-file.py" "$TEMP_DIR" <<'PY'
 import errno
 import importlib.util
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -819,6 +820,47 @@ if settings_dir.joinpath("settings.json").exists():
     raise SystemExit("atomic publisher restored settings only in the detached parent")
 if not list((scratch / "settings-dir-moved-during-publish").glob(".crosscheck-stage-*")):
     raise SystemExit("atomic publisher cleaned the stage after failing live-parent verification")
+
+# Moving the target parent during final recovery validation must not report a
+# successful publication or discard the displaced settings inode.
+late_move_root = scratch / "late-move-root"
+late_move_home = scratch / "late-move-home"
+late_move_home.mkdir()
+late_move_root.mkdir()
+late_move_target = late_move_root / "settings.json"
+late_move_snapshot = scratch / "late-move-snapshot.json"
+late_move_stage = scratch / "late-move-stage.json"
+late_move_target.write_text('{"lateMove":"original"}\n')
+late_move_snapshot.write_text('{"lateMove":"original"}\n')
+late_move_stage.write_text('{"lateMove":"updated"}\n')
+real_verify = module._verify_parent_path
+verify_calls = [0]
+
+def rename_parent_during_final_publish_check(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 3:
+        late_move_root.rename(late_move_root.with_name("late-move-root-detached"))
+        late_move_root.mkdir()
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+module._verify_parent_path = rename_parent_during_final_publish_check
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(late_move_home)
+try:
+    module.publish_file(str(late_move_root), "settings.json", str(late_move_snapshot), str(late_move_stage))
+except module.RestorationFailed as error:
+    if not error.recovery_path or Path(error.recovery_path).read_text() != '{"lateMove":"original"}\n':
+        raise SystemExit("late target-parent move did not retain a stable original settings backup")
+else:
+    raise SystemExit("publisher reported success after its target parent moved during final validation")
+finally:
+    os.environ["HOME"] = previous_home
+    module._verify_parent_path = real_verify
+late_move_detached = late_move_root.with_name("late-move-root-detached")
+if (late_move_root / "settings.json").exists():
+    raise SystemExit("publisher restored settings only in the detached target parent")
+if not list(late_move_detached.glob(".crosscheck-stage-*")):
+    raise SystemExit("publisher discarded the staged inode after a late target-parent move")
 
 # Settings callers use the target directory as the publisher root. Moving that
 # root after publication must be detected, with recovery outside the root.
@@ -1766,6 +1808,66 @@ if rollback_recovery_target.read_text() != '{"setting":"original"}\n':
 if not list(rollback_recovery_root.glob(".crosscheck-stage-*")):
     raise SystemExit("moved rollback recovery directory allowed cleanup of the staged inode")
 
+# A target parent moved during final rollback recovery validation must keep the
+# stage and stable backups and return fatal restoration status.
+late_rollback_home = scratch / "late-rollback-home"
+late_rollback_root = scratch / "late-rollback-root"
+late_rollback_home.mkdir()
+late_rollback_root.mkdir()
+late_rollback_target = late_rollback_root / "settings.json"
+late_rollback_snapshot = scratch / "late-rollback-snapshot.json"
+late_rollback_stage = scratch / "late-rollback-stage.json"
+late_rollback_target.write_text('{"lateRollback":"original"}\n')
+late_rollback_snapshot.write_text('{"lateRollback":"original"}\n')
+late_rollback_stage.write_text('{"lateRollback":"updated"}\n')
+real_verify = module._verify_parent_path
+verify_calls = [0]
+
+def fail_before_late_rollback(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 2:
+        raise module.ConcurrentUpdate("injected failure that starts rollback")
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+real_verify_link = module._verify_stable_recovery_link
+recovery_verify_calls = [0]
+
+def move_parent_during_rollback_recovery(*args, **kwargs):
+    result = real_verify_link(*args, **kwargs)
+    recovery_verify_calls[0] += 1
+    if recovery_verify_calls[0] == 1:
+        late_rollback_root.rename(late_rollback_root.with_name("late-rollback-root-detached"))
+        late_rollback_root.mkdir()
+    return result
+
+module._verify_parent_path = fail_before_late_rollback
+module._verify_stable_recovery_link = move_parent_during_rollback_recovery
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(late_rollback_home)
+original_argv = module.sys.argv
+module.sys.argv = [
+    "atomic-publish-file.py", "publish", str(late_rollback_root), "settings.json",
+    str(late_rollback_snapshot), str(late_rollback_stage),
+]
+try:
+    if module.main() != 5:
+        raise SystemExit("late target-parent move during rollback did not return fatal status 5")
+finally:
+    module.sys.argv = original_argv
+    module._verify_parent_path = real_verify
+    module._verify_stable_recovery_link = real_verify_link
+    os.environ["HOME"] = previous_home
+late_rollback_detached = late_rollback_root.with_name("late-rollback-root-detached")
+if (late_rollback_root / "settings.json").exists():
+    raise SystemExit("rollback reported a live settings file in the recreated parent")
+if not list(late_rollback_detached.glob(".crosscheck-stage-*")):
+    raise SystemExit("rollback discarded its stage after the parent moved during recovery checks")
+if not any(
+    backup.read_text() == '{"lateRollback":"original"}\n'
+    for backup in (late_rollback_home / ".crosscheck-recovery").glob("settings-*.bak")
+):
+    raise SystemExit("rollback did not keep a stable original settings backup after the parent moved")
+
 # Managed link no-ops have an explicit status instead of looking like updates.
 noop_root = scratch / "managed-link-noop"
 noop_target = noop_root / ".claude/commands/managed.md"
@@ -1902,6 +2004,63 @@ command_fd.flush()
 command_fd.close()
 if Path(command_backup).read_text() != "late user edit\n":
     raise SystemExit("Claude command migration lost a save through an open file descriptor")
+
+# Replacing the stable backup with a same-content inode during final migration
+# sync must fail closed and keep a link to the displaced file's real inode.
+replacement_home = scratch / "replacement-command-home"
+replacement_command = replacement_home / ".claude/commands/managed.md"
+replacement_command.parent.mkdir(parents=True)
+replacement_command.write_text("original managed command\n")
+replacement_snapshot = scratch / "replacement-command-snapshot.md"
+replacement_snapshot.write_text("original managed command\n")
+replacement_fd = replacement_command.open("r+")
+original_identity = (replacement_command.stat().st_dev, replacement_command.stat().st_ino)
+real_sync_recovery = module._sync_stable_recovery_entry
+sync_calls = [0]
+
+def replace_stable_backup_after_final_sync(
+    base_fd, base_path, recovery_fd, recovery_name, recovery_dir, entry_name
+):
+    result = real_sync_recovery(
+        base_fd, base_path, recovery_fd, recovery_name, recovery_dir, entry_name
+    )
+    sync_calls[0] += 1
+    if sync_calls[0] == 2:
+        backup = Path(recovery_dir) / entry_name
+        replacement = backup.with_name(backup.name + ".replacement")
+        mode = stat.S_IMODE(backup.stat().st_mode)
+        replacement.write_text(backup.read_text())
+        replacement.chmod(mode)
+        os.replace(replacement, backup)
+    return result
+
+module._sync_stable_recovery_entry = replace_stable_backup_after_final_sync
+try:
+    try:
+        module.sync_symlink(
+            str(replacement_home), ".claude/commands/managed.md", "snapshot",
+            str(replacement_snapshot), "/repo/claude/skill-sources/managed.md",
+        )
+    except OSError:
+        pass
+    else:
+        raise SystemExit("Claude command migration accepted a replaced stable recovery inode")
+finally:
+    module._sync_stable_recovery_entry = real_sync_recovery
+replacement_fd.seek(0)
+replacement_fd.truncate()
+replacement_fd.write("late write through original descriptor\n")
+replacement_fd.flush()
+replacement_fd.close()
+replacement_backups = list((Path(os.environ["HOME"]) / ".crosscheck-recovery").glob("settings-*.bak"))
+if not any(
+    (backup.stat().st_dev, backup.stat().st_ino) == original_identity
+    and backup.read_text() == "late write through original descriptor\n"
+    for backup in replacement_backups
+):
+    raise SystemExit("Claude command migration discarded the only link to the original inode")
+if replacement_command.is_symlink() or replacement_command.read_text() != "late write through original descriptor\n":
+    raise SystemExit("Claude command migration did not restore the original inode after failed verification")
 
 race_dir = scratch / "command-race-home"
 race_command = race_dir / ".claude/commands/managed.md"

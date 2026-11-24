@@ -621,6 +621,7 @@ def _rollback_failed_publish(
                     raise RestorationFailed(
                         f"settings recovery link no longer matches before cleanup: {stage_path}", stage_path
                     )
+                verify_live_parent_after_rollback()
                 return desired_backup_path or stage_backup_path
             preserved, _, _ = preserve_stage_state()
             if not preserved:
@@ -700,6 +701,7 @@ def publish_file(
     stable_recovery_fd: int | None = None
     stable_recovery_name: str | None = None
     recovery_path: str | None = None
+    failure_recovery_path: str | None = None
     swapped = False
     exchange_attempted = False
     published_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
@@ -786,13 +788,6 @@ def publish_file(
             raise ConcurrentUpdate(
                 f"file changed during CrossCheck update; previous file preserved: {target}", recovery_path
             )
-        _verify_stable_recovery_path(
-            stable_base_fd,
-            stable_base_path,
-            stable_recovery_fd,
-            os.path.basename(stable_recovery_dir),
-            stable_recovery_dir,
-        )
         _verify_stable_recovery_link(
             stable_base_fd,
             stable_base_path,
@@ -803,6 +798,7 @@ def publish_file(
             recovery_path,
             original_state[0][:2],
         )
+        _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
         swapped = False
         return recovery_path
     except BaseException as error:
@@ -812,7 +808,6 @@ def publish_file(
             recovered_entries: dict[tuple[int, int], tuple[str, str]] = {}
             if stable_recovery_name is not None and recovery_path is not None:
                 recovered_entries[original_state[0][:2]] = (stable_recovery_name, recovery_path)
-            failure_recovery_path: str | None = None
             try:
                 current_state = _entry_state_at(parent_fd, staged_name)
             except OSError:
@@ -908,21 +903,31 @@ def publish_file(
             stable_recovery_name = None
         raise
     finally:
-        if staged_name is not None and not swapped:
-            try:
-                os.unlink(staged_name, dir_fd=parent_fd)
-            except FileNotFoundError:
-                pass
-            except OSError as rollback_error:
-                raise RestorationFailed(
-                    f"could not inspect the managed command while restoring it: {target}", recovery_path
-                ) from rollback_error
-        if stable_recovery_fd is not None:
-            os.close(stable_recovery_fd)
-        if stable_base_fd is not None:
-            os.close(stable_base_fd)
-        os.close(parent_fd)
-        os.close(root_fd)
+        try:
+            if staged_name is not None and not swapped:
+                if exchange_attempted:
+                    try:
+                        _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+                    except (ConcurrentUpdate, OSError) as rollback_error:
+                        raise RestorationFailed(
+                            f"settings parent changed before recovery cleanup: {target}",
+                            failure_recovery_path or recovery_path or os.path.join(parent_path, staged_name),
+                        ) from rollback_error
+                try:
+                    os.unlink(staged_name, dir_fd=parent_fd)
+                except FileNotFoundError:
+                    pass
+                except OSError as rollback_error:
+                    raise RestorationFailed(
+                        f"could not inspect the managed command while restoring it: {target}", recovery_path
+                    ) from rollback_error
+        finally:
+            if stable_recovery_fd is not None:
+                os.close(stable_recovery_fd)
+            if stable_base_fd is not None:
+                os.close(stable_base_fd)
+            os.close(parent_fd)
+            os.close(root_fd)
 
 
 def snapshot_file(root: str, relative_target: str, output_path: str) -> bool:
@@ -1169,18 +1174,16 @@ def sync_symlink(
                     raise ConcurrentUpdate(
                         f"managed command inode changed during CrossCheck update: {target}", actual_backup_path
                     )
-                _verify_stable_recovery_path(
+                _verify_stable_recovery_link(
                     stable_base_fd,
                     stable_base_path,
                     stable_recovery_fd,
                     os.path.basename(stable_recovery_dir),
                     stable_recovery_dir,
+                    initial_stable_recovery_name,
+                    initial_stable_backup_path,
+                    moved_state[0][:2],
                 )
-                stable_path_info = os.stat(
-                    initial_stable_backup_path, follow_symlinks=False
-                )
-                if (stable_path_info.st_dev, stable_path_info.st_ino) != moved_state[0][:2]:
-                    raise OSError(errno.ESTALE, "managed command recovery path changed after displacement", target)
                 stable_recovery_name = initial_stable_recovery_name
                 stable_backup_path = initial_stable_backup_path
             if not stat.S_ISREG(moved_info.st_mode) or _read_signature_at(recovery_fd, "original") != expected_signature:
@@ -1239,12 +1242,15 @@ def sync_symlink(
                 stable_recovery_dir,
                 stable_recovery_name,
             )
-            _verify_stable_recovery_path(
+            _verify_stable_recovery_link(
                 stable_base_fd,
                 stable_base_path,
                 stable_recovery_fd,
                 os.path.basename(stable_recovery_dir),
                 stable_recovery_dir,
+                stable_recovery_name,
+                stable_backup_path,
+                moved_state[0][:2],
             )
             _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
             _discard_recovery(parent_fd, recovery_fd, recovery_name)

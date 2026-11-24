@@ -120,17 +120,17 @@ fi
 
 chmod "$SETTINGS_MODE" "$TEMP_FILE"
 CURRENT_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
-if [ -f "$SETTINGS_TARGET" ]; then
-  if stat -c '%a' "$SETTINGS_TARGET" >/dev/null 2>&1; then
-    CURRENT_MODE="$(stat -c '%a' "$SETTINGS_TARGET")"
-  else
-    CURRENT_MODE="$(stat -f '%Lp' "$SETTINGS_TARGET")"
-  fi
-else
-  CURRENT_MODE=""
-fi
-if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ] || [ "$CURRENT_MODE" != "$SETTINGS_MODE" ] || ! cmp -s "$SETTINGS_SNAPSHOT" "$SETTINGS_TARGET"; then
-  echo "Claude settings changed while the supply-chain hook was being installed; refusing to overwrite: $SETTINGS_FILE" >&2
+if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
+  echo "Claude settings path changed while the supply-chain hook was being installed; refusing to update: $SETTINGS_FILE" >&2
   exit 1
 fi
-mv "$TEMP_FILE" "$SETTINGS_TARGET"
+PUBLISH_HELPER="$(cd "$(dirname "$0")/../.." && pwd)/scripts/atomic-publish-file.py"
+if ! python3 "$PUBLISH_HELPER" "$SETTINGS_TARGET" "$SETTINGS_SNAPSHOT" "$TEMP_FILE" "$SETTINGS_MODE"; then
+  exit 1
+fi
+TEMP_FILE=""
+CURRENT_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
+if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
+  echo "Claude settings path changed during the supply-chain hook update: $SETTINGS_FILE" >&2
+  exit 1
+fi

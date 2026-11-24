@@ -357,6 +357,7 @@ SH
   chmod +x "$RACE_INSTALLER"
   export RACE_TARGET_KIND="$race_kind"
   RACE_SETTINGS="$RACE_HOME/.claude/settings.json"
+  RACE_SETTINGS_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$RACE_SETTINGS")"
   if [ "$race_kind" = regular ]; then
     run_bootstrap_with_declines "$RACE_HOME" "$RACE_SCRIPT" "concurrent settings creation"
     if ! jq -e '.concurrentWriter == "preserve me"' "$RACE_SETTINGS" >/dev/null; then
@@ -385,7 +386,7 @@ SH
         echo "$bootstrap bootstrap unexpectedly overwrote a concurrent settings edit" >&2
         exit 1
       fi
-      if ! grep -Fq "Claude settings changed while the supply-chain hook was being installed; refusing to overwrite: $RACE_SETTINGS" "$TEMP_DIR/bootstrap-edit-race-$bootstrap.log"; then
+      if ! grep -Fq "file changed during CrossCheck update, refusing to overwrite: $RACE_SETTINGS_TARGET" "$TEMP_DIR/bootstrap-edit-race-$bootstrap.log"; then
         echo "$bootstrap bootstrap failed without the concurrent-edit diagnostic" >&2
         cat "$TEMP_DIR/bootstrap-edit-race-$bootstrap.log" >&2
         exit 1
@@ -418,32 +419,79 @@ if grep -Fq 'for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands"'
   echo "Codex updater still installs Claude commands from root skill sources" >&2
   exit 1
 fi
-NATIVE_STEP="$TEMP_DIR/codex-native-update-step.sh"
-python3 - "$REPO_ROOT/codex/skills/update-crosscheck/SKILL.md" "$NATIVE_STEP" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-text = Path(sys.argv[1]).read_text()
-section = text.split("## Step 6: Wire Any New Skills and Agents", 1)[1].split("## Step 7: Report", 1)[0]
-match = re.search(r"```bash\n(.*?)\n```", section, re.S)
-if not match:
-    raise SystemExit("could not extract Codex updater Step 6 for its regression test")
-Path(sys.argv[2]).write_text("set -euo pipefail\n" + match.group(1) + "\n")
-PY
+NATIVE_REPO="$TEMP_DIR/codex-native-repo"
+mkdir -p "$NATIVE_REPO/codex/skills/drain-repo" "$NATIVE_REPO/codex/skills/update-crosscheck" "$NATIVE_REPO/codex/skills/new-skill" "$NATIVE_REPO/scripts" "$NATIVE_REPO/codex/scripts"
+cp "$REPO_ROOT/scripts/atomic-publish-file.py" "$NATIVE_REPO/scripts/atomic-publish-file.py"
+cp "$REPO_ROOT/codex/scripts/sync-managed-codex-skills.sh" "$NATIVE_REPO/codex/scripts/sync-managed-codex-skills.sh"
+printf 'shipped drain skill\n' > "$NATIVE_REPO/codex/skills/drain-repo/SKILL.md"
+printf 'old shipped skill\n' > "$NATIVE_REPO/codex/skills/update-crosscheck/SKILL.md"
+printf 'new skill\n' > "$NATIVE_REPO/codex/skills/new-skill/SKILL.md"
+git -C "$NATIVE_REPO" init -q
+git -C "$NATIVE_REPO" config user.name "CrossCheck Test"
+git -C "$NATIVE_REPO" config user.email "crosscheck-test@example.invalid"
+mkdir -p "$NATIVE_REPO/no-hooks"
+git -C "$NATIVE_REPO" config core.hooksPath "$NATIVE_REPO/no-hooks"
+git -C "$NATIVE_REPO" add codex/skills
+git -C "$NATIVE_REPO" commit -qm "fixture: old shipped skill"
+printf 'current shipped skill\n' > "$NATIVE_REPO/codex/skills/update-crosscheck/SKILL.md"
+git -C "$NATIVE_REPO" add codex/skills/update-crosscheck/SKILL.md
+git -C "$NATIVE_REPO" commit -qm "fixture: current shipped skill"
+git -C "$NATIVE_REPO" update-ref refs/remotes/origin/main "$(git -C "$NATIVE_REPO" rev-parse HEAD)"
 NATIVE_HOME="$TEMP_DIR/home-codex-native"
 mkdir -p "$NATIVE_HOME/.codex/skills/drain-repo" "$NATIVE_HOME/.codex/skills/update-crosscheck" "$NATIVE_HOME/.crosscheck"
 printf 'user customization\n' > "$NATIVE_HOME/.codex/skills/drain-repo/SKILL.md"
-git -C "$REPO_ROOT" show origin/main:codex/skills/update-crosscheck/SKILL.md > "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md"
-CROSSCHECK_DIR="$REPO_ROOT" HOME="$NATIVE_HOME" bash "$NATIVE_STEP" > "$TEMP_DIR/codex-native-update.log"
+printf 'old shipped skill\n' > "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md"
+bash "$NATIVE_REPO/codex/scripts/sync-managed-codex-skills.sh" "$NATIVE_REPO" "$NATIVE_HOME" > "$TEMP_DIR/codex-native-update.log"
 if [ "$(cat "$NATIVE_HOME/.codex/skills/drain-repo/SKILL.md")" != "user customization" ]; then
   echo "Codex native updater overwrote a customized skill file" >&2
   exit 1
 fi
-if ! cmp -s "$REPO_ROOT/codex/skills/update-crosscheck/SKILL.md" "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md"; then
+if ! cmp -s "$NATIVE_REPO/codex/skills/update-crosscheck/SKILL.md" "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md"; then
   echo "Codex native updater did not refresh a previously shipped skill file" >&2
   exit 1
 fi
+if ! cmp -s "$NATIVE_REPO/codex/skills/new-skill/SKILL.md" "$NATIVE_HOME/.codex/skills/new-skill/SKILL.md"; then
+  echo "Codex native updater did not install a new skill" >&2
+  exit 1
+fi
+
+python3 - "$REPO_ROOT/scripts/atomic-publish-file.py" "$TEMP_DIR" <<'PY'
+import importlib.util
+import sys
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("atomic_publish_file", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+scratch = Path(sys.argv[2]) / "atomic-publish-race"
+scratch.mkdir()
+target = scratch / "settings.json"
+snapshot = scratch / "snapshot.json"
+staged = scratch / "staged.json"
+target.write_text('{"setting":"original"}\n')
+snapshot.write_text('{"setting":"original"}\n')
+staged.write_text('{"setting":"updated"}\n')
+real_publish = module._rename_noreplace
+
+def write_during_publish(source, destination):
+    if source == str(staged) and destination == str(target):
+        originals = list(scratch.glob(".crosscheck-publish-*/original"))
+        assert len(originals) == 1, "publisher did not atomically claim the old file first"
+        originals[0].write_text('{"concurrentWriter":"latest edit"}\n')
+    return real_publish(source, destination)
+
+module._rename_noreplace = write_during_publish
+try:
+    module.publish_file(str(target), str(snapshot), str(staged))
+except module.ConcurrentUpdate:
+    pass
+else:
+    raise SystemExit("atomic publisher accepted a concurrent settings edit")
+if target.read_text() != '{"concurrentWriter":"latest edit"}\n':
+    raise SystemExit("atomic publisher lost the settings edit made after its snapshot comparison")
+if list(scratch.glob(".crosscheck-publish-*")):
+    raise SystemExit("atomic publisher left recovery files after restoring the concurrent edit")
+PY
 for install_guide in "$REPO_ROOT/skill-sources/INSTALL.md" "$REPO_ROOT/claude/skill-sources/INSTALL.md"; do
   if ! grep -Fq 'sync-managed-claude-skills.sh ~/.crosscheck "$HOME"' "$install_guide"; then
     echo "install guide does not use the managed Claude command sync: $install_guide" >&2
@@ -464,6 +512,22 @@ for troubleshooting in "$REPO_ROOT/TROUBLESHOOTING.md" "$REPO_ROOT/claude/TROUBL
     exit 1
   fi
 done
+if ! grep -Fq 'sync-managed-codex-skills.sh ~/Documents/Developer/CrossCheck "$HOME"' "$REPO_ROOT/codex/TROUBLESHOOTING.md"; then
+  echo "Codex troubleshooting guide does not use the managed native-skill sync" >&2
+  exit 1
+fi
+if grep -Fq 'cp -R ~/Documents/Developer/CrossCheck/codex/skills/* ~/.codex/skills/' "$REPO_ROOT/codex/TROUBLESHOOTING.md" || grep -Fq 'cp -R ~/Documents/Developer/CrossCheck/codex/skills/* ~/.codex/skills/' "$REPO_ROOT/codex/skills/INSTALL.md"; then
+  echo "Codex documentation still recommends recursive skill copying" >&2
+  exit 1
+fi
+if ! grep -Fq 'sync-managed-codex-skills.sh ~/Documents/Developer/CrossCheck "$HOME"' "$REPO_ROOT/codex/skills/INSTALL.md"; then
+  echo "Codex skill installation guide does not use the managed native-skill sync" >&2
+  exit 1
+fi
+if ! grep -Fq 'sync-managed-codex-skills.sh' "$REPO_ROOT/codex/scripts/bootstrap-crosscheck.sh"; then
+  echo "Codex bootstrap does not use the managed native-skill sync" >&2
+  exit 1
+fi
 
 SYNC_ROOT="$TEMP_DIR/crosscheck"
 HOME_FIXTURE="$TEMP_DIR/home-sync"

@@ -192,25 +192,7 @@ fi
 
 # 5. Install skills (Codex format)
 echo "📝 Step 5: Install skills..."
-mkdir -p "$HOME/.codex/skills"
-# Load skip list (one skill name per line, e.g. "ai-usage")
-SKIP_FILE="$HOME/.crosscheck/skip-skills"
-if [ -f "$SKIP_FILE" ]; then
-    # Strip comments and blank lines for display
-    SKIP_DISPLAY=$(sed 's/#.*//' "$SKIP_FILE" | xargs)
-    [ -n "$SKIP_DISPLAY" ] && echo "   Skipping (per ~/.crosscheck/skip-skills): $SKIP_DISPLAY"
-fi
-# Copy skill folders from skills/<name>/SKILL.md
-for skill_dir in "$CODEX_SOURCE_DIR/skills/"*; do
-    [ -d "$skill_dir" ] || continue
-    [ -f "$skill_dir/SKILL.md" ] || continue
-    skill_name="$(basename "$skill_dir")"
-    if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
-        continue
-    fi
-    mkdir -p "$HOME/.codex/skills/$skill_name"
-    cp -R "$skill_dir/." "$HOME/.codex/skills/$skill_name/"
-done
+bash "$CROSSCHECK_ROOT_DIR/codex/scripts/sync-managed-codex-skills.sh" "$CROSSCHECK_ROOT_DIR" "$HOME"
 skill_count=$(find "$HOME/.codex/skills" -mindepth 2 -maxdepth 2 -name SKILL.md 2>/dev/null | wc -l | tr -d ' ')
 echo "   ✅ Installed $skill_count skills to ~/.codex/skills/"
 echo ""

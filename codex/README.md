@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-11-23-15-54
+**Last Updated:** 2026-11-24-00-39
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -232,7 +232,7 @@ CrossCheck uses a **single source of truth** pattern:
 ~/.codex/AGENTS.md             # Managed pointer to CrossCheck's global workflow
 ```
 
-**Key insight:** Codex discovers `~/.codex/AGENTS.md`; the bootstrap adds or refreshes a managed pointer there while preserving the rest of that file. Rerun the Codex bootstrap to refresh copied native skills and the workflow pointer. Supporting docs stay in CrossCheck. Hooks install per-project.
+**Key insight:** Codex discovers `~/.codex/AGENTS.md`; the bootstrap adds or refreshes a managed pointer there while preserving the rest of that file. The bootstrap and updater use the managed skill sync to install new skills, refresh unchanged CrossCheck copies, and preserve customized or linked files. If the installed file's shipped origin cannot be confirmed from repository history, it is left in place. Supporting docs stay in CrossCheck. Hooks install per-project.
 
 ### GitHub Branch Protection Setup
 
@@ -303,7 +303,7 @@ git reset HEAD test.txt && rm test.txt
 ```bash
 # Check skills installed
 find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
-# Should show: 34 skills
+# The count depends on skipped skills and user-owned files.
 
 # Start Codex
 codex

@@ -16,6 +16,11 @@ CLAUDE_ONLY=(
   "test-crosscheck-maintenance.sh"
 )
 
+# Codex's native skill updater is a Codex-only helper, not a mirror of a root script.
+CODEX_ONLY=(
+  "sync-managed-codex-skills.sh"
+)
+
 # Claude's supply-chain gate is required by its native PreToolUse hook.
 CLAUDE_REQUIRED=(
   "preuse-supply-chain-gate.sh"
@@ -128,6 +133,8 @@ for file in "${CODEX_FILES[@]}"; do
   if has_item "$file" "${CODEX_EXCLUDED[@]}"; then
     echo "❌ Claude-only script present in Codex mirror: scripts/$file"
     extra_codemirror=$((extra_codemirror + 1))
+  elif has_item "$file" "${CODEX_ONLY[@]}"; then
+    continue
   elif ! has_item "$file" "${ROOT_FILES[@]}"; then
     echo "❌ Extra in codex mirror (not in root): scripts/$file"
     extra_codemirror=$((extra_codemirror + 1))

@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version — pulls from main. Skills
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-11-23-17-34
+**Last Updated:** 2026-11-23-18-02
 
 # Update CrossCheck
 
@@ -165,7 +165,7 @@ NEW_LINKED=0
 
 # Claude commands: use the Claude mirror, not the Codex-oriented root sources.
 ROOT_SKILL_DIR="$CROSSCHECK_DIR/skill-sources"
-CLAUDE_SYNC_RESULT="$("$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$HOME")"
+CLAUDE_SYNC_RESULT="$("$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME")"
 echo "   $CLAUDE_SYNC_RESULT"
 CLAUDE_SYNC_COUNT="${CLAUDE_SYNC_RESULT##*: }"
 NEW_LINKED=$((NEW_LINKED + CLAUDE_SYNC_COUNT))

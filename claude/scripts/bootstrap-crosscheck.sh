@@ -30,6 +30,13 @@ else
     echo ""
 fi
 
+# In multi-project mode this script lives under the Claude mirror; in a
+# traditional install CROSSCHECK_DIR is the repository root.
+CROSSCHECK_ROOT_DIR="$CROSSCHECK_DIR"
+if [ ! -d "$CROSSCHECK_ROOT_DIR/claude/skill-sources" ] && [ -d "$CROSSCHECK_DIR/../claude/skill-sources" ]; then
+    CROSSCHECK_ROOT_DIR="$(cd "$CROSSCHECK_DIR/.." && pwd)"
+fi
+
 # Migrate from legacy Claude-era ~/.claude/CrossCheck location
 OLD_LOCATION="$HOME/.claude/CrossCheck"
 if [ "$INSTALL_MODE" = "traditional" ] && [ -e "$OLD_LOCATION" ]; then
@@ -97,51 +104,16 @@ if [ ! -f "$HOME/.claude/settings.json" ]; then
     echo "      Remove Spencer's commands (claude*, dailybrief*) and add yours"
 else
     echo "   ✅ Settings already exist at ~/.claude/settings.json"
-
-    # Sync critical deny rules even when settings exist
-    echo "   Checking critical deny rules..."
-    CRITICAL_DENY_RULES=(
-        'Bash(gh*--admin*)'
-        'Bash(*--admin*)'
-        'Bash(gh api*rulesets*)'
-        'Bash(gh api*branches/*/protection*)'
-        'Bash(*graphql*BranchProtection*)'
-        'Bash(*graphql*Ruleset*)'
-    )
-
-    DENY_UPDATED=0
-    DENY_FAILED=0
-    for rule in "${CRITICAL_DENY_RULES[@]}"; do
-        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
-            if jq --arg r "$rule" '.permissions.deny += [$r]' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json.tmp" \
-                && mv "$HOME/.claude/settings.json.tmp" "$HOME/.claude/settings.json"; then
-                echo "   + Added critical deny rule: $rule"
-                DENY_UPDATED=$((DENY_UPDATED + 1))
-            else
-                echo "   ⚠️  Failed to add deny rule: $rule (jq or write error)"
-                DENY_FAILED=$((DENY_FAILED + 1))
-            fi
-        fi
-    done
-
-    if [ "$DENY_FAILED" -gt 0 ]; then
-        echo "   ⚠️  $DENY_FAILED deny rule(s) failed to sync — check settings.json is valid JSON"
-    elif [ "$DENY_UPDATED" -eq 0 ]; then
-        echo "   ✅ All critical deny rules present"
-    else
-        echo "   ✅ Added $DENY_UPDATED critical security rule(s)"
-    fi
 fi
 echo ""
 
-# Keep the native Bash PreToolUse gate pointed at this checkout, even when
-# settings already existed before bootstrap.
-CLAUDE_INSTALL_DIR="$CROSSCHECK_DIR"
-if [ -x "$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh" ]; then
-    CLAUDE_INSTALL_DIR="$CROSSCHECK_DIR/claude"
+# Keep the native Bash PreToolUse gate pointed at the Claude-maintained mirror.
+CLAUDE_INSTALL_DIR="$CROSSCHECK_ROOT_DIR/claude"
+if [ ! -d "$CLAUDE_INSTALL_DIR/scripts" ] && [ -d "$CROSSCHECK_DIR/scripts" ]; then
+    CLAUDE_INSTALL_DIR="$CROSSCHECK_DIR"
 fi
 if [ ! -x "$CLAUDE_INSTALL_DIR/scripts/install-supply-chain-hook.sh" ]; then
-    echo "   ❌ Claude supply-chain hook installer not found under $CLAUDE_INSTALL_DIR" >&2
+    echo "   ❌ Claude supply-chain hook installer not found under $CLAUDE_INSTALL_DIR/scripts" >&2
     exit 1
 fi
 "$CLAUDE_INSTALL_DIR/scripts/install-supply-chain-hook.sh" \
@@ -179,17 +151,7 @@ if [ -f "$SKIP_FILE" ]; then
     SKIP_DISPLAY=$(sed 's/#.*//' "$SKIP_FILE" | xargs)
     [ -n "$SKIP_DISPLAY" ] && echo "   Skipping (per ~/.crosscheck/skip-skills): $SKIP_DISPLAY"
 fi
-# Copy skills but exclude INSTALL.md (meta-doc, not a skill) and any in skip list
-for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
-    skill_name="$(basename "$skill_file" .md)"
-    [ "$skill_name" = "INSTALL" ] && continue
-    if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
-        continue
-    fi
-    cp "$skill_file" "$HOME/.claude/commands/"
-done
-skill_count=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
-echo "   ✅ Installed $skill_count skills to ~/.claude/commands/"
+"$CROSSCHECK_ROOT_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_ROOT_DIR" "$HOME"
 echo ""
 
 # 6. Install TokenPrint (optional - for /ai-usage skill)

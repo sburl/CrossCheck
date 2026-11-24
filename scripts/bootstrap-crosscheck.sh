@@ -98,46 +98,11 @@ if [ ! -f "$HOME/.claude/settings.json" ]; then
     echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
 else
     echo "   ✅ Settings already exist at ~/.claude/settings.json"
-
-    # Sync critical deny rules even when settings exist
-    echo "   Checking critical deny rules..."
-    CRITICAL_DENY_RULES=(
-        'Bash(gh*--admin*)'
-        'Bash(*--admin*)'
-        'Bash(gh api*rulesets*)'
-        'Bash(gh api*branches/*/protection*)'
-        'Bash(*graphql*BranchProtection*)'
-        'Bash(*graphql*Ruleset*)'
-    )
-
-    DENY_UPDATED=0
-    DENY_FAILED=0
-    for rule in "${CRITICAL_DENY_RULES[@]}"; do
-        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
-            if jq --arg r "$rule" '.permissions.deny += [$r]' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json.tmp" \
-                && mv "$HOME/.claude/settings.json.tmp" "$HOME/.claude/settings.json"; then
-                echo "   + Added critical deny rule: $rule"
-                DENY_UPDATED=$((DENY_UPDATED + 1))
-            else
-                echo "   ⚠️  Failed to add deny rule: $rule (jq or write error)"
-                DENY_FAILED=$((DENY_FAILED + 1))
-            fi
-        fi
-    done
-
-    if [ "$DENY_FAILED" -gt 0 ]; then
-        echo "   ⚠️  $DENY_FAILED deny rule(s) failed to sync — check settings.json is valid JSON"
-    elif [ "$DENY_UPDATED" -eq 0 ]; then
-        echo "   ✅ All critical deny rules present"
-    else
-        echo "   ✅ Added $DENY_UPDATED critical security rule(s)"
-    fi
 fi
 echo ""
 
-# Install the native Claude Bash gate into the settings file created above or
-# an existing settings file. The path-search template is only a migration
-# fallback; the installer binds the hook to this checkout and fails closed.
+# Atomically synchronize critical deny rules and install the native Claude Bash
+# gate. The installer validates first and preserves symlinks and file mode.
 SUPPLY_CHAIN_INSTALLER="$CROSSCHECK_DIR/claude/scripts/install-supply-chain-hook.sh"
 SUPPLY_CHAIN_HOOK="$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh"
 if [ ! -x "$SUPPLY_CHAIN_INSTALLER" ] || [ ! -x "$SUPPLY_CHAIN_HOOK" ]; then
@@ -182,7 +147,7 @@ for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
     if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
         continue
     fi
-    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands" "$HOME/.gemini/agents"; do
+    for TARGET_DIR in "$HOME/.codex/commands" "$HOME/.gemini/agents"; do
         [ -d "$(dirname "$TARGET_DIR")" ] || mkdir -p "$(dirname "$TARGET_DIR")" 2>/dev/null
         [ -d "$TARGET_DIR" ] || mkdir -p "$TARGET_DIR" 2>/dev/null
         target="$TARGET_DIR/$skill_name.md"
@@ -194,6 +159,9 @@ done
 echo "   ✅ Linked $LINKED skill(s) via symlinks"
 echo "   💡 Skills update instantly on git pull in CrossCheck — no re-run needed"
 echo ""
+
+# Claude commands use the maintained Claude mirror and preserve user-owned files.
+"$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"
 
 # 6. Install TokenPrint (optional - for /ai-usage skill)
 echo "📊 Step 6: Install TokenPrint (for /ai-usage dashboard)..."

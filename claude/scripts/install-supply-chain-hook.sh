@@ -12,8 +12,20 @@ if [ ! -x "$HOOK_FILE" ]; then
   echo "Supply-chain hook is missing or non-executable: $HOOK_FILE" >&2
   exit 1
 fi
-if ! jq -s -e 'length == 1 and (.[0] | type == "object")' "$SETTINGS_FILE" >/dev/null; then
-  echo "Claude settings file must contain exactly one JSON object: $SETTINGS_FILE" >&2
+
+# Validate before writing anything. Both bootstrap entry points and this
+# installer use one atomic update so malformed settings cannot partially lose
+# deny rules, symlink identity, or the file's mode.
+if ! jq -s -e '
+  length == 1 and
+  (.[0] | type == "object" and
+    ((has("permissions") | not) or (.permissions | type == "object")) and
+    ((.permissions | has("deny") | not) or (.permissions.deny | type == "array")) and
+    ((has("hooks") | not) or (.hooks | type == "object")) and
+    ((.hooks | has("PreToolUse") | not) or (.hooks.PreToolUse | type == "array")) and
+    ((has("PreToolUse") | not) or (.PreToolUse | type == "array")))
+' "$SETTINGS_FILE" >/dev/null; then
+  echo "Claude settings file must contain exactly one valid JSON object: $SETTINGS_FILE" >&2
   exit 1
 fi
 
@@ -29,7 +41,14 @@ printf -v HOOK_COMMAND 'bash -c %q -- %q' "$HOOK_RUNNER" "$HOOK_FILE"
 TEMP_FILE="${SETTINGS_TARGET}.tmp.$$"
 trap 'rm -f "$TEMP_FILE"' EXIT
 
-if ! jq --arg hook "$HOOK_COMMAND" '
+if ! jq --arg hook "$HOOK_COMMAND" --argjson rules '[
+  "Bash(gh*--admin*)",
+  "Bash(*--admin*)",
+  "Bash(gh api*rulesets*)",
+  "Bash(gh api*branches/*/protection*)",
+  "Bash(*graphql*BranchProtection*)",
+  "Bash(*graphql*Ruleset*)"
+]' '
   def is_supply_chain_hook:
     .type == "command" and ((.command // "") as $command |
       (($command | startswith("for c in ") and contains("preuse-supply-chain-gate.sh") and (contains("CrossCheck supply-chain hook not found") or contains("done; exit 0"))) or
@@ -63,25 +82,36 @@ if ! jq --arg hook "$HOOK_COMMAND" '
     else
       $result.entries + [{"matcher":"Bash","hooks":[{"type":"command","command":$command}]}]
     end;
-  if (.hooks | type) == "object" then
-    .hooks.PreToolUse = ((.hooks.PreToolUse // []) | install_hook($hook))
-  elif (.PreToolUse | type) == "array" then
-    .PreToolUse |= install_hook($hook)
-  else
-    .hooks = ((.hooks // {}) + {"PreToolUse": ([] | install_hook($hook))})
-  end
+  . as $root |
+  (($root.hooks // {}) as $hooks | (($hooks.PreToolUse // []) + ($root.PreToolUse // []))) as $pre_tool_use |
+  (($root.permissions // {}) | .deny // []) as $existing_deny |
+  (reduce $rules[] as $rule ($existing_deny; if index($rule) == null then . + [$rule] else . end)) as $deny |
+  ($root.hooks // {}) as $hooks |
+  $root
+  | .permissions = ((.permissions // {}) + {"deny":$deny})
+  | .hooks = ($hooks + {"PreToolUse":($pre_tool_use | install_hook($hook))})
+  | del(.PreToolUse)
 ' "$SETTINGS_FILE" > "$TEMP_FILE"; then
-  echo "Could not add the Claude supply-chain hook to $SETTINGS_FILE" >&2
+  echo "Could not update Claude settings in $SETTINGS_FILE" >&2
   exit 1
 fi
 
-if ! jq -s -e --arg hook "$HOOK_COMMAND" '
+if ! jq -s -e --arg hook "$HOOK_COMMAND" --argjson rules '[
+  "Bash(gh*--admin*)",
+  "Bash(*--admin*)",
+  "Bash(gh api*rulesets*)",
+  "Bash(gh api*branches/*/protection*)",
+  "Bash(*graphql*BranchProtection*)",
+  "Bash(*graphql*Ruleset*)"
+]' '
   length == 1 and
   (.[0] |
-    (if (.hooks | type) == "object" then (.hooks.PreToolUse // []) else (.PreToolUse // []) end) |
-    any(.[]; .matcher == "Bash" and any(.hooks[]?; .type == "command" and .command == $hook)))
+    . as $settings |
+    ((has("PreToolUse") | not)) and
+    ($settings.hooks.PreToolUse | any(.[]; .matcher == "Bash" and any(.hooks[]?; .type == "command" and .command == $hook))) and
+    all($rules[]; . as $rule | $settings.permissions.deny | index($rule) != null))
 ' "$TEMP_FILE" >/dev/null; then
-  echo "Claude supply-chain hook was not present in the generated settings: $SETTINGS_FILE" >&2
+  echo "Claude supply-chain hook or critical deny rules were missing from generated settings: $SETTINGS_FILE" >&2
   exit 1
 fi
 

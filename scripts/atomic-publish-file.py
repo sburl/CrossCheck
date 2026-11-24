@@ -500,12 +500,15 @@ def _rollback_failed_publish(
         except OSError:
             return False, None, None
         inode_key = state[0][:2]
-        if state in known_states or inode_key in recovered_inodes:
+        if inode_key in recovered_inodes:
             return True, recovery_path, state
         try:
             backup_name, backup_path = _new_stable_recovery_link(
                 parent_fd, staged_name, stable_recovery_fd, stable_recovery_dir
             )
+            backup_state = _entry_state_at(stable_recovery_fd, backup_name)
+            if backup_state[0][:2] != inode_key:
+                raise OSError(errno.ESTALE, "settings recovery link does not match the sampled inode", stage_path)
             _sync_stable_recovery_entry(
                 stable_base_fd,
                 stable_base_path,
@@ -522,24 +525,21 @@ def _rollback_failed_publish(
 
     def finalize_recovery() -> str | None:
         nonlocal recovery_path
-        try:
-            stage_state = _entry_state_at(parent_fd, staged_name)
-        except OSError as error:
-            raise RestorationFailed(
-                f"could not verify settings recovery before cleanup: {stage_path}", stage_path
-            ) from error
-        if (
-            stage_state != published_state
-            and stage_state not in known_states
-            and stage_state[0][:2] not in recovered_inodes
-        ):
+        while True:
+            try:
+                stage_state = _entry_state_at(parent_fd, staged_name)
+            except OSError as error:
+                raise RestorationFailed(
+                    f"could not verify settings recovery before cleanup: {stage_path}", stage_path
+                ) from error
+            if stage_state[0][:2] in recovered_inodes:
+                return recovery_path
             preserved, new_recovery_path, _ = preserve_stage_state()
             if not preserved:
                 raise RestorationFailed(
                     f"concurrent settings could not be durably preserved before cleanup: {stage_path}", stage_path
                 )
             recovery_path = new_recovery_path or recovery_path
-        return recovery_path
 
     while True:
         try:
@@ -627,6 +627,7 @@ def publish_file(
             except FileExistsError as error:
                 raise ConcurrentUpdate(f"destination appeared during CrossCheck update: {target}") from error
             staged_name = None
+            _fsync_directory(parent_fd)
             _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
             return None
 
@@ -724,6 +725,11 @@ def publish_file(
                     backup_name, backup_path = _new_stable_recovery_link(
                         parent_fd, staged_name, stable_recovery_fd, stable_recovery_dir
                     )
+                    backup_state = _entry_state_at(stable_recovery_fd, backup_name)
+                    if backup_state[0][:2] != current_state[0][:2]:
+                        raise OSError(
+                            errno.ESTALE, "settings recovery link does not match the staged inode", target
+                        )
                     _sync_stable_recovery_entry(
                         stable_base_fd,
                         stable_base_path,
@@ -752,6 +758,11 @@ def publish_file(
                     live_backup_name, live_backup_path = _new_stable_recovery_link(
                         parent_fd, target_name, stable_recovery_fd, stable_recovery_dir
                     )
+                    live_backup_state = _entry_state_at(stable_recovery_fd, live_backup_name)
+                    if live_backup_state[0][:2] != live_state[0][:2]:
+                        raise OSError(
+                            errno.ESTALE, "settings recovery link does not match the published inode", target
+                        )
                     _sync_stable_recovery_entry(
                         stable_base_fd,
                         stable_base_path,
@@ -936,6 +947,42 @@ def sync_symlink(
         _fsync_directory(recovery_fd)
         moved_info = os.stat("original", dir_fd=recovery_fd, follow_symlinks=False)
         if expected_kind == "snapshot":
+            if stat.S_ISREG(moved_info.st_mode):
+                moved_state = _entry_state_at(recovery_fd, "original")
+                stable_state = _entry_state_at(stable_recovery_fd, stable_recovery_name)
+                if moved_state[0][:2] != stable_state[0][:2]:
+                    # The pathname was replaced after the first recovery link
+                    # was made. Preserve the inode actually displaced before
+                    # either publishing the symlink or reporting a recovery path.
+                    stable_backup_path = None
+                    actual_backup_name, actual_backup_path = _new_stable_recovery_link(
+                        recovery_fd, "original", stable_recovery_fd, stable_recovery_dir
+                    )
+                    stable_backup_path = actual_backup_path
+                    _sync_stable_recovery_entry(
+                        stable_base_fd,
+                        stable_base_path,
+                        stable_recovery_fd,
+                        os.path.basename(stable_recovery_dir),
+                        stable_recovery_dir,
+                        actual_backup_name,
+                    )
+                    actual_backup_state = _entry_state_at(stable_recovery_fd, actual_backup_name)
+                    if actual_backup_state[0][:2] != moved_state[0][:2]:
+                        raise RestorationFailed(
+                            f"managed command recovery link does not match the displaced inode: {target}",
+                            actual_backup_path,
+                        )
+                    _verify_stable_recovery_path(
+                        stable_base_fd,
+                        stable_base_path,
+                        stable_recovery_fd,
+                        os.path.basename(stable_recovery_dir),
+                        stable_recovery_dir,
+                    )
+                    raise ConcurrentUpdate(
+                        f"managed command inode changed during CrossCheck update: {target}", actual_backup_path
+                    )
             if not stat.S_ISREG(moved_info.st_mode) or _read_signature_at(recovery_fd, "original") != expected_signature:
                 try:
                     _rename_noreplace(recovery_fd, "original", parent_fd, target_name)

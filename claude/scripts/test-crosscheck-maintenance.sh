@@ -963,6 +963,90 @@ finally:
     for new_inode_handle in new_inode_handles:
         new_inode_handle.close()
 
+# If rollback cannot link the published inode and a writer saves after the
+# final recovery sample, retain the staged entry and return a fatal status.
+failed_backup_dir = scratch / "failed-published-backup-race"
+failed_backup_dir.mkdir()
+failed_backup_target = failed_backup_dir / "settings.json"
+failed_backup_snapshot = scratch / "failed-published-backup-snapshot.json"
+failed_backup_stage = scratch / "failed-published-backup-stage.json"
+failed_backup_target.write_text('{"setting":"original"}\n')
+failed_backup_snapshot.write_text('{"setting":"original"}\n')
+failed_backup_stage.write_text('{"setting":"updated"}\n')
+published_identity = [None]
+exchange_count = [0]
+published_handle = []
+real_exchange = module._rename_exchange
+
+def capture_published_inode(first_fd, first, second_fd, second):
+    result = real_exchange(first_fd, first, second_fd, second)
+    exchange_count[0] += 1
+    if exchange_count[0] == 1:
+        published_stat = os.stat(first, dir_fd=first_fd, follow_symlinks=False)
+        published_identity[0] = (published_stat.st_dev, published_stat.st_ino)
+        published_handle.append(failed_backup_target.open("r+"))
+    return result
+
+real_recovery_link = module._new_stable_recovery_link
+
+def fail_published_inode_recovery(source_fd, source_name, recovery_fd, recovery_dir):
+    source_stat = os.stat(source_name, dir_fd=source_fd, follow_symlinks=False)
+    if (source_stat.st_dev, source_stat.st_ino) == published_identity[0]:
+        raise OSError(errno.ENOSPC, "injected full recovery volume")
+    return real_recovery_link(source_fd, source_name, recovery_fd, recovery_dir)
+
+real_entry_state = module._entry_state_at
+published_stage_reads = [0]
+
+def write_after_final_published_sample(directory_fd, name):
+    state = real_entry_state(directory_fd, name)
+    if (
+        exchange_count[0] == 2
+        and name.startswith(".crosscheck-stage-")
+        and state[0][:2] == published_identity[0]
+    ):
+        published_stage_reads[0] += 1
+        if published_stage_reads[0] == 2:
+            published_handle[0].seek(0)
+            published_handle[0].truncate()
+            published_handle[0].write('{"setting":"late published save"}\n')
+            published_handle[0].flush()
+    return state
+
+real_verify = module._verify_parent_path
+
+def fail_after_publishing(root_fd, root_path, relative_target, parent_fd):
+    if published_identity[0] is not None:
+        raise module.ConcurrentUpdate("injected post-publish failure")
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+module._rename_exchange = capture_published_inode
+module._new_stable_recovery_link = fail_published_inode_recovery
+module._entry_state_at = write_after_final_published_sample
+module._verify_parent_path = fail_after_publishing
+try:
+    module.publish_file(
+        str(failed_backup_dir), "settings.json", str(failed_backup_snapshot), str(failed_backup_stage)
+    )
+except module.RestorationFailed as error:
+    if not error.recovery_path or not Path(error.recovery_path).is_file():
+        raise SystemExit("failed backup did not leave a reported staged recovery path")
+    if Path(error.recovery_path).read_text() != '{"setting":"late published save"}\n':
+        raise SystemExit("failed recovery-link creation discarded the late published save")
+    if failed_backup_target.read_text() != '{"setting":"original"}\n':
+        raise SystemExit("failed published backup rollback did not restore the original settings")
+except module.ConcurrentUpdate:
+    raise SystemExit("rollback reported safe recovery after the published inode backup failed")
+else:
+    raise SystemExit("rollback succeeded without a durable link to the published inode")
+finally:
+    module._rename_exchange = real_exchange
+    module._new_stable_recovery_link = real_recovery_link
+    module._entry_state_at = real_entry_state
+    module._verify_parent_path = real_verify
+    for handle in published_handle:
+        handle.close()
+
 # A byte-identical replacement is still a different displaced inode. Its
 # held descriptor must remain visible through the returned recovery link.
 inode_race_dir = scratch / "same-content-inode-race"
@@ -1205,6 +1289,70 @@ if not any(path.read_text() == "old command\n" for path in stable_command_backup
 if moved_commands_target.exists() or moved_commands_target.is_symlink():
     raise SystemExit("test fixture unexpectedly restored through the detached command directory")
 
+# If the command file is replaced with identical bytes after the initial
+# recovery link, a later parent move must report a backup of the displaced inode.
+replaced_commands_home = scratch / "replaced-commands-home"
+replaced_commands_dir = replaced_commands_home / ".claude/commands"
+replaced_commands_dir.mkdir(parents=True)
+replaced_commands_target = replaced_commands_dir / "managed.md"
+replaced_commands_snapshot = scratch / "replaced-commands-snapshot.md"
+replaced_commands_source = scratch / "replaced-commands-source.md"
+replaced_commands_target.write_text("old command\n")
+replaced_commands_snapshot.write_text("old command\n")
+replaced_commands_source.write_text("new command\n")
+old_command_identity = (replaced_commands_target.stat().st_dev, replaced_commands_target.stat().st_ino)
+displaced_command_identity = [None]
+real_new_recovery_directory = module._new_recovery_directory
+
+def replace_command_after_recovery_directory(parent_fd, parent_path):
+    result = real_new_recovery_directory(parent_fd, parent_path)
+    replacement_path = replaced_commands_target.with_name("managed.replacement")
+    replacement_path.write_text("old command\n")
+    os.replace(replacement_path, replaced_commands_target)
+    replacement_stat = replaced_commands_target.stat()
+    displaced_command_identity[0] = (replacement_stat.st_dev, replacement_stat.st_ino)
+    return result
+
+real_verify = module._verify_parent_path
+parent_verify_calls = [0]
+
+def move_replaced_command_parent(root_fd, root_path, relative_target, parent_fd):
+    parent_verify_calls[0] += 1
+    if parent_verify_calls[0] == 1:
+        replaced_commands_dir.rename(replaced_commands_dir.with_name("commands-moved"))
+        replaced_commands_dir.mkdir()
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+module._new_recovery_directory = replace_command_after_recovery_directory
+module._verify_parent_path = move_replaced_command_parent
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(replaced_commands_home)
+try:
+    module.sync_symlink(
+        str(replaced_commands_home), ".claude/commands/managed.md", "snapshot",
+        str(replaced_commands_snapshot), str(replaced_commands_source),
+    )
+except module.RestorationFailed as error:
+    if not error.recovery_path or not Path(error.recovery_path).is_file():
+        raise SystemExit("moved parent did not report the displaced command recovery backup")
+    recovery_stat = Path(error.recovery_path).stat()
+    if (recovery_stat.st_dev, recovery_stat.st_ino) != displaced_command_identity[0]:
+        raise SystemExit("moved parent reported a recovery backup for the pre-replacement inode")
+else:
+    raise SystemExit("moved command parent did not report incomplete restoration")
+finally:
+    module._new_recovery_directory = real_new_recovery_directory
+    module._verify_parent_path = real_verify
+    os.environ["HOME"] = previous_home
+moved_replacement_entries = list(replaced_commands_home.rglob(".crosscheck-publish-*/original"))
+if not any(
+    (entry.stat().st_dev, entry.stat().st_ino) == displaced_command_identity[0]
+    for entry in moved_replacement_entries
+):
+    raise SystemExit("moved command directory lost the actually displaced inode")
+if (old_command_identity == displaced_command_identity[0]):
+    raise SystemExit("test did not create a distinct byte-identical replacement inode")
+
 # A symlink created after an absent-path check is a preserved no-op.
 absent_race_home = scratch / "absent-link-race-home"
 absent_race_home.joinpath(".claude/commands").mkdir(parents=True)
@@ -1313,6 +1461,34 @@ finally:
     module._copy_into_directory = real_copy
 if (outside / "SKILL.md").exists():
     raise SystemExit("atomic publisher wrote a Codex skill through a concurrent directory symlink")
+
+# A successful first-time publish must sync the directory after the final rename.
+absent_publish_root = scratch / "absent-publish-fsync"
+absent_publish_root.mkdir()
+absent_publish_target = absent_publish_root / "settings.json"
+absent_publish_stage = scratch / "absent-publish-stage.json"
+absent_publish_stage.write_text('{"setting":"first"}\n')
+real_fsync_directory = module._fsync_directory
+final_sync_failed = [False]
+
+def fail_final_publish_directory_sync(directory_fd):
+    if absent_publish_target.exists():
+        raise OSError(errno.EIO, "injected final publish directory fsync failure")
+    return real_fsync_directory(directory_fd)
+
+module._fsync_directory = fail_final_publish_directory_sync
+try:
+    module.publish_file(str(absent_publish_root), "settings.json", None, str(absent_publish_stage))
+except OSError as error:
+    if error.errno != errno.EIO:
+        raise SystemExit(f"final publish sync failed with the wrong error: {error}")
+    final_sync_failed[0] = True
+finally:
+    module._fsync_directory = real_fsync_directory
+if not final_sync_failed[0]:
+    raise SystemExit("first-time publish returned success without syncing its final name")
+if not absent_publish_target.is_file() or absent_publish_target.read_text() != '{"setting":"first"}\n':
+    raise SystemExit("final publish sync failure did not leave the first-published file intact")
 
 # Managed Claude-copy migration must preserve a concurrent editor save.
 claude_home = scratch / "claude-home"

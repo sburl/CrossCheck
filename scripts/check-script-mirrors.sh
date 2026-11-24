@@ -19,6 +19,11 @@ CLAUDE_REQUIRED=(
   "preuse-supply-chain-gate.sh"
 )
 
+# Bootstrap needs the installer to keep the active checkout wired in.
+CLAUDE_BOOTSTRAP_REQUIRED=(
+  "install-supply-chain-hook.sh"
+)
+
 # Claude's PreToolUse hook consumes Claude-specific tool payloads. Do not
 # require it in the Codex mirror, and reject it if it is copied there.
 CODEX_EXCLUDED=(
@@ -105,6 +110,13 @@ for file in "${CLAUDE_REQUIRED[@]}"; do
   fi
   if [ ! -f "$CLAUDE_SCRIPTS_DIR/$file" ] || [ ! -x "$CLAUDE_SCRIPTS_DIR/$file" ]; then
     echo "❌ Missing or non-executable required Claude mirror: claude/scripts/$file"
+    missing_claude_required=$((missing_claude_required + 1))
+  fi
+done
+
+for file in "${CLAUDE_BOOTSTRAP_REQUIRED[@]}"; do
+  if [ ! -f "$CLAUDE_SCRIPTS_DIR/$file" ] || [ ! -x "$CLAUDE_SCRIPTS_DIR/$file" ]; then
+    echo "❌ Missing or non-executable required Claude bootstrap dependency: claude/scripts/$file"
     missing_claude_required=$((missing_claude_required + 1))
   fi
 done

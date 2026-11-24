@@ -13,22 +13,25 @@ if [ ! -x "$HOOK_FILE" ]; then
   exit 1
 fi
 
-if stat -c '%a' "$SETTINGS_FILE" >/dev/null 2>&1; then
-  SETTINGS_MODE="$(stat -c '%a' "$SETTINGS_FILE")"
+SETTINGS_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
+if stat -c '%a' "$SETTINGS_TARGET" >/dev/null 2>&1; then
+  SETTINGS_MODE="$(stat -c '%a' "$SETTINGS_TARGET")"
 else
-  SETTINGS_MODE="$(stat -f '%Lp' "$SETTINGS_FILE")"
+  SETTINGS_MODE="$(stat -f '%Lp' "$SETTINGS_TARGET")"
 fi
-printf -v HOOK_COMMAND 'bash %q' "$HOOK_FILE"
-TEMP_FILE="${SETTINGS_FILE}.tmp.$$"
+
+HOOK_RUNNER='hook=$1; if [[ ! -x "$hook" ]]; then printf "Claude supply-chain gate unavailable or non-executable: %s\\n" "$hook" >&2; exit 2; fi; bash "$hook"; status=$?; if [[ "$status" -ne 0 && "$status" -ne 2 ]]; then printf "Claude supply-chain gate failed (%d): %s\\n" "$status" "$hook" >&2; exit 2; fi; exit "$status"'
+printf -v HOOK_COMMAND 'bash -c %q -- %q' "$HOOK_RUNNER" "$HOOK_FILE"
+TEMP_FILE="${SETTINGS_TARGET}.tmp.$$"
 trap 'rm -f "$TEMP_FILE"' EXIT
 
 if ! jq --arg hook "$HOOK_COMMAND" '
   def is_supply_chain_hook:
-    ((.command // "") | contains("preuse-supply-chain-gate.sh"));
+    .type == "command" and ((.command // "") | contains("preuse-supply-chain-gate.sh"));
   def install_hook($command):
-    if any(.[]?; any(.hooks[]?; is_supply_chain_hook)) then
+    if any(.[]?; .matcher == "Bash" and any(.hooks[]?; is_supply_chain_hook)) then
       map(
-        if any(.hooks[]?; is_supply_chain_hook) then
+        if .matcher == "Bash" then
           .hooks |= map(if is_supply_chain_hook then .command = $command else . end)
         else . end
       )
@@ -48,5 +51,5 @@ if ! jq --arg hook "$HOOK_COMMAND" '
 fi
 
 chmod "$SETTINGS_MODE" "$TEMP_FILE"
-mv "$TEMP_FILE" "$SETTINGS_FILE"
+mv "$TEMP_FILE" "$SETTINGS_TARGET"
 trap - EXIT

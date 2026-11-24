@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version — pulls from main. Skills
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-11-24-08-12
+**Last Updated:** 2026-11-24-08-43
 
 # Update CrossCheck
 
@@ -105,7 +105,7 @@ symlink and refuse to replace concurrent edits.
 ```bash
 SETTINGS_SYNC_FAILED=0
 CLAUDE_SYNC_FAILED=0
-for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
+for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json" "$HOME/.gemini/settings.json"; do
     if [ -f "$SETTINGS_FILE" ]; then
         if ! "$CROSSCHECK_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --include-ask; then
             echo "❌ Failed to sync critical settings in $SETTINGS_FILE." >&2

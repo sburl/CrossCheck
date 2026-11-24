@@ -105,6 +105,7 @@ if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
 else
     echo "   Preparing settings.json from the template..."
     PENDING_SETTINGS_FILE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-claude-settings.XXXXXX")"
+    python3 "$CROSSCHECK_DIR/scripts/atomic-publish-file.py" private-file "$PENDING_SETTINGS_FILE"
     cp "$CROSSCHECK_DIR/settings.template.json" "$PENDING_SETTINGS_FILE"
     SETTINGS_TO_INSTALL="$PENDING_SETTINGS_FILE"
 fi

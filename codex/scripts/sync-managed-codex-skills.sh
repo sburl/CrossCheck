@@ -27,6 +27,7 @@ cleanup_current_snapshot() {
     python3 "$PUBLISH_HELPER" snapshot-cleanup "$CURRENT_SNAPSHOT" || true
   fi
   if [ -n "$CURRENT_SNAPSHOT" ]; then
+    python3 "$PUBLISH_HELPER" snapshot-cleanup "$CURRENT_SNAPSHOT" || true
     rm -f "$CURRENT_SNAPSHOT" "$CURRENT_SNAPSHOT.crosscheck-identity"
   fi
   [ -z "$CURRENT_STAGE" ] || rm -f "$CURRENT_STAGE"

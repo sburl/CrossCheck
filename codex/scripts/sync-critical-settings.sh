@@ -53,6 +53,7 @@ fi
 
 SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-settings-snapshot.XXXXXX")"
 STAGED="$(mktemp "${TMPDIR:-/tmp}/crosscheck-settings-stage.XXXXXX")"
+python3 "$PUBLISH_HELPER" private-file "$STAGED"
 PUBLISH_STARTED=0
 cleanup_settings_stages() {
   local exit_status=$?

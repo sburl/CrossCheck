@@ -117,6 +117,7 @@ if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
 else
     echo "   Preparing settings.json from the template..."
     PENDING_SETTINGS_FILE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-claude-settings.XXXXXX")"
+    python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" private-file "$PENDING_SETTINGS_FILE"
     SETTINGS_TEMPLATE="$CROSSCHECK_DIR/settings.template.json"
     if [ ! -f "$SETTINGS_TEMPLATE" ]; then
         SETTINGS_TEMPLATE="$CROSSCHECK_ROOT_DIR/settings.template.json"

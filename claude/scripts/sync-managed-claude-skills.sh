@@ -16,7 +16,13 @@ TARGET_DIR="$HOME_DIR/.claude/commands"
 SKIP_FILE="$HOME_DIR/.crosscheck/skip-skills"
 PUBLISH_HELPER="$CROSSCHECK_DIR/scripts/atomic-publish-file.py"
 CURRENT_SNAPSHOT=""
-trap 'rm -f "$CURRENT_SNAPSHOT"' EXIT
+cleanup_current_snapshot() {
+  if [ -n "$CURRENT_SNAPSHOT" ]; then
+    python3 "$PUBLISH_HELPER" snapshot-cleanup "$CURRENT_SNAPSHOT" || true
+    rm -f "$CURRENT_SNAPSHOT" "$CURRENT_SNAPSHOT.crosscheck-identity"
+  fi
+}
+trap cleanup_current_snapshot EXIT
 
 if [ ! -d "$CLAUDE_SKILL_DIR" ]; then
   echo "Claude skill sources not found: $CLAUDE_SKILL_DIR" >&2
@@ -104,7 +110,8 @@ PY
     fi
   elif [ -f "$target" ]; then
     CURRENT_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-command-snapshot.XXXXXX")"
-    if run_publisher snapshot "$HOME_DIR" "$target_relative" "$CURRENT_SNAPSHOT"; then
+    if run_publisher snapshot "$HOME_DIR" "$target_relative" "$CURRENT_SNAPSHOT" \
+      --recovery-boundary "$TARGET_DIR"; then
       if is_known_shipped_copy "$CURRENT_SNAPSHOT" "$skill_name"; then
         run_publisher_and_count symlink "$HOME_DIR" "$target_relative" snapshot "$CURRENT_SNAPSHOT" "$skill_file"
       else
@@ -119,7 +126,8 @@ PY
         exit "$snapshot_status"
       fi
     fi
-    rm -f "$CURRENT_SNAPSHOT"
+    run_publisher snapshot-cleanup "$CURRENT_SNAPSHOT" || true
+    rm -f "$CURRENT_SNAPSHOT" "$CURRENT_SNAPSHOT.crosscheck-identity"
     CURRENT_SNAPSHOT=""
   else
     PRESERVED=$((PRESERVED + 1))

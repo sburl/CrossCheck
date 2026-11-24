@@ -722,58 +722,69 @@ for updater in "$REPO_ROOT/skill-sources/update-crosscheck.md" "$REPO_ROOT/claud
     exit 1
   fi
 done
-if ! grep -Fq '"$HOME/.gemini/settings.json"' "$REPO_ROOT/skill-sources/update-crosscheck.md"; then
-  echo "root updater no longer refreshes Gemini critical settings" >&2
-  exit 1
-fi
-python3 - "$REPO_ROOT/skill-sources/update-crosscheck.md" "$TEMP_DIR" <<'PY'
+python3 - "$REPO_ROOT" "$TEMP_DIR" <<'PY'
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-source = Path(sys.argv[1]).read_text()
-step = source.split("## Step 4:", 1)[1]
-start = step.index("```bash\n") + len("```bash\n")
-end = step.index("\n```", start)
-script = step[start:end]
-root = Path(sys.argv[2]) / "gemini-after-settings-failure"
-home = root / "home"
-checkout = root / "checkout"
-for app in (".claude", ".codex", ".gemini"):
-    app_dir = home / app
-    app_dir.mkdir(parents=True, exist_ok=True)
-    (app_dir / "settings.json").write_text("{}\n")
-helper = checkout / "scripts" / "sync-critical-settings.sh"
-helper.parent.mkdir(parents=True)
-helper.write_text(
-    "#!/usr/bin/env bash\n"
-    "set -e\n"
-    "app=$(basename \"$(dirname \"$1\")\")\n"
-    "printf '%s\\n' \"$app\" >> \"$SYNC_LOG\"\n"
-    "if [ \"$app\" = .claude ]; then exit 1; fi\n"
-    "if [ \"$app\" = .gemini ]; then : > \"$HOME/.gemini/refreshed\"; fi\n"
+repo = Path(sys.argv[1])
+scratch = Path(sys.argv[2])
+recipes = (
+    repo / "skill-sources/update-crosscheck.md",
+    repo / "claude/skill-sources/update-crosscheck.md",
+    repo / "codex/skill-sources/update-crosscheck.md",
+    repo / "codex/skills/update-crosscheck/SKILL.md",
 )
-helper.chmod(0o755)
-hook = checkout / "claude" / "scripts" / "install-supply-chain-hook.sh"
-hook.parent.mkdir(parents=True)
-hook.write_text("#!/usr/bin/env bash\nprintf called > \"$HOOK_CALLED\"\n")
-hook.chmod(0o755)
-env = os.environ.copy()
-env.update(
-    HOME=str(home),
-    CROSSCHECK_DIR=str(checkout),
-    SYNC_LOG=str(root / "sync.log"),
-    HOOK_CALLED=str(root / "hook-called"),
-)
-result = subprocess.run(["/bin/bash", "-c", script], env=env, capture_output=True, text=True)
-calls = (root / "sync.log").read_text().splitlines()
-if result.returncode == 0 or calls != [".claude", ".codex", ".gemini"]:
-    raise SystemExit(f"updater stopped before Gemini after a Claude sync error: {calls!r}; {result.stderr}")
-if not (home / ".gemini" / "refreshed").exists():
-    raise SystemExit("updater did not refresh Gemini settings after a Claude sync error")
-if (root / "hook-called").exists():
-    raise SystemExit("updater installed the Claude hook after Claude settings sync failed")
+for recipe in recipes:
+    source = recipe.read_text()
+    step = source.split("## Step 4:", 1)[1]
+    start = step.index("```bash\n") + len("```bash\n")
+    end = step.index("\n```", start)
+    script = step[start:end]
+    if '"$HOME/.gemini/settings.json"' not in script:
+        raise SystemExit(f"updater recipe no longer refreshes Gemini settings: {recipe}")
+    for failed_app in (".claude", ".codex"):
+        recipe_name = str(recipe.relative_to(repo)).replace("/", "-")
+        root = scratch / f"gemini-after-{failed_app[1:]}-failure-{recipe_name}"
+        home = root / "home"
+        checkout = root / "checkout"
+        for app in (".claude", ".codex", ".gemini"):
+            app_dir = home / app
+            app_dir.mkdir(parents=True, exist_ok=True)
+            (app_dir / "settings.json").write_text("{}\n")
+        helper = checkout / "scripts" / "sync-critical-settings.sh"
+        helper.parent.mkdir(parents=True)
+        helper.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -e\n"
+            "app=$(basename \"$(dirname \"$1\")\")\n"
+            "printf '%s\\n' \"$app\" >> \"$SYNC_LOG\"\n"
+            "if [ \"$app\" = \"$FAIL_APP\" ]; then exit 1; fi\n"
+            "if [ \"$app\" = .gemini ]; then : > \"$HOME/.gemini/refreshed\"; fi\n"
+        )
+        helper.chmod(0o755)
+        hook = checkout / "claude" / "scripts" / "install-supply-chain-hook.sh"
+        hook.parent.mkdir(parents=True)
+        hook.write_text("#!/usr/bin/env bash\nprintf called > \"$HOOK_CALLED\"\n")
+        hook.chmod(0o755)
+        env = os.environ.copy()
+        env.update(
+            HOME=str(home),
+            CROSSCHECK_DIR=str(checkout),
+            SYNC_LOG=str(root / "sync.log"),
+            HOOK_CALLED=str(root / "hook-called"),
+            FAIL_APP=failed_app,
+        )
+        result = subprocess.run(["/bin/bash", "-c", script], env=env, capture_output=True, text=True)
+        calls = (root / "sync.log").read_text().splitlines()
+        if result.returncode == 0 or calls != [".claude", ".codex", ".gemini"]:
+            raise SystemExit(f"{recipe} stopped before Gemini after {failed_app} sync failed: {calls!r}; {result.stderr}")
+        if not (home / ".gemini" / "refreshed").exists():
+            raise SystemExit(f"{recipe} did not refresh Gemini settings after {failed_app} sync failed")
+        hook_called = (root / "hook-called").exists()
+        if hook_called == (failed_app == ".claude"):
+            raise SystemExit(f"{recipe} installed or skipped the Claude hook incorrectly after {failed_app} failure")
 PY
 for drain_skill in "$REPO_ROOT/skill-sources/drain-repo.md" "$REPO_ROOT/claude/skill-sources/drain-repo.md" "$REPO_ROOT/codex/skill-sources/drain-repo.md" "$REPO_ROOT/codex/skills/drain-repo/SKILL.md"; do
   if grep -Fq 'core.hooksPath=/dev/null' "$drain_skill" || grep -Fq 'Merge is YOURS to execute' "$drain_skill"; then
@@ -824,7 +835,7 @@ printf 'user customization\n' > "$NATIVE_HOME/.codex/skills/drain-repo/SKILL.md"
 printf 'old shipped skill\n' > "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md"
 HOME="$NATIVE_HOME" bash "$NATIVE_REPO/codex/scripts/sync-managed-codex-skills.sh" "$NATIVE_REPO" "$NATIVE_HOME" > "$TEMP_DIR/codex-native-update.log" 2>&1
 NATIVE_RECOVERY_DIR="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$NATIVE_HOME/.crosscheck-recovery")"
-if ! grep -Fq "$NATIVE_RECOVERY_DIR/settings-" "$TEMP_DIR/codex-native-update.log"; then
+if ! grep -Eq "$NATIVE_RECOVERY_DIR/(settings|snapshot)-" "$TEMP_DIR/codex-native-update.log"; then
   echo "Codex native updater did not keep recovery outside its narrowed publisher root" >&2
   cat "$TEMP_DIR/codex-native-update.log" >&2
   exit 1
@@ -1024,6 +1035,119 @@ if not private_stage_observed:
 if list(private_stage_root.glob(".crosscheck-staging-*")):
     raise SystemExit("publisher left its private staging directory after success")
 
+# Snapshot files and intermediate command recovery directories must not keep
+# ACLs inherited from a permissive temporary or target parent on macOS.
+acl_temp_root = scratch / "acl-inherited-temp"
+acl_temp_root.mkdir()
+acl_temp_target_root = scratch / "acl-inherited-target"
+acl_temp_target_root.mkdir()
+acl_temp_target = acl_temp_target_root / "settings.json"
+acl_temp_target.write_text('{"acl":"private"}\n')
+acl_temp_snapshot = acl_temp_root / "settings-snapshot"
+acl_temp_snapshot.write_text("")
+acl_recovery_parent = scratch / "acl-inherited-recovery-parent"
+acl_recovery_parent.mkdir()
+if sys.platform == "darwin":
+    everyone_acl = "everyone allow list,search,readattr,readextattr,readsecurity,file_inherit,directory_inherit"
+    subprocess.run(["/bin/chmod", "+a", everyone_acl, str(acl_temp_root)], check=True)
+    subprocess.run(["/bin/chmod", "+a", everyone_acl, str(acl_recovery_parent)], check=True)
+acl_stage = acl_temp_root / "settings-stage"
+acl_stage_fd = os.open(acl_stage, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+os.close(acl_stage_fd)
+subprocess.run([sys.executable, sys.argv[1], "private-file", str(acl_stage)], check=True)
+acl_stage.write_text('{"staged":"private"}\n')
+if sys.platform == "darwin":
+    stage_acl = subprocess.run(["/bin/ls", "-le", str(acl_stage)], capture_output=True, text=True, check=True).stdout
+    if "everyone" in stage_acl:
+        raise SystemExit("private settings stage retained an inherited ACL")
+if not module.snapshot_file(str(acl_temp_target_root), "settings.json", str(acl_temp_snapshot), private=True):
+    raise SystemExit("atomic publisher could not create a snapshot in the ACL fixture")
+if sys.platform == "darwin":
+    for private_file in (acl_temp_snapshot, Path(module._snapshot_identity_path(str(acl_temp_snapshot)))):
+        listing = subprocess.run(["/bin/ls", "-le", str(private_file)], capture_output=True, text=True, check=True).stdout
+        if "everyone" in listing:
+            raise SystemExit(f"private snapshot retained an inherited ACL: {private_file}")
+    recovery_parent_fd = os.open(acl_recovery_parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    recovery_fd, recovery_name, _ = module._new_recovery_directory(recovery_parent_fd, str(acl_recovery_parent))
+    try:
+        recovery_listing = subprocess.run(
+            ["/bin/ls", "-le", str(acl_recovery_parent / recovery_name)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        if "everyone" in recovery_listing:
+            raise SystemExit("command recovery directory retained an inherited ACL")
+    finally:
+        os.close(recovery_fd)
+        os.rmdir(acl_recovery_parent / recovery_name)
+        os.close(recovery_parent_fd)
+module.cleanup_snapshot(str(acl_temp_snapshot))
+
+# A command migration uses the commands directory as the recovery boundary so
+# a normal home directory remains writable as the private recovery location.
+command_boundary_home = scratch / "command-recovery-boundary-home"
+command_boundary_home_real = command_boundary_home.resolve()
+command_boundary_dir = command_boundary_home / ".claude/commands"
+command_boundary_dir.mkdir(parents=True)
+command_boundary_target = command_boundary_dir / "managed.md"
+command_boundary_target.write_text("managed command\n")
+command_boundary_snapshot = scratch / "command-recovery-boundary-snapshot"
+command_boundary_snapshot.write_text("")
+real_expanduser = module.os.path.expanduser
+real_open_private_recovery = module._open_private_recovery_directory
+recovery_candidates = []
+
+def fixture_home(_path):
+    return str(command_boundary_home_real)
+
+def only_home_recovery(candidate, target_device):
+    recovery_candidates.append(candidate)
+    if candidate != str(command_boundary_home_real):
+        raise PermissionError("simulated non-writable system recovery ancestor")
+    return real_open_private_recovery(candidate, target_device)
+
+module.os.path.expanduser = fixture_home
+module._open_private_recovery_directory = only_home_recovery
+try:
+    if not module.snapshot_file(
+        str(command_boundary_home),
+        ".claude/commands/managed.md",
+        str(command_boundary_snapshot),
+        recovery_boundary=str(command_boundary_dir),
+    ):
+        raise SystemExit("Claude command snapshot failed despite its safe home recovery boundary")
+finally:
+    module.os.path.expanduser = real_expanduser
+    module._open_private_recovery_directory = real_open_private_recovery
+if not recovery_candidates or recovery_candidates[0] != str(command_boundary_home_real):
+    raise SystemExit("Claude command snapshot did not use the home recovery location")
+command_boundary_backup = Path(str(module._read_snapshot_metadata(str(command_boundary_snapshot))["recovery_path"]))
+if command_boundary_backup.parent != command_boundary_home_real / ".crosscheck-recovery":
+    raise SystemExit("Claude command snapshot recovery escaped its private home location")
+module.cleanup_snapshot(str(command_boundary_snapshot))
+
+# The narrower recovery boundary must not weaken no-follow traversal from HOME.
+command_symlink_home = scratch / "command-symlink-home"
+command_symlink_outside = scratch / "command-symlink-outside"
+command_symlink_outside.mkdir()
+(command_symlink_outside / "managed.md").write_text("outside command\n")
+command_symlink_home.mkdir()
+(command_symlink_home / ".claude").symlink_to(command_symlink_outside, target_is_directory=True)
+try:
+    module.snapshot_file(
+        str(command_symlink_home),
+        ".claude/managed.md",
+        str(scratch / "command-symlink-snapshot"),
+        recovery_boundary=str(command_symlink_outside),
+    )
+except OSError:
+    pass
+else:
+    raise SystemExit("Claude command snapshot followed a symlink from HOME")
+if (command_symlink_outside / "managed.md").read_text() != "outside command\n":
+    raise SystemExit("Claude command snapshot modified its symlink destination")
+
 # The CLI must reject a byte-identical replacement made after the snapshot.
 # Its inode identity is part of the snapshot contract, not just the contents.
 snapshot_identity_root = scratch / "snapshot-identity-race"
@@ -1075,10 +1199,65 @@ if Path(recovery_line.removeprefix("preserved concurrent file at ")).read_text()
     raise SystemExit("publisher did not retain the snapshotted inode for a late save")
 snapshot_identity_open.close()
 
+# The command-link publisher must enforce the snapshot inode, not only its
+# bytes, when a same-content command replaces the original after snapshot.
+command_identity_home = scratch / "command-identity-race-home"
+command_identity_dir = command_identity_home / ".claude/commands"
+command_identity_dir.mkdir(parents=True)
+command_identity_target = command_identity_dir / "managed.md"
+command_identity_target.write_text("same command bytes\n")
+command_identity_open = command_identity_target.open("r+")
+command_identity_snapshot = scratch / "command-identity-snapshot"
+command_identity_snapshot.write_text("")
+command_identity_source = scratch / "command-identity-source.md"
+command_identity_source.write_text("managed command source\n")
+if not module.snapshot_file(
+    str(command_identity_home),
+    ".claude/commands/managed.md",
+    str(command_identity_snapshot),
+    recovery_boundary=str(command_identity_dir),
+):
+    raise SystemExit("atomic publisher could not snapshot the Claude command identity fixture")
+command_replacement = command_identity_dir / "replacement.md"
+command_replacement.write_text("same command bytes\n")
+command_replacement.replace(command_identity_target)
+command_link_result = subprocess.run(
+    [
+        sys.executable,
+        sys.argv[1],
+        "symlink",
+        str(command_identity_home),
+        ".claude/commands/managed.md",
+        "snapshot",
+        str(command_identity_snapshot),
+        str(command_identity_source),
+    ],
+    capture_output=True,
+    text=True,
+)
+if command_link_result.returncode != 3 or "inode changed since snapshot" not in command_link_result.stderr:
+    raise SystemExit(f"Claude command publisher accepted a byte-identical replacement: {command_link_result.stderr}")
+if command_identity_target.is_symlink() or command_identity_target.read_text() != "same command bytes\n":
+    raise SystemExit("Claude command publisher changed the byte-identical replacement")
+command_recovery_line = next(
+    (line for line in command_link_result.stderr.splitlines() if line.startswith("preserved concurrent file at ")),
+    None,
+)
+if command_recovery_line is None:
+    raise SystemExit("Claude command publisher did not report its snapshot-time recovery link")
+command_identity_open.seek(0)
+command_identity_open.truncate()
+command_identity_open.write("late save through original command inode\n")
+command_identity_open.flush()
+command_identity_open.close()
+if Path(command_recovery_line.removeprefix("preserved concurrent file at ")).read_text() != "late save through original command inode\n":
+    raise SystemExit("Claude command migration lost a late save to the snapshotted inode")
+
 cleanup_snapshot_root = scratch / "unused-snapshot-cleanup"
 cleanup_snapshot_root.mkdir()
 cleanup_snapshot_target = cleanup_snapshot_root / "settings.json"
 cleanup_snapshot_target.write_text('{"cleanup":"unchanged"}\n')
+cleanup_snapshot_open = cleanup_snapshot_target.open("r+")
 cleanup_snapshot_copy = scratch / "unused-snapshot-copy"
 cleanup_snapshot_copy.write_text("")
 if not module.snapshot_file(str(cleanup_snapshot_root), "settings.json", str(cleanup_snapshot_copy)):
@@ -1087,9 +1266,18 @@ cleanup_metadata = module._read_snapshot_metadata(str(cleanup_snapshot_copy))
 cleanup_backup = Path(str(cleanup_metadata["recovery_path"]))
 if not cleanup_backup.exists():
     raise SystemExit("snapshot did not pin its target inode in recovery storage")
-module.cleanup_snapshot(str(cleanup_snapshot_copy))
-if cleanup_backup.exists():
-    raise SystemExit("unused snapshot cleanup left a stale recovery link")
+if module.cleanup_snapshot(str(cleanup_snapshot_copy)) != str(cleanup_backup):
+    raise SystemExit("unused snapshot cleanup did not report its retained recovery link")
+replacement_settings = cleanup_snapshot_root / "replacement.json"
+replacement_settings.write_text('{"cleanup":"unchanged"}\n')
+replacement_settings.replace(cleanup_snapshot_target)
+cleanup_snapshot_open.seek(0)
+cleanup_snapshot_open.truncate()
+cleanup_snapshot_open.write('{"cleanup":"late save"}\n')
+cleanup_snapshot_open.flush()
+cleanup_snapshot_open.close()
+if not cleanup_backup.exists() or cleanup_backup.read_text() != '{"cleanup":"late save"}\n':
+    raise SystemExit("unused snapshot cleanup discarded the only recovery link for a late save")
 
 settings_dir = scratch / ".claude"
 settings_dir.mkdir()
@@ -1437,8 +1625,8 @@ cross_volume_snapshot.write_text('{"crossVolume":"original"}\n')
 cross_volume_stage.write_text('{"crossVolume":"updated"}\n')
 real_open_recovery = module._open_stable_recovery_directory
 
-def force_cross_volume(root_path, parent_path, target_device):
-    return real_open_recovery(root_path, parent_path, -1)
+def force_cross_volume(root_path, parent_path, target_device, recovery_boundary=None):
+    return real_open_recovery(root_path, parent_path, -1, recovery_boundary)
 
 module._open_stable_recovery_directory = force_cross_volume
 try:
@@ -1449,7 +1637,7 @@ try:
         str(cross_volume_stage),
     )
 except OSError as error:
-    if error.errno != errno.EXDEV or "refusing to replace settings" not in str(error):
+    if error.errno != errno.EXDEV or "refusing to update" not in str(error):
         raise
 else:
     raise SystemExit("publisher did not fail safely when no same-volume recovery path exists")
@@ -1849,7 +2037,9 @@ rollback_failure_target = rollback_failure_dir / "settings.json"
 rollback_failure_snapshot = scratch / "rollback-failure-snapshot.json"
 rollback_failure_stage = scratch / "rollback-failure-stage.json"
 rollback_failure_target.write_text('{"setting":"original"}\n')
-rollback_failure_snapshot.write_text('{"setting":"original"}\n')
+rollback_failure_snapshot.write_text("")
+if not module.snapshot_file(str(rollback_failure_dir), "settings.json", str(rollback_failure_snapshot)):
+    raise SystemExit("could not create rollback-failure snapshot")
 rollback_failure_stage.write_text('{"setting":"updated"}\n')
 real_verify = module._verify_parent_path
 verify_calls = [0]
@@ -2002,7 +2192,14 @@ symlink_rollback_target = symlink_rollback_home / ".claude/commands/managed.md"
 symlink_rollback_snapshot = scratch / "symlink-rollback-snapshot.md"
 symlink_rollback_source = scratch / "symlink-rollback-source.md"
 symlink_rollback_target.write_text("old command\n")
-symlink_rollback_snapshot.write_text("old command\n")
+symlink_rollback_snapshot.write_text("")
+if not module.snapshot_file(
+    str(symlink_rollback_home),
+    ".claude/commands/managed.md",
+    str(symlink_rollback_snapshot),
+    recovery_boundary=str(symlink_rollback_target.parent),
+):
+    raise SystemExit("could not create managed-command rollback snapshot")
 symlink_rollback_source.write_text("new command\n")
 real_verify = module._verify_parent_path
 real_fsync = module.os.fsync
@@ -2085,7 +2282,17 @@ moved_commands_target = moved_commands_dir / "managed.md"
 moved_commands_snapshot = scratch / "moved-commands-snapshot.md"
 moved_commands_source = scratch / "moved-commands-source.md"
 moved_commands_target.write_text("old command\n")
-moved_commands_snapshot.write_text("old command\n")
+moved_commands_snapshot.write_text("")
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(moved_commands_home)
+if not module.snapshot_file(
+    str(moved_commands_home),
+    ".claude/commands/managed.md",
+    str(moved_commands_snapshot),
+    recovery_boundary=str(moved_commands_dir),
+):
+    raise SystemExit("could not create moved-command rollback snapshot")
+os.environ["HOME"] = previous_home
 moved_commands_source.write_text("new command\n")
 real_verify = module._verify_parent_path
 verify_calls = [0]
@@ -2098,7 +2305,6 @@ def move_commands_dir_after_link(root_fd, root_path, relative_target, parent_fd)
     return real_verify(root_fd, root_path, relative_target, parent_fd)
 
 module._verify_parent_path = move_commands_dir_after_link
-previous_home = os.environ["HOME"]
 os.environ["HOME"] = str(moved_commands_home)
 original_argv = module.sys.argv
 module.sys.argv = [
@@ -2113,7 +2319,7 @@ finally:
     module.sys.argv = original_argv
     module._verify_parent_path = real_verify
     os.environ["HOME"] = previous_home
-stable_command_backups = list((moved_commands_home / ".crosscheck-recovery").glob("settings-*.bak"))
+stable_command_backups = list((moved_commands_home / ".crosscheck-recovery").glob("snapshot-*.bak"))
 if not any(path.read_text() == "old command\n" for path in stable_command_backups):
     raise SystemExit("moved Claude command did not retain its stable recovery copy")
 if moved_commands_target.exists() or moved_commands_target.is_symlink():
@@ -2324,8 +2530,17 @@ rollback_recovery_target = rollback_recovery_root / "settings.json"
 rollback_recovery_snapshot = scratch / "rollback-recovery-snapshot.json"
 rollback_recovery_stage = scratch / "rollback-recovery-stage.json"
 rollback_recovery_target.write_text('{"setting":"original"}\n')
-rollback_recovery_snapshot.write_text('{"setting":"original"}\n')
+rollback_recovery_snapshot.write_text("")
 rollback_recovery_stage.write_text('{"setting":"updated"}\n')
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(rollback_recovery_home)
+try:
+    if not module.snapshot_file(
+        str(rollback_recovery_root), "settings.json", str(rollback_recovery_snapshot)
+    ):
+        raise SystemExit("could not create rollback-recovery snapshot")
+finally:
+    os.environ["HOME"] = previous_home
 real_exchange = module._rename_exchange
 exchange_calls = [0]
 
@@ -2377,8 +2592,15 @@ late_rollback_target = late_rollback_root / "settings.json"
 late_rollback_snapshot = scratch / "late-rollback-snapshot.json"
 late_rollback_stage = scratch / "late-rollback-stage.json"
 late_rollback_target.write_text('{"lateRollback":"original"}\n')
-late_rollback_snapshot.write_text('{"lateRollback":"original"}\n')
+late_rollback_snapshot.write_text("")
 late_rollback_stage.write_text('{"lateRollback":"updated"}\n')
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(late_rollback_home)
+try:
+    if not module.snapshot_file(str(late_rollback_root), "settings.json", str(late_rollback_snapshot)):
+        raise SystemExit("could not create late-rollback snapshot")
+finally:
+    os.environ["HOME"] = previous_home
 real_verify = module._verify_parent_path
 verify_calls = [0]
 
@@ -2436,9 +2658,16 @@ unlink_error_target = unlink_error_root / "settings.json"
 unlink_error_snapshot = scratch / "unlink-error-snapshot.json"
 unlink_error_stage = scratch / "unlink-error-stage.json"
 unlink_error_target.write_text('{"unlinkError":"original"}\n')
-unlink_error_snapshot.write_text('{"unlinkError":"original"}\n')
+unlink_error_snapshot.write_text("")
 unlink_error_stage.write_text('{"unlinkError":"updated"}\n')
 unlink_error_original_identity = (unlink_error_target.stat().st_dev, unlink_error_target.stat().st_ino)
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(unlink_error_home)
+try:
+    if not module.snapshot_file(str(unlink_error_root), "settings.json", str(unlink_error_snapshot)):
+        raise SystemExit("could not create unlink-error snapshot")
+finally:
+    os.environ["HOME"] = previous_home
 real_unlink = module.os.unlink
 
 def fail_publisher_stage_unlink(path, *args, **kwargs):
@@ -2492,8 +2721,15 @@ backup_rollback_stage = scratch / "backup-rollback-stage.json"
 backup_rollback_original = '{"backupRollback":"original"}\n'
 backup_rollback_updated = '{"backupRollback":"updated"}\n'
 backup_rollback_target.write_text(backup_rollback_original)
-backup_rollback_snapshot.write_text(backup_rollback_original)
+backup_rollback_snapshot.write_text("")
 backup_rollback_stage.write_text(backup_rollback_updated)
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(backup_rollback_home)
+try:
+    if not module.snapshot_file(str(backup_rollback_root), "settings.json", str(backup_rollback_snapshot)):
+        raise SystemExit("could not create backup-rollback snapshot")
+finally:
+    os.environ["HOME"] = previous_home
 real_verify = module._verify_parent_path
 verify_calls = [0]
 

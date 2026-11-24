@@ -59,6 +59,7 @@ if ! jq -s -e '
 fi
 
 TEMP_FILE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-settings-stage.XXXXXX")"
+python3 "$PUBLISH_HELPER" private-file "$TEMP_FILE"
 
 if ! jq --arg hook "$HOOK_COMMAND" --argjson rules '[
   "Bash(gh*--admin*)",

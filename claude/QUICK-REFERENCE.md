@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-11-23-22-13
 
 Complete reference tables for daily workflow.
 
@@ -16,7 +16,7 @@ When user requests these tasks, invoke the corresponding skill:
 | "create pr", "submit pr", "open pr" | `/submit-pr` | Complete workflow: techdebt → pre-check → PR → Claude review |
 | "commit", "save changes" | `/commit-smart` | Good commit messages, reviews changes |
 | Complex task (>3 files) | `/plan` | Design before implementation |
-| "have Claude do X" | `/claude-delegate` | Proper context injection |
+| "have Claude do X" | `/codex-delegate` | Proper context injection |
 | "have Gemini do X" | `/gemini-delegate` | Proper context injection |
 | "get opinions", "ask other models" | `/ensemble-opinion` | Multi-model perspectives |
 | "review", "Claude review" | `/pr-review` | Standard Claude review handoff |
@@ -33,6 +33,10 @@ When user requests these tasks, invoke the corresponding skill:
 | "setup automation" | `/setup-automation` | Install hooks + CI |
 | "customize statusline" | `/setup-statusline` | Configure status bar |
 | "do the work", "process tasks" | `/do-work` | Process task queue from do-work/ folder |
+| "update crosscheck", "update skills" | `/update-crosscheck` | Pull latest from main, sync skills and agents |
+| "repo memory", "napkin", "record a recurring gotcha" | `/napkin` | Read or update per-repo behavioral memory |
+| "triage repo", "triage Linear queue", "intake sweep" | `/triage-repo` | Autonomous Linear intake triage and queue allocation for a target repo |
+| "drain repo", "drain approved PRs", "merge wave" | `/drain-repo` | Drain review-approved PRs for a repo via integration-branch process |
 | "cleanup garbage" | `/garbage-collect` | Review /garbage folder |
 | "usage", "tokens", "how much AI", "spending" | `/ai-usage` | Token usage, cost, and impact dashboard |
 | "test webapp", "browser test", "screenshot" | `/webapp-test` | Automated Playwright-based web app testing |
@@ -63,7 +67,7 @@ When user requests these tasks, invoke the corresponding skill:
 | **Claude review** | Auto loop - fix issues autonomously |
 | **Stuck 10+ rounds** | Ask user for input |
 | **Every 3 PRs** | INVOKE `/repo-assessment` → refactor PR |
-| **Delegate to Claude** | INVOKE `/claude-delegate` with context |
+| **Delegate to Claude** | INVOKE `/codex-delegate` with context |
 | **Delegate to Gemini** | INVOKE `/gemini-delegate` with context |
 | **Multiple AI opinions** | INVOKE `/ensemble-opinion` |
 | **Parallel work needed** | INVOKE `/create-worktree` |
@@ -238,9 +242,9 @@ mv old-file.js garbage/
 
 | Skill | When to Use | What It Does |
 |-------|-------------|--------------|
-| `/claude-delegate` | User says "have Claude X" | Injects CLAUDE.md context, runs Claude autonomously |
+| `/codex-delegate` | User says "have Claude X" | Injects CLAUDE.md context, runs Claude autonomously |
 | `/gemini-delegate` | User says "have Gemini X" | Injects CLAUDE.md context, runs Gemini autonomously |
-| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Claude + Codex + Gemini |
+| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Claude + Gemini + Critic |
 | `/pr-review` | Manual PR review needed | Standard Claude review handoff workflow |
 | `/repo-assessment` | Every 3 PRs | Comprehensive Claude analysis of repo state |
 | `/security-review` | Every 3 PRs (waterfall) or on demand | Dependency audit, secrets scan, trust model check |
@@ -258,6 +262,8 @@ mv old-file.js garbage/
 | `/list-worktrees` | Check active worktrees | Shows all worktrees with status |
 | `/cleanup-worktrees` | Remove old worktrees | Deletes merged/abandoned worktrees |
 | `/cleanup-branches` | Delete old branches | Generates batch script for safe branch deletion |
+| `/cleanup-stashes` | Review stashes | Flags orphaned/superseded/stale stashes, generates drop script |
+| `/cleanup-all` | Full git cleanup | Chains worktrees → branches → stashes with combined summary |
 | `/commit-smart` | User wants commit | Creates good commit message, reviews changes |
 
 ### Development
@@ -267,6 +273,26 @@ mv old-file.js garbage/
 | `/plan` | Complex task (>3 files) | Enters plan mode, designs before implementation |
 | `/do-work` | Process task queue | Reads do-work/ folder, executes tasks autonomously |
 | `/doc-timestamp` | Modified .md file | Updates "Last Updated:" timestamp |
+
+### Repo Operations
+
+| Skill | When to Use | What It Does |
+|-------|-------------|--------------|
+| `/drain-repo` | Drain review-approved PRs | Validates the integration branch and drains approved PRs in waves |
+| `/triage-repo` | Triage a repo's Linear intake | Dedupes, enriches, and routes issues for a supported repo |
+
+### CrossCheck Maintenance
+
+| Skill | When to Use | What It Does |
+|-------|-------------|--------------|
+| `/napkin` | Record or review recurring repo-specific gotchas | Reads and updates `.claude/napkin.md` |
+| `/update-crosscheck` | Update the installed workflow | Pulls the latest CrossCheck files and syncs skills and agents |
+
+### Knowledge Capture
+
+| Skill | When to Use | What It Does |
+|-------|-------------|--------------|
+| `/capture-skill` | Reusable discovery from a session | Distills discoveries into a reusable skill |
 
 ### Analytics
 

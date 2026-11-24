@@ -1,7 +1,7 @@
 # Advanced CrossCheck Configuration
 
 **Created:** 2026-02-09-16-52
-**Last Updated:** 2026-02-16-00-00
+**Last Updated:** 2026-11-23-15-54
 
 Deep customization, multi-agent workflows, and power-user features.
 
@@ -17,14 +17,14 @@ Use Claude for security reviews, architecture analysis, and deep code inspection
 
 ```bash
 # In Claude:
-/claude-delegate "Review PR #42 for security vulnerabilities"
-/claude-delegate "Analyze database schema for optimization opportunities"
-/claude-delegate "Identify code duplication across the codebase"
+/codex-delegate "Review PR #42 for security vulnerabilities"
+/codex-delegate "Analyze database schema for optimization opportunities"
+/codex-delegate "Identify code duplication across the codebase"
 ```
 
 **How it works:**
 1. Claude reads CLAUDE.md and injects context
-2. Claude runs autonomously with `--full-auto` flag
+2. Claude runs in print mode with `claude -p --permission-mode acceptEdits`
 3. Results reported back to Claude
 4. Claude continues with Claude findings
 

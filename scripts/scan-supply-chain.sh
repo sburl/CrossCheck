@@ -246,7 +246,7 @@ scan_cargo_toml() {
         name=$(echo "$line" | sed -nE 's/^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*=[[:space:]]*".*".*/\1/p')
         if [ -n "$name" ]; then
             spec=$(echo "$line" | sed -nE 's/^[[:space:]]*[A-Za-z0-9_-]+[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p')
-            case "$name" in name|version|edition|authors|description|license|readme|repository|homepage|documentation|keywords|categories|edition|rust-version|workspace)
+            case "$name" in name|version|edition|authors|description|license|readme|repository|homepage|documentation|keywords|categories|rust-version|workspace)
                 continue ;;
             esac
             check_known_bad cargo "$name"

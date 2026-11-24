@@ -1,7 +1,7 @@
 # CrossCheck Troubleshooting Guide
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-23-00-00
+**Last Updated:** 2026-11-24-00-39
 
 When automation fails, debug it here.
 
@@ -472,12 +472,12 @@ This is intentional. The command is blocked by your permissions settings.
 Skills aren't installed. Install them:
 
 ```bash
-# Copy skills from CrossCheck repo
-cp -R ~/Documents/Developer/CrossCheck/codex/skills/* ~/.codex/skills/
+# Safely sync managed Codex skills from CrossCheck
+bash ~/Documents/Developer/CrossCheck/codex/scripts/sync-managed-codex-skills.sh ~/Documents/Developer/CrossCheck "$HOME"
 
 # Verify installation
 find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
-# Should show 27 skills
+# The count depends on skipped skills and user-owned files.
 
 # Restart Codex
 # Skills should now be available

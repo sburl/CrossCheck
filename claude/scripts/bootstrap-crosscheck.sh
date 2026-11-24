@@ -17,7 +17,7 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/CLAUDE.md" ]; then
     # Running from cloned repo - multi-project mode
     INSTALL_MODE="multi-project"
     CROSSCHECK_DIR="$SCRIPT_DIR"
-    PROJECTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+    PROJECTS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
     echo "📍 Multi-project mode detected"
     echo "   CrossCheck: $CROSSCHECK_DIR"
     echo "   Projects folder: $PROJECTS_DIR"
@@ -28,6 +28,13 @@ else
     CROSSCHECK_DIR="$HOME/.crosscheck"
     echo "📍 Traditional mode (installing to ~/.crosscheck)"
     echo ""
+fi
+
+# In multi-project mode this script lives under the Claude mirror; in a
+# traditional install CROSSCHECK_DIR is the repository root.
+CROSSCHECK_ROOT_DIR="$CROSSCHECK_DIR"
+if [ ! -d "$CROSSCHECK_ROOT_DIR/claude/skill-sources" ] && [ -d "$CROSSCHECK_DIR/../claude/skill-sources" ]; then
+    CROSSCHECK_ROOT_DIR="$(cd "$CROSSCHECK_DIR/.." && pwd)"
 fi
 
 # Migrate from legacy Claude-era ~/.claude/CrossCheck location
@@ -87,51 +94,65 @@ if [ "$INSTALL_MODE" = "multi-project" ]; then
     echo ""
 fi
 
+# This entry point is stored under the Claude mirror in multi-project mode,
+# but the traditional installation places CrossCheck at the repository root.
+CLAUDE_INSTALL_DIR="$CROSSCHECK_ROOT_DIR/claude"
+if [ ! -d "$CLAUDE_INSTALL_DIR/scripts" ] && [ -d "$CROSSCHECK_DIR/scripts" ]; then
+    CLAUDE_INSTALL_DIR="$CROSSCHECK_DIR"
+fi
+SUPPLY_CHAIN_INSTALLER="$CLAUDE_INSTALL_DIR/scripts/install-supply-chain-hook.sh"
+SUPPLY_CHAIN_HOOK="$CLAUDE_INSTALL_DIR/scripts/preuse-supply-chain-gate.sh"
+if [ ! -x "$SUPPLY_CHAIN_INSTALLER" ] || [ ! -x "$SUPPLY_CHAIN_HOOK" ]; then
+    echo "   ❌ Claude supply-chain hook installer or gate is missing under $CLAUDE_INSTALL_DIR/scripts" >&2
+    exit 1
+fi
+
 # 3. Copy settings template if needed
 echo "📝 Step 3: Configure settings..."
-if [ ! -f "$HOME/.claude/settings.json" ]; then
-    echo "   Creating ~/.claude/settings.json from template..."
-    mkdir -p "$HOME/.claude"  # Ensure directory exists
-    cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.claude/settings.json"
-    echo "   ⚠️  TODO: Edit ~/.claude/settings.json to customize for your stack"
-    echo "      Remove Spencer's commands (claude*, dailybrief*) and add yours"
-else
+SETTINGS_FILE="$HOME/.claude/settings.json"
+PENDING_SETTINGS_FILE=""
+if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
     echo "   ✅ Settings already exist at ~/.claude/settings.json"
+    SETTINGS_TO_INSTALL="$SETTINGS_FILE"
+else
+    echo "   Preparing settings.json from the template..."
+    if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" ensure-directory "$HOME" ".claude"; then
+        echo "❌ Could not safely create $HOME/.claude" >&2
+        exit 1
+    fi
+    PENDING_SETTINGS_FILE="$(mktemp "$HOME/.claude/.crosscheck-settings.XXXXXX")"
+    python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" private-file "$PENDING_SETTINGS_FILE"
+    SETTINGS_TEMPLATE="$CROSSCHECK_DIR/settings.template.json"
+    if [ ! -f "$SETTINGS_TEMPLATE" ]; then
+        SETTINGS_TEMPLATE="$CROSSCHECK_ROOT_DIR/settings.template.json"
+    fi
+    cp "$SETTINGS_TEMPLATE" "$PENDING_SETTINGS_FILE"
+    SETTINGS_TO_INSTALL="$PENDING_SETTINGS_FILE"
+fi
+echo ""
 
-    # Sync critical deny rules even when settings exist
-    echo "   Checking critical deny rules..."
-    CRITICAL_DENY_RULES=(
-        'Bash(gh*--admin*)'
-        'Bash(*--admin*)'
-        'Bash(gh api*rulesets*)'
-        'Bash(gh api*branches/*/protection*)'
-        'Bash(*graphql*BranchProtection*)'
-        'Bash(*graphql*Ruleset*)'
-    )
-
-    DENY_UPDATED=0
-    DENY_FAILED=0
-    for rule in "${CRITICAL_DENY_RULES[@]}"; do
-        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
-            if jq --arg r "$rule" '.permissions.deny += [$r]' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json.tmp" \
-                && mv "$HOME/.claude/settings.json.tmp" "$HOME/.claude/settings.json"; then
-                echo "   + Added critical deny rule: $rule"
-                DENY_UPDATED=$((DENY_UPDATED + 1))
-            else
-                echo "   ⚠️  Failed to add deny rule: $rule (jq or write error)"
-                DENY_FAILED=$((DENY_FAILED + 1))
-            fi
-        fi
-    done
-
-    if [ "$DENY_FAILED" -gt 0 ]; then
-        echo "   ⚠️  $DENY_FAILED deny rule(s) failed to sync — check settings.json is valid JSON"
-    elif [ "$DENY_UPDATED" -eq 0 ]; then
-        echo "   ✅ All critical deny rules present"
+# Keep the native Bash PreToolUse gate pointed at the Claude-maintained mirror.
+if ! "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_TO_INSTALL" "$SUPPLY_CHAIN_HOOK"; then
+    [ -z "$PENDING_SETTINGS_FILE" ] || rm -f "$PENDING_SETTINGS_FILE"
+    exit 1
+fi
+if [ -n "$PENDING_SETTINGS_FILE" ]; then
+    PUBLISH_HELPER="$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py"
+    if python3 "$PUBLISH_HELPER" publish "$HOME" ".claude/settings.json" --absent "$PENDING_SETTINGS_FILE"; then
+        rm -f "$PENDING_SETTINGS_FILE"
     else
-        echo "   ✅ Added $DENY_UPDATED critical security rule(s)"
+        PUBLISH_STATUS=$?
+        rm -f "$PENDING_SETTINGS_FILE"
+        if [ "$PUBLISH_STATUS" -eq 3 ] && [ -f "$SETTINGS_FILE" ]; then
+            echo "Settings appeared during setup; updating the existing file safely"
+            "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_FILE" "$SUPPLY_CHAIN_HOOK"
+        else
+            echo "Could not safely publish prepared settings at $SETTINGS_FILE" >&2
+            exit 1
+        fi
     fi
 fi
+echo "   ✅ Claude supply-chain hook points to $SUPPLY_CHAIN_HOOK"
 echo ""
 
 # 4. Install all hooks
@@ -163,17 +184,7 @@ if [ -f "$SKIP_FILE" ]; then
     SKIP_DISPLAY=$(sed 's/#.*//' "$SKIP_FILE" | xargs)
     [ -n "$SKIP_DISPLAY" ] && echo "   Skipping (per ~/.crosscheck/skip-skills): $SKIP_DISPLAY"
 fi
-# Copy skills but exclude INSTALL.md (meta-doc, not a skill) and any in skip list
-for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
-    skill_name="$(basename "$skill_file" .md)"
-    [ "$skill_name" = "INSTALL" ] && continue
-    if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
-        continue
-    fi
-    cp "$skill_file" "$HOME/.claude/commands/"
-done
-skill_count=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
-echo "   ✅ Installed $skill_count skills to ~/.claude/commands/"
+"$CROSSCHECK_ROOT_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_ROOT_DIR" "$HOME"
 echo ""
 
 # 6. Install TokenPrint (optional - for /ai-usage skill)

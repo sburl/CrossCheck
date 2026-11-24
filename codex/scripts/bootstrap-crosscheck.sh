@@ -1,10 +1,24 @@
 #!/bin/bash
 # CrossCheck Bootstrap - One command to set up everything
 # Usage:
-#   Method 1 (Multi-project): cd CrossCheck && ./scripts/bootstrap-crosscheck.sh
-#   Method 2 (Traditional): curl -fsSL https://raw.githubusercontent.com/sburl/CrossCheck/main/scripts/bootstrap-crosscheck.sh | bash
+#   Multi-project: cd CrossCheck && ./codex/scripts/bootstrap-crosscheck.sh
 
 set -e
+
+CODEX_AGENTS_TEMP_DIR=""
+CODEX_AGENTS_SNAPSHOT=""
+CODEX_AGENTS_PUBLISH_STARTED=0
+SETTINGS_STAGE=""
+cleanup_bootstrap_stages() {
+    if [ -n "$CODEX_AGENTS_SNAPSHOT" ] && [ "$CODEX_AGENTS_PUBLISH_STARTED" -eq 0 ] \
+        && [ -n "${CROSSCHECK_ROOT_DIR:-}" ]; then
+        python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" snapshot-cleanup \
+            "$CODEX_AGENTS_SNAPSHOT" || true
+    fi
+    [ -z "$CODEX_AGENTS_TEMP_DIR" ] || rm -rf "$CODEX_AGENTS_TEMP_DIR"
+    [ -z "$SETTINGS_STAGE" ] || rm -f "$SETTINGS_STAGE"
+}
+trap cleanup_bootstrap_stages EXIT
 
 echo "🚀 CrossCheck Bootstrap"
 echo "=================="
@@ -34,9 +48,9 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/CODEX.md" ]; then
     # Running from cloned repo - multi-project mode
     INSTALL_MODE="multi-project"
     CROSSCHECK_DIR="$SCRIPT_DIR"
-    PROJECTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+    PROJECTS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
     echo "📍 Multi-project mode detected"
-    echo "   CrossCheck: $CROSSCHECK_DIR"
+    echo "   Codex config: $CROSSCHECK_DIR"
     echo "   Projects folder: $PROJECTS_DIR"
     echo ""
 else
@@ -87,66 +101,140 @@ else
     echo ""
 fi
 
-# 2. Copy full CODEX.md to global location (multi-project mode only)
-if [ "$INSTALL_MODE" = "multi-project" ]; then
-    echo "📝 Step 2: Copy CODEX.md to global location..."
-
-    # Copy full CODEX.md to projects folder
-    if [ ! -f "$PROJECTS_DIR/CODEX.md" ]; then
-        cp "$CROSSCHECK_DIR/CODEX.md" "$PROJECTS_DIR/CODEX.md"
-        echo "   ✅ Copied CODEX.md to $PROJECTS_DIR/CODEX.md"
-        echo "   📖 Full workflow available globally"
-        echo "   📚 Supporting docs in CrossCheck/ (QUICK-REFERENCE.md, rules/, skills/)"
-    else
-        echo "   ℹ️  Global CODEX.md already exists"
-        echo "   💡 To update: cp $CROSSCHECK_DIR/CODEX.md $PROJECTS_DIR/CODEX.md"
-    fi
-    echo ""
+# Resolve the Codex-native files for either the multi-project or ~/.crosscheck layout.
+if [ -f "$CROSSCHECK_DIR/CODEX.md" ]; then
+    CODEX_SOURCE_DIR="$CROSSCHECK_DIR"
+else
+    CODEX_SOURCE_DIR="$CROSSCHECK_DIR/codex"
 fi
+if [ -f "$CROSSCHECK_DIR/VERSION" ]; then
+    CROSSCHECK_ROOT_DIR="$CROSSCHECK_DIR"
+else
+    CROSSCHECK_ROOT_DIR="$(cd "$CROSSCHECK_DIR/.." && pwd)"
+fi
+
+# 2. Install a managed pointer in Codex's discovered global instruction file.
+echo "📝 Step 2: Register the global Codex workflow..."
+CODEX_AGENTS_FILE="$HOME/.codex/AGENTS.md"
+CODEX_AGENTS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/crosscheck-codex-agents.XXXXXX")"
+python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" private-directory "$CODEX_AGENTS_TEMP_DIR"
+CODEX_AGENTS_SNAPSHOT="$(mktemp "$CODEX_AGENTS_TEMP_DIR/snapshot.XXXXXX")"
+CODEX_AGENTS_STAGE="$(mktemp "$CODEX_AGENTS_TEMP_DIR/stage.XXXXXX")"
+python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" private-file "$CODEX_AGENTS_SNAPSHOT"
+python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" private-file "$CODEX_AGENTS_STAGE"
+if python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" snapshot \
+    "$HOME/.codex" "AGENTS.md" "$CODEX_AGENTS_SNAPSHOT" --strict-root; then
+    CODEX_AGENTS_EXPECTED="$CODEX_AGENTS_SNAPSHOT"
+else
+    SNAPSHOT_STATUS=$?
+    if [ "$SNAPSHOT_STATUS" -ne 4 ]; then
+        echo "❌ Could not safely read $CODEX_AGENTS_FILE" >&2
+        exit 1
+    fi
+    CODEX_AGENTS_EXPECTED="--absent"
+fi
+python3 - "$CODEX_AGENTS_EXPECTED" "$CODEX_AGENTS_SNAPSHOT" "$CODEX_AGENTS_STAGE" "$CODEX_SOURCE_DIR/CODEX.md" <<'PY'
+from pathlib import Path
+import os
+import stat
+import sys
+
+expected_snapshot = sys.argv[1]
+snapshot_file = Path(sys.argv[2])
+stage_file = Path(sys.argv[3])
+workflow = Path(sys.argv[4]).expanduser().resolve()
+start = b"<!-- BEGIN CrossCheck managed workflow -->"
+end = b"<!-- END CrossCheck managed workflow -->"
+text = snapshot_file.read_bytes() if expected_snapshot != "--absent" else b""
+newline = b"\r\n" if b"\r\n" in text else b"\n"
+block = newline.join(
+    (
+        start,
+        f"Read and follow the CrossCheck Codex workflow at {workflow}".encode(),
+        end,
+    )
+)
+has_start = start in text
+has_end = end in text
+if has_start != has_end or text.count(start) > 1 or text.count(end) > 1:
+    raise SystemExit(f"Malformed CrossCheck workflow markers in {Path.home() / '.codex/AGENTS.md'}")
+if has_start:
+    start_index = text.index(start)
+    end_index = text.index(end, start_index) + len(end)
+    updated = text[:start_index] + block + text[end_index:]
+else:
+    if not text:
+        separator = b""
+    elif text.endswith(newline * 2):
+        separator = b""
+    elif text.endswith(newline):
+        separator = newline
+    else:
+        separator = newline * 2
+    updated = text + separator + block + newline
+stage_file.write_bytes(updated)
+if expected_snapshot != "--absent":
+    mode = stat.S_IMODE(snapshot_file.stat().st_mode)
+else:
+    current_umask = os.umask(0)
+    os.umask(current_umask)
+    mode = 0o666 & ~current_umask
+os.chmod(stage_file, mode)
+PY
+if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" ensure-directory \
+    "$HOME" ".codex"; then
+    echo "❌ Could not safely create $HOME/.codex" >&2
+    exit 1
+fi
+if [ "$CODEX_AGENTS_EXPECTED" != "--absent" ] \
+    && cmp -s "$CODEX_AGENTS_SNAPSHOT" "$CODEX_AGENTS_STAGE"; then
+    if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" snapshot-current \
+        "$HOME/.codex" "AGENTS.md" "$CODEX_AGENTS_SNAPSHOT"; then
+        echo "❌ Codex instructions changed during CrossCheck update; refusing to report current: $CODEX_AGENTS_FILE" >&2
+        exit 1
+    fi
+    echo "   ✅ CrossCheck workflow is already current in $CODEX_AGENTS_FILE"
+else
+    CODEX_AGENTS_PUBLISH_STARTED=1
+    if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
+        "$HOME/.codex" "AGENTS.md" "$CODEX_AGENTS_EXPECTED" "$CODEX_AGENTS_STAGE" --strict-root; then
+        echo "❌ Could not safely register workflow in $CODEX_AGENTS_FILE" >&2
+        exit 1
+    fi
+    echo "   ✅ Registered workflow in $CODEX_AGENTS_FILE"
+fi
+echo "   📖 Workflow source: $CODEX_SOURCE_DIR/CODEX.md"
+echo ""
 
 # 3. Copy settings template if needed
 echo "📝 Step 3: Configure settings..."
-if [ ! -f "$HOME/.codex/settings.json" ]; then
-    echo "   Creating ~/.codex/settings.json from template..."
-    mkdir -p "$HOME/.codex"  # Ensure directory exists
-    cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.codex/settings.json"
-    echo "   ⚠️  TODO: Edit ~/.codex/settings.json to customize for your stack"
-    echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
-else
+SETTINGS_FILE="$HOME/.codex/settings.json"
+if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
     echo "   ✅ Settings already exist at ~/.codex/settings.json"
-
-    # Sync critical deny rules even when settings exist
-    echo "   Checking critical deny rules..."
-    CRITICAL_DENY_RULES=(
-        'Bash(gh*--admin*)'
-        'Bash(*--admin*)'
-        'Bash(gh api*rulesets*)'
-        'Bash(gh api*branches/*/protection*)'
-        'Bash(*graphql*BranchProtection*)'
-        'Bash(*graphql*Ruleset*)'
-    )
-
-    DENY_UPDATED=0
-    DENY_FAILED=0
-    for rule in "${CRITICAL_DENY_RULES[@]}"; do
-        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$HOME/.codex/settings.json" >/dev/null 2>&1; then
-            if jq --arg r "$rule" '.permissions.deny += [$r]' "$HOME/.codex/settings.json" > "$HOME/.codex/settings.json.tmp" \
-                && mv "$HOME/.codex/settings.json.tmp" "$HOME/.codex/settings.json"; then
-                echo "   + Added critical deny rule: $rule"
-                DENY_UPDATED=$((DENY_UPDATED + 1))
-            else
-                echo "   ⚠️  Failed to add deny rule: $rule (jq or write error)"
-                DENY_FAILED=$((DENY_FAILED + 1))
-            fi
-        fi
-    done
-
-    if [ "$DENY_FAILED" -gt 0 ]; then
-        echo "   ⚠️  $DENY_FAILED deny rule(s) failed to sync — check settings.json is valid JSON"
-    elif [ "$DENY_UPDATED" -eq 0 ]; then
-        echo "   ✅ All critical deny rules present"
+    "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --strict-root
+else
+    echo "   Creating ~/.codex/settings.json from template..."
+    if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" ensure-directory "$HOME" ".codex"; then
+        echo "❌ Could not safely create $HOME/.codex" >&2
+        exit 1
+    fi
+    SETTINGS_STAGE="$(mktemp "$HOME/.codex/.crosscheck-settings.XXXXXX")"
+    python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" private-file "$SETTINGS_STAGE"
+    cp "$CROSSCHECK_ROOT_DIR/codex/settings.template.json" "$SETTINGS_STAGE"
+    "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_STAGE"
+    if python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
+        "$HOME/.codex" "settings.json" --absent "$SETTINGS_STAGE" --strict-root; then
+        echo "   ⚠️  TODO: Edit ~/.codex/settings.json to customize for your stack"
+        echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
     else
-        echo "   ✅ Added $DENY_UPDATED critical security rule(s)"
+        PUBLISH_STATUS=$?
+        if [ "$PUBLISH_STATUS" -eq 3 ] && [ -f "$SETTINGS_FILE" ]; then
+            echo "   Settings appeared during setup; updating the existing file safely"
+            "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --strict-root
+        else
+            echo "   ❌ Could not safely create ~/.codex/settings.json" >&2
+            exit 1
+        fi
     fi
 fi
 echo ""
@@ -168,25 +256,7 @@ fi
 
 # 5. Install skills (Codex format)
 echo "📝 Step 5: Install skills..."
-mkdir -p "$HOME/.codex/skills"
-# Load skip list (one skill name per line, e.g. "ai-usage")
-SKIP_FILE="$HOME/.crosscheck/skip-skills"
-if [ -f "$SKIP_FILE" ]; then
-    # Strip comments and blank lines for display
-    SKIP_DISPLAY=$(sed 's/#.*//' "$SKIP_FILE" | xargs)
-    [ -n "$SKIP_DISPLAY" ] && echo "   Skipping (per ~/.crosscheck/skip-skills): $SKIP_DISPLAY"
-fi
-# Copy skill folders from skills/<name>/SKILL.md
-for skill_dir in "$CROSSCHECK_DIR/skills/"*; do
-    [ -d "$skill_dir" ] || continue
-    [ -f "$skill_dir/SKILL.md" ] || continue
-    skill_name="$(basename "$skill_dir")"
-    if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
-        continue
-    fi
-    mkdir -p "$HOME/.codex/skills/$skill_name"
-    cp -R "$skill_dir/." "$HOME/.codex/skills/$skill_name/"
-done
+bash "$CROSSCHECK_ROOT_DIR/codex/scripts/sync-managed-codex-skills.sh" "$CROSSCHECK_ROOT_DIR" "$HOME"
 skill_count=$(find "$HOME/.codex/skills" -mindepth 2 -maxdepth 2 -name SKILL.md 2>/dev/null | wc -l | tr -d ' ')
 echo "   ✅ Installed $skill_count skills to ~/.codex/skills/"
 echo ""
@@ -224,16 +294,16 @@ echo ""
 
 # 7. Install agents (optional)
 echo "📝 Step 7: Install agents..."
-if [ -d "$CROSSCHECK_DIR/agents" ]; then
+if [ -d "$CODEX_SOURCE_DIR/agents" ]; then
     mkdir -p "$HOME/.codex/agents"
-    if cp -r "$CROSSCHECK_DIR/agents/"* "$HOME/.codex/agents/" 2>/dev/null; then
+    if cp -r "$CODEX_SOURCE_DIR/agents/"* "$HOME/.codex/agents/" 2>/dev/null; then
         agent_count=$(ls "$HOME/.codex/agents/" 2>/dev/null | wc -l | tr -d ' ')
         echo "   ✅ Installed $agent_count agents to ~/.codex/agents/"
     else
         echo "   ⚠️  Failed to copy agents (check permissions)"
     fi
 else
-    echo "   ⚠️  No agents directory found in $CROSSCHECK_DIR"
+    echo "   ⚠️  No agents directory found in $CODEX_SOURCE_DIR"
 fi
 
 echo ""
@@ -244,7 +314,7 @@ echo ""
 echo "📚 What was installed:"
 if [ "$INSTALL_MODE" = "multi-project" ]; then
     echo "   • CrossCheck workflow at $CROSSCHECK_DIR"
-    echo "   • Global CODEX.md at $PROJECTS_DIR/CODEX.md"
+    echo "   • Global workflow pointer at $CODEX_AGENTS_FILE"
 else
     echo "   • CrossCheck workflow at ~/.crosscheck/"
 fi
@@ -262,14 +332,9 @@ echo "   1. Start Codex in any repo:"
 echo "      cd ~/your-project"
 echo "      codex"
 echo ""
-if [ "$INSTALL_MODE" = "multi-project" ]; then
-    echo "   2. Codex will automatically load CODEX.md workflow"
-    echo "      from $PROJECTS_DIR/CODEX.md (full workflow)"
-    echo "      Supporting docs: $CROSSCHECK_DIR/QUICK-REFERENCE.md, docs/rules/"
-else
-    echo "   2. Codex will automatically load CODEX.md workflow"
-    echo "      from ~/.crosscheck/"
-fi
+echo "   2. Codex will load the workflow through $CODEX_AGENTS_FILE"
+echo "      Source: $CODEX_SOURCE_DIR/CODEX.md"
+echo "      Supporting docs: $CROSSCHECK_ROOT_DIR/QUICK-REFERENCE.md, docs/rules/"
 echo ""
 echo "   3. Set up a repo for autonomous work:"
 echo "      codex '/setup-automation'"

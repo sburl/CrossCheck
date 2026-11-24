@@ -1,7 +1,7 @@
 # Installing Claude Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-11-23-23-00
 
 This directory contains all custom skill sources for Claude.
 
@@ -15,9 +15,9 @@ This directory contains all custom skill sources for Claude.
 # 1. Clone the CrossCheck repo to ~/.crosscheck
 git clone https://github.com/sburl/CrossCheck.git ~/.crosscheck
 
-# 2. Copy skills to ~/.claude/commands/
+# 2. Sync managed skills to ~/.claude/commands/
 mkdir -p ~/.claude/commands
-cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
+bash ~/.crosscheck/claude/scripts/sync-managed-claude-skills.sh ~/.crosscheck "$HOME"
 
 # 3. Verify installation
 ls ~/.claude/commands/
@@ -27,10 +27,10 @@ ls ~/.claude/commands/
 
 ```bash
 # Run this one-liner:
-mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/commands/
+mkdir -p ~/.claude/commands && bash ~/.crosscheck/claude/scripts/sync-managed-claude-skills.sh ~/.crosscheck "$HOME"
 ```
 
-## Available Skills (32 total)
+## Available Skills (34 total)
 
 ### PR Workflow (9)
 - `/submit-pr` - Automated PR submission with checks
@@ -44,7 +44,7 @@ mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/com
 - `/webapp-test` - Automated Playwright-based web app testing (screenshot, interact, visual regression)
 
 ### Agent Delegation (5)
-- `/claude-delegate` - Delegate task to Claude agent
+- `/codex-delegate` - Delegate task to Claude agent
 - `/gemini-delegate` - Delegate task to Gemini agent
 - `/ensemble-opinion` - Get multi-model opinions (Claude + Gemini + Critic)
 - `/pr-review` - Initiate autonomous PR review with Claude
@@ -64,19 +64,25 @@ mkdir -p ~/.claude/commands && cp ~/.crosscheck/skill-sources/*.md ~/.claude/com
 - `/commit-smart` - Atomic Git Commit
 - `/doc-timestamp` - Add/update timestamps in docs
 
-### Memory (2)
-- `/napkin` - Per-repo behavioral memory in `.claude/napkin.md` (corrections, gotchas)
-- `/capture-skill` - Extract a non-obvious discovery from this session as a reusable skill
+### Repo Operations (2)
+- `/drain-repo` - Drain review-approved PRs via integration-branch process (acorn|firehose|thriftfit|switchyard)
+- `/triage-repo` - Autonomous Linear intake triage and queue allocation for a target repo (acorn|firehose|thriftfit|switchyard)
+
+### Knowledge Capture (1)
+- `/capture-skill` - Distill session discoveries into reusable skills
 
 ### Analytics (1)
 - `/ai-usage` - Track token usage, costs, and environmental impact across Claude/Codex/Gemini
 
-### Setup (5)
+### Setup (4)
 - `/setup-automation` - Install all automation for new repo
 - `/setup-plugins` - Install Claude Code plugins alongside CrossCheck
 - `/setup-statusline` - Customize Claude statusline
 - `/garbage-collect` - Manage /garbage folder
-- `/update-crosscheck` - Update CrossCheck to the latest version
+
+### CrossCheck Maintenance (2)
+- `/napkin` - Read and update per-repo behavioral memory
+- `/update-crosscheck` - Pull the latest CrossCheck workflow and sync installed skills and agents
 
 ## Opting Out of Skills
 
@@ -133,7 +139,7 @@ git push
 ```
 ~/.claude/
 ├── commands/              ← Active skills (copied from CrossCheck/skill-sources/)
-│   └── *.md              ← 32 skill files
+│   └── *.md              ← 34 skill files
 └── settings.json         ← Global permissions
 
 ~/.crosscheck/                 ← Git repo (source of truth, traditional install)
@@ -143,7 +149,7 @@ git push
 ```
 
 **Why two locations?**
-- `~/.crosscheck/skill-sources/` - Version controlled source (traditional install)
+- `~/.crosscheck/claude/skill-sources/` - Version controlled source (traditional install)
 - `~/Documents/Developer/CrossCheck/skill-sources/` - Version controlled source (multi-project install)
 - `~/.claude/commands/` - Active skills Claude loads
 

@@ -1,7 +1,7 @@
 # CrossCheck Quick Reference
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-06-11-00-00
+**Last Updated:** 2026-11-23-23-01
 
 Complete reference tables for daily workflow.
 
@@ -16,7 +16,6 @@ When user requests these tasks, invoke the corresponding skill:
 | "create pr", "submit pr", "open pr" | `/submit-pr` | Complete workflow: techdebt → pre-check → PR → Peer review |
 | "commit", "save changes" | `/commit-smart` | Good commit messages, reviews changes |
 | Complex task (>3 files) | `/plan` | Design before implementation |
-| "have Claude do X" | `/claude-delegate` | Proper context injection |
 | "have Codex do X" | `/codex-delegate` | Proper context injection |
 | "have Gemini do X" | `/gemini-delegate` | Proper context injection |
 | "get opinions", "ask other models" | `/ensemble-opinion` | Multi-model perspectives |
@@ -36,6 +35,7 @@ When user requests these tasks, invoke the corresponding skill:
 | "setup automation" | `/setup-automation` | Install hooks + CI |
 | "customize statusline" | `/setup-statusline` | Configure status bar |
 | "do the work", "process tasks" | `/do-work` | Process task queue from do-work/ folder |
+| "repo memory", "napkin", "record a recurring gotcha" | `/napkin` | Read or update per-repo behavioral memory |
 | "drain repo", "drain approved PRs", "merge wave" | `/drain-repo` | Drain review-approved PRs for a repo via integration-branch process |
 | "triage repo", "triage Linear queue", "intake sweep" | `/triage-repo` | Autonomous Linear intake triage and queue allocation for a target repo |
 | "cleanup garbage" | `/garbage-collect` | Review /garbage folder |
@@ -69,9 +69,8 @@ When user requests these tasks, invoke the corresponding skill:
 | Peer review | Auto loop - fix issues autonomously |
 | Stuck 10+ rounds | Ask user for input |
 | Every 3 PRs | INVOKE `/repo-assessment` → refactor PR |
-| Delegate to Codex | INVOKE `/codex-delegate` with context |
 | Delegate to Gemini | INVOKE `/gemini-delegate` with context |
-| Delegate to Claude | INVOKE `/claude-delegate` with context |
+| Delegate to Codex | INVOKE `/codex-delegate` with context |
 | Multiple AI opinions | INVOKE `/ensemble-opinion` |
 
 | **Parallel work needed** | INVOKE `/create-worktree` |
@@ -248,7 +247,7 @@ mv old-file.js garbage/
 |-------|-------------|--------------|
 | `/codex-delegate` | User says "have Codex X" | Injects CLAUDE.md context, runs Codex autonomously |
 | `/gemini-delegate` | User says "have Gemini X" | Injects CLAUDE.md context, runs Gemini autonomously |
-| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Codex + Claude + Gemini |
+| `/ensemble-opinion` | Need multiple AI opinions | Gets opinions from Codex + Gemini + Critic |
 | `/pr-review` | Manual PR review needed | Standard Codex review handoff workflow |
 | `/repo-assessment` | Every 3 PRs | Comprehensive Codex analysis of repo state |
 | `/security-review` | Every 3 PRs (waterfall) or on demand | Dependency audit, secrets scan, trust model check |
@@ -283,7 +282,20 @@ mv old-file.js garbage/
 | Skill | When to Use | What It Does |
 |-------|-------------|-------------|
 | `/drain-repo` | Drain approved PRs for a repo | Partitions open PRs, validates combined CI, merges wave-by-wave (acorn\|firehose\|thriftfit\|switchyard) |
-| `/triage-repo` | Linear intake triage for a repo | Dedupes, marks stale, chains deps, enriches, routes to correct queue (acorn\|firehose\|thriftfit) |
+| `/triage-repo` | Linear intake triage for a repo | Dedupes, marks stale, chains deps, enriches, routes to correct queue (acorn\|firehose\|thriftfit\|switchyard) |
+
+### CrossCheck Maintenance
+
+| Skill | When to Use | What It Does |
+|-------|-------------|--------------|
+| `/napkin` | Record or review recurring repo-specific gotchas | Reads and updates `.claude/napkin.md` |
+| `/update-crosscheck` | Update the installed workflow | Pulls the latest CrossCheck files and syncs skills and agents |
+
+### Knowledge Capture
+
+| Skill | When to Use | What It Does |
+|-------|-------------|--------------|
+| `/capture-skill` | Reusable discovery from a session | Distills discoveries into a reusable skill |
 
 ### Analytics
 

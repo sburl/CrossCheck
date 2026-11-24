@@ -29,11 +29,26 @@ set -u
 
 input=$(cat)
 
-# Only gate Bash calls — let everything else pass.
-tool=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)
+if ! command -v jq >/dev/null 2>&1; then
+    echo "🛡️  Supply-chain gate: jq is unavailable; blocking because the tool call cannot be inspected." >&2
+    exit 2
+fi
+
+if ! printf '%s' "$input" | jq -e -s 'length == 1 and (.[0] | type == "object" and (.tool_name | type == "string"))' >/dev/null 2>&1; then
+    echo "🛡️  Supply-chain gate: invalid Claude hook payload; blocking because the tool call cannot be inspected." >&2
+    exit 2
+fi
+
+# Only gate Bash calls — let other valid tool calls pass.
+tool=$(printf '%s' "$input" | jq -r '.tool_name')
 [ "$tool" != "Bash" ] && exit 0
 
-cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
+if ! printf '%s' "$input" | jq -e '.tool_input | type == "object" and (.command | type == "string")' >/dev/null 2>&1; then
+    echo "🛡️  Supply-chain gate: invalid Bash tool payload; blocking because the command cannot be inspected." >&2
+    exit 2
+fi
+
+cmd=$(printf '%s' "$input" | jq -r '.tool_input.command')
 [ -z "$cmd" ] && exit 0
 
 # Allow override via env var. The model can request this in its tool input but it
@@ -54,7 +69,7 @@ esac
 
 # Pattern set for unsafe installs. Boundary-anchored to avoid matching inside strings.
 # We accept word boundaries before the verb (start, ;, &&, ||, |, $(, `, newline, space).
-unsafe='(^|[[:space:];&|`(])(npm[[:space:]]+(install|i|add|create)(\b|[[:space:]])|npm[[:space:]]+exec[[:space:]]|npx[[:space:]]+[^-]|pnpm[[:space:]]+(add|install)(\b|[[:space:]])|yarn[[:space:]]+add(\b|[[:space:]])|pip[[:space:]]+install(\b|[[:space:]])|pipx[[:space:]]+install(\b|[[:space:]])|uv[[:space:]]+add(\b|[[:space:]])|uv[[:space:]]+pip[[:space:]]+install(\b|[[:space:]])|cargo[[:space:]]+install(\b|[[:space:]])|gem[[:space:]]+install(\b|[[:space:]])|go[[:space:]]+install[[:space:]]+[a-zA-Z])'
+unsafe='(^|[[:space:];&|`(])(npm[[:space:]]+(install|i|add|create)([[:space:];&|<>)]|$)|npm[[:space:]]+exec[[:space:]]|npx[[:space:]]+[^-]|pnpm[[:space:]]+(add|install)([[:space:];&|<>)]|$)|yarn[[:space:]]+(add|install)([[:space:];&|<>)]|$)|pip[[:space:]]+install([[:space:];&|<>)]|$)|pipx[[:space:]]+install([[:space:];&|<>)]|$)|uv[[:space:]]+add([[:space:];&|<>)]|$)|uv[[:space:]]+pip[[:space:]]+install([[:space:];&|<>)]|$)|cargo[[:space:]]+install([[:space:];&|<>)]|$)|gem[[:space:]]+install([[:space:];&|<>)]|$)|go[[:space:]]+install[[:space:]]+[a-zA-Z])'
 
 if [[ "$cmd" =~ $unsafe ]]; then
     cat >&2 <<EOF

@@ -89,50 +89,56 @@ if [ "$INSTALL_MODE" = "multi-project" ]; then
 fi
 
 # 3. Copy settings template if needed
+SUPPLY_CHAIN_INSTALLER="$CROSSCHECK_DIR/claude/scripts/install-supply-chain-hook.sh"
+SUPPLY_CHAIN_HOOK="$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh"
+if [ ! -x "$SUPPLY_CHAIN_INSTALLER" ] || [ ! -x "$SUPPLY_CHAIN_HOOK" ]; then
+    echo "❌ Claude supply-chain hook installer or gate is missing under $CROSSCHECK_DIR/claude/scripts" >&2
+    exit 1
+fi
+
 echo "📝 Step 3: Configure settings..."
-if [ ! -f "$HOME/.claude/settings.json" ]; then
-    echo "   Creating ~/.claude/settings.json from template..."
-    mkdir -p "$HOME/.claude"  # Ensure directory exists
-    cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.claude/settings.json"
-    echo "   ⚠️  TODO: Edit ~/.claude/settings.json to customize for your stack"
-    echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
-else
+SETTINGS_FILE="$HOME/.claude/settings.json"
+PENDING_SETTINGS_FILE=""
+if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
     echo "   ✅ Settings already exist at ~/.claude/settings.json"
+    SETTINGS_TO_INSTALL="$SETTINGS_FILE"
+else
+    echo "   Preparing settings.json from the template..."
+    if ! python3 "$CROSSCHECK_DIR/scripts/atomic-publish-file.py" ensure-directory "$HOME" ".claude"; then
+        echo "❌ Could not safely create $HOME/.claude" >&2
+        exit 1
+    fi
+    PENDING_SETTINGS_FILE="$(mktemp "$HOME/.claude/.crosscheck-settings.XXXXXX")"
+    python3 "$CROSSCHECK_DIR/scripts/atomic-publish-file.py" private-file "$PENDING_SETTINGS_FILE"
+    cp "$CROSSCHECK_DIR/settings.template.json" "$PENDING_SETTINGS_FILE"
+    SETTINGS_TO_INSTALL="$PENDING_SETTINGS_FILE"
+fi
+echo ""
 
-    # Sync critical deny rules even when settings exist
-    echo "   Checking critical deny rules..."
-    CRITICAL_DENY_RULES=(
-        'Bash(gh*--admin*)'
-        'Bash(*--admin*)'
-        'Bash(gh api*rulesets*)'
-        'Bash(gh api*branches/*/protection*)'
-        'Bash(*graphql*BranchProtection*)'
-        'Bash(*graphql*Ruleset*)'
-    )
-
-    DENY_UPDATED=0
-    DENY_FAILED=0
-    for rule in "${CRITICAL_DENY_RULES[@]}"; do
-        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
-            if jq --arg r "$rule" '.permissions.deny += [$r]' "$HOME/.claude/settings.json" > "$HOME/.claude/settings.json.tmp" \
-                && mv "$HOME/.claude/settings.json.tmp" "$HOME/.claude/settings.json"; then
-                echo "   + Added critical deny rule: $rule"
-                DENY_UPDATED=$((DENY_UPDATED + 1))
-            else
-                echo "   ⚠️  Failed to add deny rule: $rule (jq or write error)"
-                DENY_FAILED=$((DENY_FAILED + 1))
-            fi
-        fi
-    done
-
-    if [ "$DENY_FAILED" -gt 0 ]; then
-        echo "   ⚠️  $DENY_FAILED deny rule(s) failed to sync — check settings.json is valid JSON"
-    elif [ "$DENY_UPDATED" -eq 0 ]; then
-        echo "   ✅ All critical deny rules present"
+# Atomically synchronize critical deny rules and install the native Claude Bash
+# gate. A missing settings file is created only after its temporary copy has
+# passed validation and received the complete update.
+if ! "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_TO_INSTALL" "$SUPPLY_CHAIN_HOOK"; then
+    [ -z "$PENDING_SETTINGS_FILE" ] || rm -f "$PENDING_SETTINGS_FILE"
+    exit 1
+fi
+if [ -n "$PENDING_SETTINGS_FILE" ]; then
+    PUBLISH_HELPER="$CROSSCHECK_DIR/scripts/atomic-publish-file.py"
+    if python3 "$PUBLISH_HELPER" publish "$HOME" ".claude/settings.json" --absent "$PENDING_SETTINGS_FILE"; then
+        rm -f "$PENDING_SETTINGS_FILE"
     else
-        echo "   ✅ Added $DENY_UPDATED critical security rule(s)"
+        PUBLISH_STATUS=$?
+        rm -f "$PENDING_SETTINGS_FILE"
+        if [ "$PUBLISH_STATUS" -eq 3 ] && [ -f "$SETTINGS_FILE" ]; then
+            echo "Settings appeared during setup; updating the existing file safely"
+            "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_FILE" "$SUPPLY_CHAIN_HOOK"
+        else
+            echo "Could not safely publish prepared settings at $SETTINGS_FILE" >&2
+            exit 1
+        fi
     fi
 fi
+echo "   ✅ Claude supply-chain hook points to $SUPPLY_CHAIN_HOOK"
 echo ""
 
 # 4. Install all hooks
@@ -163,24 +169,42 @@ if [ -f "$SKIP_FILE" ]; then
     [ -n "$SKIP_DISPLAY" ] && echo "   Skipping (per ~/.crosscheck/skip-skills): $SKIP_DISPLAY"
 fi
 LINKED=0
+PRESERVED_COMPAT_COMMANDS=0
+PUBLISH_HELPER="$CROSSCHECK_DIR/scripts/atomic-publish-file.py"
+python3 "$PUBLISH_HELPER" ensure-directory "$HOME" ".codex/commands"
+python3 "$PUBLISH_HELPER" ensure-directory "$HOME" ".gemini/agents"
 for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
     skill_name="$(basename "$skill_file" .md)"
     [ "$skill_name" = "INSTALL" ] && continue
     if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
         continue
     fi
-    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands" "$HOME/.gemini/agents"; do
-        [ -d "$(dirname "$TARGET_DIR")" ] || mkdir -p "$(dirname "$TARGET_DIR")" 2>/dev/null
-        [ -d "$TARGET_DIR" ] || mkdir -p "$TARGET_DIR" 2>/dev/null
-        target="$TARGET_DIR/$skill_name.md"
-        [ -e "$target" ] || [ -L "$target" ] && rm "$target"
-        ln -sf "$skill_file" "$target"
-        LINKED=$((LINKED + 1))
+    for TARGET_DIR in "$HOME/.codex/commands" "$HOME/.gemini/agents"; do
+        target_relative="${TARGET_DIR#"$HOME"/}/$skill_name.md"
+        status="$(python3 "$PUBLISH_HELPER" managed-symlink \
+            "$HOME" "$target_relative" "$skill_file" "$CROSSCHECK_DIR" "skill-sources/$skill_name.md")"
+        case "$status" in
+            created|updated)
+                LINKED=$((LINKED + 1))
+                ;;
+            unchanged)
+                ;;
+            preserved)
+                PRESERVED_COMPAT_COMMANDS=$((PRESERVED_COMPAT_COMMANDS + 1))
+                ;;
+            *)
+                echo "Unexpected compatibility command sync result for $target_relative: $status" >&2
+                exit 1
+                ;;
+        esac
     done
 done
-echo "   ✅ Linked $LINKED skill(s) via symlinks"
+echo "   ✅ Created or refreshed $LINKED compatibility command symlink(s); preserved $PRESERVED_COMPAT_COMMANDS existing path(s)"
 echo "   💡 Skills update instantly on git pull in CrossCheck — no re-run needed"
 echo ""
+
+# Claude commands use the maintained Claude mirror and preserve user-owned files.
+"$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"
 
 # 6. Install TokenPrint (optional - for /ai-usage skill)
 echo "📊 Step 6: Install TokenPrint (for /ai-usage dashboard)..."

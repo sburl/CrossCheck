@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-02-26-00-00
+**Last Updated:** 2026-11-23-15-54
 
 **Build autonomous loops. Ship production-quality software.**
 
@@ -176,13 +176,13 @@ git clone https://github.com/sburl/CrossCheck.git
 
 ```bash
 cd CrossCheck
-./scripts/bootstrap-crosscheck.sh
+./claude/scripts/bootstrap-crosscheck.sh
 ```
 
 This installs:
 - Skills to `~/.claude/commands/` (available in all projects)
 - Global `CLAUDE.md` in your projects folder (full workflow)
-- Claude settings with proper permissions
+- Claude settings with proper permissions and a checkout-specific supply-chain `PreToolUse` gate
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
 
 ### 3. Enable CrossCheck for Your Project(s)
@@ -202,7 +202,7 @@ claude "Build user authentication"
 # Claude creates feature branch, writes code + tests, gets reviewer feedback, ships
 ```
 
-**That's it!** All 27 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
+**That's it!** All 34 skills are now available in every project. The full workflow is available globally, with supporting docs in CrossCheck/.
 
 ---
 
@@ -218,9 +218,9 @@ CrossCheck uses a **single source of truth** pattern:
 │
 ├── CrossCheck/                # 🎯 Source repository
 │   ├── CLAUDE.md             # Source of truth for workflow
-│   ├── QUICK-REFERENCE.md    # Supporting reference (27 skills, tables)
+│   ├── QUICK-REFERENCE.md    # Supporting reference (34 skills, tables)
 │   ├── docs/rules/           # Supporting docs (trust-model, git-history)
-│   ├── skill-sources/        # 27 skills (symlinked to ~/.claude/commands/)
+│   ├── skill-sources/        # 34 skills (symlinked to ~/.claude/commands/)
 │   └── scripts/              # Installation scripts
 │
 └── YourProject/              # Your projects
@@ -299,7 +299,7 @@ git reset HEAD test.txt && rm test.txt
 ```bash
 # Check skills installed
 ls ~/.claude/commands/ | wc -l
-# Should show: 27 skills
+# Should show: 34 skills
 
 # Start Claude
 claude

@@ -1,10 +1,10 @@
 ---
 name: update-crosscheck
-description: Update CrossCheck to the latest version — pulls from main. Skills and agents update instantly via symlinks; new ones get linked automatically.
+description: Update CrossCheck to the latest version, including copied Codex-native skills and newly added legacy skills and agents.
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-02-24-13-46
+**Last Updated:** 2026-11-24-08-43
 
 # Update CrossCheck
 
@@ -53,68 +53,19 @@ CURRENT=$(cat "$CROSSCHECK_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo 
 echo "   Current version: $CURRENT"
 ```
 
-## Step 3: Sync Critical Deny Rules
-
-Critical security deny rules must propagate to existing settings even when settings
-are not fully overwritten. This runs BEFORE the up-to-date check so it always executes.
-
-```bash
-CRITICAL_DENY_RULES=(
-    'Bash(gh*--admin*)'
-    'Bash(*--admin*)'
-    'Bash(gh api*rulesets*)'
-    'Bash(gh api*branches/*/protection*)'
-    'Bash(*graphql*BranchProtection*)'
-    'Bash(*graphql*Ruleset*)'
-)
-
-SETTINGS_UPDATED=0
-SETTINGS_FAILED=0
-
-for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
-    [ -f "$SETTINGS_FILE" ] || continue
-
-    for rule in "${CRITICAL_DENY_RULES[@]}"; do
-        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$SETTINGS_FILE" >/dev/null 2>&1; then
-            if jq --arg r "$rule" '.permissions.deny += [$r]' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
-                && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"; then
-                echo "   + Added critical deny rule to $(basename "$SETTINGS_FILE"): $rule"
-                SETTINGS_UPDATED=$((SETTINGS_UPDATED + 1))
-            else
-                echo "   ⚠️  Failed to add deny rule to $(basename "$SETTINGS_FILE"): $rule"
-                SETTINGS_FAILED=$((SETTINGS_FAILED + 1))
-            fi
-        fi
-    done
-
-    if ! jq -e '.permissions.ask | index("Bash(gh api *)")' "$SETTINGS_FILE" >/dev/null 2>&1; then
-        if jq '.permissions.ask += ["Bash(gh api *)"]' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
-            && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"; then
-            echo "   + Added gh api to ask list in $(basename "$SETTINGS_FILE")"
-            SETTINGS_UPDATED=$((SETTINGS_UPDATED + 1))
-        else
-            echo "   ⚠️  Failed to update ask list in $(basename "$SETTINGS_FILE")"
-            SETTINGS_FAILED=$((SETTINGS_FAILED + 1))
-        fi
-    fi
-done
-
-if [ "$SETTINGS_FAILED" -gt 0 ]; then
-    echo "   ⚠️  $SETTINGS_FAILED setting(s) failed to sync — check settings files are valid JSON"
-elif [ "$SETTINGS_UPDATED" -eq 0 ]; then
-    echo "   ✅ All critical deny rules present"
-else
-    echo "   ✅ $SETTINGS_UPDATED setting(s) updated with critical security rules"
-fi
-```
-
-## Step 4: Pull Latest
+## Step 3: Pull Latest
 
 ```bash
 cd "$CROSSCHECK_DIR"
-git fetch origin main --quiet
+if ! git fetch origin main --quiet; then
+    echo "❌ Failed to fetch origin/main; no update was applied." >&2
+    exit 1
+fi
 
-CURRENT_BRANCH=$(git branch --show-current)
+CURRENT_BRANCH=$(git branch --show-current) || {
+    echo "❌ Failed to read the current branch." >&2
+    exit 1
+}
 if [ "$CURRENT_BRANCH" != "main" ]; then
     echo "   Switching to main branch (was on: $CURRENT_BRANCH)..."
     git checkout main --quiet || {
@@ -124,17 +75,76 @@ if [ "$CURRENT_BRANCH" != "main" ]; then
     }
 fi
 
-BEHIND=$(git rev-list HEAD..origin/main --count 2>/dev/null || echo "0")
+BEHIND=$(git rev-list HEAD..origin/main --count 2>/dev/null) || {
+    echo "❌ Failed to determine whether origin/main has new commits." >&2
+    exit 1
+}
+if ! [[ "$BEHIND" =~ ^[0-9]+$ ]]; then
+    echo "❌ Git returned an invalid commit count: $BEHIND" >&2
+    exit 1
+fi
 
 if [ "$BEHIND" = "0" ]; then
     echo "✅ Already up to date (version $CURRENT)"
-    exit 0
+else
+    echo "   $BEHIND new commit(s) available — pulling..."
+    if ! git pull origin main --quiet; then
+        echo "❌ Failed to pull origin/main." >&2
+        exit 1
+    fi
+    echo "   ✅ Pulled latest"
+fi
+```
+
+
+## Step 4: Sync Critical Deny Rules and the Claude Hook
+
+Update existing settings through the managed scripts. They preserve a settings
+symlink and refuse to replace concurrent edits.
+
+```bash
+SETTINGS_SYNC_FAILED=0
+CLAUDE_SYNC_FAILED=0
+for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json" "$HOME/.gemini/settings.json"; do
+    if [ -f "$SETTINGS_FILE" ]; then
+        if ! "$CROSSCHECK_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --include-ask; then
+            echo "❌ Failed to sync critical settings in $SETTINGS_FILE." >&2
+            SETTINGS_SYNC_FAILED=1
+            if [ "$SETTINGS_FILE" = "$HOME/.claude/settings.json" ]; then
+                CLAUDE_SYNC_FAILED=1
+            fi
+        fi
+    fi
+done
+
+if [ -f "$HOME/.claude/settings.json" ] && [ "$CLAUDE_SYNC_FAILED" -eq 0 ]; then
+    if ! "$CROSSCHECK_DIR/claude/scripts/install-supply-chain-hook.sh" \
+        "$HOME/.claude/settings.json" \
+        "$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh"; then
+        echo "❌ Failed to install the Claude supply-chain hook." >&2
+        SETTINGS_SYNC_FAILED=1
+    fi
 fi
 
-echo "   $BEHIND new commit(s) available — pulling..."
-git pull origin main --quiet
-echo "   ✅ Pulled latest"
+if [ "$SETTINGS_SYNC_FAILED" -ne 0 ]; then
+    echo "❌ One or more settings updates failed; successful updates were retained." >&2
+    exit 1
+fi
 ```
+
+This keeps the critical deny rules and `Bash(gh api *)` ask rule current, and
+refreshes the Claude supply-chain hook without replacing unrelated settings.
+The updater attempts every existing settings file before it exits on an error,
+so a Claude or Codex failure does not skip the Gemini refresh. It installs the
+Claude hook only after Claude settings sync succeeds. When an existing file is
+replaced, the updater prints a private recovery path for the prior file. Keep
+it until apps that may have the file open are closed and any late save has been
+checked.
+
+
+Settings sync still runs when `main` is already current. Continue to Steps 5
+and 6; Step 6 refreshes installed Codex-native skill copies even when there
+are no new Git commits.
 
 ## Step 5: Show New Version
 
@@ -158,22 +168,37 @@ them in place. This step only needs to create symlinks for files that were
 SKIP_FILE="$HOME/.crosscheck/skip-skills"
 NEW_LINKED=0
 
-# New skills
+# Codex-native skills use the same managed, race-safe sync as bootstrap.
+if ! bash "$CROSSCHECK_DIR/codex/scripts/sync-managed-codex-skills.sh" "$CROSSCHECK_DIR" "$HOME"; then
+    echo "❌ Codex-native skill sync failed." >&2
+    exit 1
+fi
+
+# Claude commands use the Claude mirror and preserve user-owned files.
+CLAUDE_SYNC_COUNT="$("$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME" --count-only)"
+case "$CLAUDE_SYNC_COUNT" in
+    ''|*[!0-9]*)
+        echo "❌ Claude command sync returned an invalid count: $CLAUDE_SYNC_COUNT" >&2
+        exit 1
+        ;;
+esac
+NEW_LINKED=$((NEW_LINKED + CLAUDE_SYNC_COUNT))
+
+# New Codex compatibility commands use the root sources.
 for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
     skill_name="$(basename "$skill_file" .md)"
     [ "$skill_name" = "INSTALL" ] && continue
     if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
         continue
     fi
-    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands"; do
-        [ -d "$TARGET_DIR" ] || continue
-        target="$TARGET_DIR/$skill_name.md"
-        if [ ! -e "$target" ] && [ ! -L "$target" ]; then
-            ln -sf "$skill_file" "$target"
-            echo "   + New skill linked: $skill_name"
-            NEW_LINKED=$((NEW_LINKED + 1))
-        fi
-    done
+    TARGET_DIR="$HOME/.codex/commands"
+    [ -d "$TARGET_DIR" ] || continue
+    target="$TARGET_DIR/$skill_name.md"
+    if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+        ln -sf "$skill_file" "$target"
+        echo "   + New Codex command linked: $skill_name"
+        NEW_LINKED=$((NEW_LINKED + 1))
+    fi
 done
 
 # New agents
@@ -212,12 +237,12 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 ## Notes
 
-- **Skills and agents update instantly** — they're symlinked to CrossCheck, so
-  `git pull` is the update. No re-run needed for existing files; new files get
-  symlinked by Step 6.
+- **Codex-native skills are copied**, so Step 6 refreshes their installed files.
+- **Legacy Claude/Codex commands and agents are symlinked** in multi-project
+  mode, so `git pull` updates existing links and Step 6 creates missing links.
 - **CLAUDE.md updates instantly** — symlinked in multi-project mode; git pull
   propagates changes to all sessions automatically.
-- **Settings are not overwritten,** but **critical deny rules are synced.** Step 3
+- **Settings are not overwritten,** but **critical deny rules are synced.** Step 4
   ensures security-critical deny rules (like `--admin` bypass prevention) are always
   present in your settings — this runs even when already up to date.
 - **Git hooks are not updated.** If CrossCheck ships hook changes, re-run

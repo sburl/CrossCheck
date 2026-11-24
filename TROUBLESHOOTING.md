@@ -1,7 +1,7 @@
 # CrossCheck Troubleshooting Guide
 
 **Created:** 2026-02-09-16-28
-**Last Updated:** 2026-02-24-13-46
+**Last Updated:** 2026-11-24-00-39
 
 When automation fails, debug it here.
 
@@ -472,12 +472,12 @@ This is intentional. The command is blocked by your permissions settings.
 Skills aren't installed. Install them:
 
 ```bash
-# Copy skills from CrossCheck repo
-cp ~/Documents/Developer/CrossCheck/skill-sources/*.md ~/.claude/commands/
+# Safely sync managed Claude skills from CrossCheck
+bash ~/Documents/Developer/CrossCheck/claude/scripts/sync-managed-claude-skills.sh ~/Documents/Developer/CrossCheck "$HOME"
 
 # Verify installation
 ls ~/.claude/commands/ | wc -l
-# Should show 28 files (27 skills + INSTALL.md)
+# The count depends on skipped skills and user-owned commands. INSTALL.md is documentation, not a command.
 
 # Restart Claude Code
 # Skills should now be available

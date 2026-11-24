@@ -888,6 +888,81 @@ finally:
 if edit_race_target.read_text() != '{"setting":"concurrent edit 2"}\n':
     raise SystemExit("atomic publisher did not keep the latest concurrent edit live")
 
+# If a writer saves through a descriptor to the displaced original after the
+# exchange, preserve later saves through a descriptor to the staged new inode
+# before cleanup unlinks its staging name.
+late_stage_race_dir = scratch / "late-stage-save-race"
+late_stage_race_dir.mkdir()
+late_stage_target = late_stage_race_dir / "settings.json"
+late_stage_snapshot = scratch / "late-stage-save-snapshot.json"
+late_stage_file = scratch / "late-stage-save-stage.json"
+late_stage_target.write_text('{"setting":"original"}\n')
+late_stage_snapshot.write_text('{"setting":"original"}\n')
+late_stage_file.write_text('{"setting":"updated"}\n')
+original_handle = late_stage_target.open("r+")
+new_inode_handles = []
+real_exchange = module._rename_exchange
+exchange_calls = [0]
+
+def retain_new_inode_descriptor(first_fd, first, second_fd, second):
+    result = real_exchange(first_fd, first, second_fd, second)
+    exchange_calls[0] += 1
+    if exchange_calls[0] == 1:
+        new_inode_handles.append(late_stage_target.open("r+"))
+    return result
+
+real_verify = module._verify_parent_path
+verify_calls = [0]
+
+def edit_displaced_original_then_fail(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 2:
+        original_handle.seek(0)
+        original_handle.truncate()
+        original_handle.write('{"setting":"late original edit"}\n')
+        original_handle.flush()
+        raise module.ConcurrentUpdate("injected failure after displaced-original save")
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+real_entry_state = module._entry_state_at
+stage_edit_calls = [0]
+
+def edit_new_inode_after_stage_sample(directory_fd, name):
+    state = real_entry_state(directory_fd, name)
+    if exchange_calls[0] == 2 and name.startswith(".crosscheck-stage-") and stage_edit_calls[0] == 0:
+        stage_edit_calls[0] += 1
+        new_inode_handles[0].seek(0)
+        new_inode_handles[0].truncate()
+        new_inode_handles[0].write('{"setting":"late staged-new-inode edit"}\n')
+        new_inode_handles[0].flush()
+    return state
+
+module._rename_exchange = retain_new_inode_descriptor
+module._verify_parent_path = edit_displaced_original_then_fail
+module._entry_state_at = edit_new_inode_after_stage_sample
+try:
+    module.publish_file(str(late_stage_race_dir), "settings.json", str(late_stage_snapshot), str(late_stage_file))
+except module.ConcurrentUpdate as error:
+    if not error.recovery_path:
+        raise SystemExit("rollback did not report its displaced-original recovery link")
+    backup_contents = {
+        path.read_text()
+        for path in Path(error.recovery_path).parent.glob("settings-*.bak")
+    }
+    if '{"setting":"late staged-new-inode edit"}\n' not in backup_contents:
+        raise SystemExit("rollback cleanup discarded a late save through the staged inode")
+    if late_stage_target.read_text() != '{"setting":"late original edit"}\n':
+        raise SystemExit("rollback failed to keep the edited original inode live")
+else:
+    raise SystemExit("atomic publisher accepted a failed update after a displaced-original save")
+finally:
+    module._rename_exchange = real_exchange
+    module._verify_parent_path = real_verify
+    module._entry_state_at = real_entry_state
+    original_handle.close()
+    for new_inode_handle in new_inode_handles:
+        new_inode_handle.close()
+
 # A byte-identical replacement is still a different displaced inode. Its
 # held descriptor must remain visible through the returned recovery link.
 inode_race_dir = scratch / "same-content-inode-race"
@@ -1055,13 +1130,17 @@ symlink_rollback_source.write_text("new command\n")
 real_verify = module._verify_parent_path
 real_fsync = module.os.fsync
 fsync_calls = [0]
+verify_calls = [0]
 
 def fail_after_install(root_fd, root_path, relative_target, parent_fd):
-    raise module.ConcurrentUpdate("injected post-link verification failure")
+    verify_calls[0] += 1
+    if verify_calls[0] == 1:
+        raise module.ConcurrentUpdate("injected post-link verification failure")
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
 
 def fail_unlink_sync(directory_fd):
     fsync_calls[0] += 1
-    if fsync_calls[0] == 6:
+    if fsync_calls[0] >= 9 and not symlink_rollback_target.exists():
         raise OSError(5, "injected rollback directory fsync failure")
     return real_fsync(directory_fd)
 
@@ -1082,6 +1161,76 @@ finally:
     module.os.fsync = real_fsync
 if symlink_rollback_target.is_symlink() or symlink_rollback_target.read_text() != "old command\n":
     raise SystemExit("Claude symlink rollback left the live command missing")
+
+# If the command directory moves after symlink creation, do not report a safe
+# rollback through the detached directory descriptor as status 3.
+moved_commands_home = scratch / "moved-commands-home"
+moved_commands_dir = moved_commands_home / ".claude/commands"
+moved_commands_dir.mkdir(parents=True)
+moved_commands_target = moved_commands_dir / "managed.md"
+moved_commands_snapshot = scratch / "moved-commands-snapshot.md"
+moved_commands_source = scratch / "moved-commands-source.md"
+moved_commands_target.write_text("old command\n")
+moved_commands_snapshot.write_text("old command\n")
+moved_commands_source.write_text("new command\n")
+real_verify = module._verify_parent_path
+verify_calls = [0]
+
+def move_commands_dir_after_link(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 1:
+        moved_commands_dir.rename(moved_commands_dir.with_name("commands-moved"))
+        moved_commands_dir.mkdir()
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+module._verify_parent_path = move_commands_dir_after_link
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(moved_commands_home)
+original_argv = module.sys.argv
+module.sys.argv = [
+    "atomic-publish-file.py", "symlink", str(moved_commands_home),
+    ".claude/commands/managed.md", "snapshot", str(moved_commands_snapshot),
+    str(moved_commands_source),
+]
+try:
+    if module.main() != 5:
+        raise SystemExit("detached Claude command rollback was not reported as fatal status 5")
+finally:
+    module.sys.argv = original_argv
+    module._verify_parent_path = real_verify
+    os.environ["HOME"] = previous_home
+stable_command_backups = list((moved_commands_home / ".crosscheck-recovery").glob("settings-*.bak"))
+if not any(path.read_text() == "old command\n" for path in stable_command_backups):
+    raise SystemExit("moved Claude command did not retain its stable recovery copy")
+if moved_commands_target.exists() or moved_commands_target.is_symlink():
+    raise SystemExit("test fixture unexpectedly restored through the detached command directory")
+
+# A symlink created after an absent-path check is a preserved no-op.
+absent_race_home = scratch / "absent-link-race-home"
+absent_race_home.joinpath(".claude/commands").mkdir(parents=True)
+absent_race_target = absent_race_home / ".claude/commands/managed.md"
+absent_race_source = scratch / "absent-link-race-source.md"
+absent_race_source.write_text("new command\n")
+real_symlink = module.os.symlink
+
+def create_concurrent_desired_link(source, destination, **kwargs):
+    real_symlink(source, destination, **kwargs)
+    raise FileExistsError(errno.EEXIST, "injected concurrent symlink creation", destination)
+
+module.os.symlink = create_concurrent_desired_link
+original_argv = module.sys.argv
+module.sys.argv = [
+    "atomic-publish-file.py", "symlink", str(absent_race_home),
+    ".claude/commands/managed.md", "absent", "-", str(absent_race_source),
+]
+try:
+    if module.main() != 4:
+        raise SystemExit("concurrent Claude symlink creation did not return no-op status 4")
+finally:
+    module.sys.argv = original_argv
+    module.os.symlink = real_symlink
+if os.path.realpath(absent_race_target) != str(absent_race_source.resolve()):
+    raise SystemExit("concurrent desired Claude symlink was not preserved")
 
 # Recovery reports must not succeed after their opened directory is renamed.
 recovery_rename_home = scratch / "recovery-rename-home"
@@ -1184,7 +1333,7 @@ command_fd.truncate()
 command_fd.write("late user edit\n")
 command_fd.flush()
 command_fd.close()
-if (Path(command_backup) / "original").read_text() != "late user edit\n":
+if Path(command_backup).read_text() != "late user edit\n":
     raise SystemExit("Claude command migration lost a save through an open file descriptor")
 
 race_dir = scratch / "command-race-home"

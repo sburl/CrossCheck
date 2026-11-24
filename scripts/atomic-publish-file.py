@@ -482,6 +482,7 @@ def _rollback_failed_publish(
     published_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None],
     known_states: set[tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None]],
     observed_states: set[tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None]],
+    recovered_inodes: set[tuple[int, int]],
     desired_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None],
     stable_base_fd: int,
     stable_base_path: str,
@@ -498,7 +499,8 @@ def _rollback_failed_publish(
             state = _entry_state_at(parent_fd, staged_name)
         except OSError:
             return False, None, None
-        if state in known_states:
+        inode_key = state[0][:2]
+        if state in known_states or inode_key in recovered_inodes:
             return True, recovery_path, state
         try:
             backup_name, backup_path = _new_stable_recovery_link(
@@ -515,7 +517,29 @@ def _rollback_failed_publish(
         except OSError:
             return False, None, state
         known_states.add(state)
+        recovered_inodes.add(inode_key)
         return True, backup_path, state
+
+    def finalize_recovery() -> str | None:
+        nonlocal recovery_path
+        try:
+            stage_state = _entry_state_at(parent_fd, staged_name)
+        except OSError as error:
+            raise RestorationFailed(
+                f"could not verify settings recovery before cleanup: {stage_path}", stage_path
+            ) from error
+        if (
+            stage_state != published_state
+            and stage_state not in known_states
+            and stage_state[0][:2] not in recovered_inodes
+        ):
+            preserved, new_recovery_path, _ = preserve_stage_state()
+            if not preserved:
+                raise RestorationFailed(
+                    f"concurrent settings could not be durably preserved before cleanup: {stage_path}", stage_path
+                )
+            recovery_path = new_recovery_path or recovery_path
+        return recovery_path
 
     while True:
         try:
@@ -539,7 +563,7 @@ def _rollback_failed_publish(
             if preserved:
                 recovery_path = new_recovery_path or recovery_path
                 if live_state == desired_state and live_state != published_state:
-                    return recovery_path
+                    return finalize_recovery()
                 continue
             else:
                 if live_state == desired_state and live_state != published_state:
@@ -568,7 +592,7 @@ def _rollback_failed_publish(
                 )
 
         if displaced_state in known_states and live_state == desired_state and live_state != published_state:
-            return recovery_path
+            return finalize_recovery()
 
 
 def publish_file(
@@ -686,6 +710,7 @@ def publish_file(
         if swapped and staged_name is not None and published_state is not None and original_state is not None:
             known_states = {published_state, original_state}
             observed_states = {published_state, original_state}
+            recovered_inodes = {original_state[0][:2]}
             failure_recovery_path: str | None = None
             try:
                 current_state = _entry_state_at(parent_fd, staged_name)
@@ -709,6 +734,36 @@ def publish_file(
                     )
                     failure_recovery_path = backup_path
                     known_states.add(current_state)
+                    recovered_inodes.add(current_state[0][:2])
+                except OSError:
+                    pass
+            try:
+                live_state = _entry_state_at(parent_fd, target_name)
+            except OSError:
+                live_state = None
+            if live_state is not None:
+                if live_state not in observed_states:
+                    observed_states.add(live_state)
+                    if live_state != published_state:
+                        desired_state = live_state
+                # Keep the just-published inode linked while rollback moves it
+                # away from the pathname; writers may still hold open handles.
+                try:
+                    live_backup_name, live_backup_path = _new_stable_recovery_link(
+                        parent_fd, target_name, stable_recovery_fd, stable_recovery_dir
+                    )
+                    _sync_stable_recovery_entry(
+                        stable_base_fd,
+                        stable_base_path,
+                        stable_recovery_fd,
+                        os.path.basename(stable_recovery_dir),
+                        stable_recovery_dir,
+                        live_backup_name,
+                    )
+                    known_states.add(live_state)
+                    recovered_inodes.add(live_state[0][:2])
+                    if failure_recovery_path is None:
+                        failure_recovery_path = live_backup_path
                 except OSError:
                     pass
             failure_recovery_path = _rollback_failed_publish(
@@ -719,6 +774,7 @@ def publish_file(
                 published_state,
                 known_states,
                 observed_states,
+                recovered_inodes,
                 desired_state,
                 stable_base_fd,
                 stable_base_path,
@@ -808,6 +864,13 @@ def sync_symlink(
     recovery_fd: int | None = None
     recovery_name: str | None = None
     recovery_path: str | None = None
+    stable_base_fd: int | None = None
+    stable_base_path: str | None = None
+    stable_recovery_fd: int | None = None
+    stable_recovery_name: str | None = None
+    stable_recovery_dir: str | None = None
+    stable_backup_path: str | None = None
+    stable_original_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
     moved = False
     created_link = False
     try:
@@ -816,7 +879,10 @@ def sync_symlink(
         except FileNotFoundError:
             if expected_kind != "absent":
                 return None
-            os.symlink(new_link, target_name, dir_fd=parent_fd)
+            try:
+                os.symlink(new_link, target_name, dir_fd=parent_fd)
+            except FileExistsError:
+                return None
             created_link = True
             _fsync_directory(parent_fd)
             _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
@@ -828,6 +894,30 @@ def sync_symlink(
             if not stat.S_ISREG(target_info.st_mode):
                 return None
             expected_signature = _read_signature(expected_value)
+            try:
+                current_signature = _read_signature_at(parent_fd, target_name)
+            except OSError:
+                return None
+            if current_signature != expected_signature:
+                return None
+            stable_base_fd, stable_recovery_fd, stable_recovery_dir = _open_stable_recovery_directory(
+                parent_path, parent_path, os.fstat(parent_fd).st_dev
+            )
+            stable_base_path = os.path.dirname(stable_recovery_dir)
+            stable_recovery_name, stable_backup_path = _new_stable_recovery_link(
+                parent_fd, target_name, stable_recovery_fd, stable_recovery_dir
+            )
+            _sync_stable_recovery_entry(
+                stable_base_fd,
+                stable_base_path,
+                stable_recovery_fd,
+                os.path.basename(stable_recovery_dir),
+                stable_recovery_dir,
+                stable_recovery_name,
+            )
+            stable_original_state = _entry_state_at(stable_recovery_fd, stable_recovery_name)
+            if stable_original_state[1] != expected_signature:
+                return None
         elif expected_kind == "link":
             if not stat.S_ISLNK(target_info.st_mode):
                 return None
@@ -851,6 +941,7 @@ def sync_symlink(
                     _rename_noreplace(recovery_fd, "original", parent_fd, target_name)
                     _fsync_directory(recovery_fd)
                     _fsync_directory(parent_fd)
+                    _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
                     moved = False
                     _discard_recovery(parent_fd, recovery_fd, recovery_name)
                     recovery_fd = None
@@ -881,22 +972,38 @@ def sync_symlink(
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
         if expected_kind == "snapshot":
-            # Keep the previous inode so a writer already holding it can still
-            # recover a save made after the managed symlink was installed.
-            recovery_opened = os.fstat(recovery_fd)
-            recovery_named = os.stat(recovery_name, dir_fd=parent_fd, follow_symlinks=False)
-            recovery_path_named = os.stat(recovery_path, follow_symlinks=False)
-            if (
-                (recovery_named.st_dev, recovery_named.st_ino)
-                != (recovery_opened.st_dev, recovery_opened.st_ino)
-                or (recovery_path_named.st_dev, recovery_path_named.st_ino)
-                != (recovery_opened.st_dev, recovery_opened.st_ino)
-            ):
+            # The stable hard link protects writes through descriptors opened
+            # before or during migration, even if the command directory moves.
+            if stable_recovery_fd is None or stable_recovery_name is None or stable_backup_path is None:
+                raise RestorationFailed(f"managed command has no stable recovery link: {target}", recovery_path)
+            moved_state = _entry_state_at(recovery_fd, "original")
+            stable_state = _entry_state_at(stable_recovery_fd, stable_recovery_name)
+            if moved_state[0][:2] != stable_state[0][:2]:
                 raise RestorationFailed(
-                    f"managed command recovery directory moved during update: {recovery_path}",
-                    recovery_path,
+                    f"managed command recovery link does not match the displaced inode: {target}",
+                    stable_backup_path,
                 )
-            return recovery_path
+            _sync_stable_recovery_entry(
+                stable_base_fd,
+                stable_base_path,
+                stable_recovery_fd,
+                os.path.basename(stable_recovery_dir),
+                stable_recovery_dir,
+                stable_recovery_name,
+            )
+            _verify_stable_recovery_path(
+                stable_base_fd,
+                stable_base_path,
+                stable_recovery_fd,
+                os.path.basename(stable_recovery_dir),
+                stable_recovery_dir,
+            )
+            _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+            _discard_recovery(parent_fd, recovery_fd, recovery_name)
+            recovery_fd = None
+            recovery_name = None
+            moved = False
+            return stable_backup_path
         _discard_recovery(parent_fd, recovery_fd, recovery_name)
         recovery_fd = None
         recovery_name = None
@@ -927,27 +1034,46 @@ def sync_symlink(
                     rollback_sync_error = rollback_error
         if moved and recovery_fd is not None and recovery_name is not None:
             try:
+                try:
+                    _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+                except ConcurrentUpdate as parent_error:
+                    raise RestorationFailed(
+                        f"managed command parent changed; recovery at {target} cannot be verified",
+                        stable_backup_path,
+                    ) from parent_error
                 _rename_noreplace(recovery_fd, "original", parent_fd, target_name)
                 moved = False
-                recovery_path = target
                 _fsync_directory(recovery_fd)
                 _fsync_directory(parent_fd)
+                try:
+                    _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+                except ConcurrentUpdate as parent_error:
+                    raise RestorationFailed(
+                        f"managed command restoration is outside its live parent: {target}",
+                        stable_backup_path,
+                    ) from parent_error
                 _discard_recovery(parent_fd, recovery_fd, recovery_name)
                 recovery_fd = None
                 recovery_name = None
-                recovery_path = None
+                recovery_path = stable_backup_path
             except OSError as restore_error:
                 raise RestorationFailed(
-                    f"could not restore managed command safely: {target}", recovery_path
+                    f"could not restore managed command safely: {target}", stable_backup_path or recovery_path
                 ) from restore_error
         if rollback_sync_error is not None:
             raise RestorationFailed(
                 f"managed command was restored but its directory could not be synced: {target}", recovery_path
             ) from rollback_sync_error
+        if isinstance(error, ConcurrentUpdate):
+            error.recovery_path = stable_backup_path
         raise
     finally:
         if recovery_fd is not None:
             os.close(recovery_fd)
+        if stable_recovery_fd is not None:
+            os.close(stable_recovery_fd)
+        if stable_base_fd is not None:
+            os.close(stable_base_fd)
         os.close(parent_fd)
         os.close(root_fd)
 

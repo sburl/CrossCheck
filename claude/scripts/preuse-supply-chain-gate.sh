@@ -69,7 +69,7 @@ esac
 
 # Pattern set for unsafe installs. Boundary-anchored to avoid matching inside strings.
 # We accept word boundaries before the verb (start, ;, &&, ||, |, $(, `, newline, space).
-unsafe='(^|[[:space:];&|`(])(npm[[:space:]]+(install|i|add|create)([[:space:]]|$)|npm[[:space:]]+exec[[:space:]]|npx[[:space:]]+[^-]|pnpm[[:space:]]+(add|install)([[:space:]]|$)|yarn[[:space:]]+(add|install)([[:space:]]|$)|pip[[:space:]]+install([[:space:]]|$)|pipx[[:space:]]+install([[:space:]]|$)|uv[[:space:]]+add([[:space:]]|$)|uv[[:space:]]+pip[[:space:]]+install([[:space:]]|$)|cargo[[:space:]]+install([[:space:]]|$)|gem[[:space:]]+install([[:space:]]|$)|go[[:space:]]+install[[:space:]]+[a-zA-Z])'
+unsafe='(^|[[:space:];&|`(])(npm[[:space:]]+(install|i|add|create)([[:space:];&|<>)]|$)|npm[[:space:]]+exec[[:space:]]|npx[[:space:]]+[^-]|pnpm[[:space:]]+(add|install)([[:space:];&|<>)]|$)|yarn[[:space:]]+(add|install)([[:space:];&|<>)]|$)|pip[[:space:]]+install([[:space:];&|<>)]|$)|pipx[[:space:]]+install([[:space:];&|<>)]|$)|uv[[:space:]]+add([[:space:];&|<>)]|$)|uv[[:space:]]+pip[[:space:]]+install([[:space:];&|<>)]|$)|cargo[[:space:]]+install([[:space:];&|<>)]|$)|gem[[:space:]]+install([[:space:];&|<>)]|$)|go[[:space:]]+install[[:space:]]+[a-zA-Z])'
 
 if [[ "$cmd" =~ $unsafe ]]; then
     cat >&2 <<EOF

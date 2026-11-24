@@ -221,7 +221,10 @@ class ScriptMirrorAuditTests(unittest.TestCase):
 
     def test_supply_chain_gate_blocks_bare_install_commands(self) -> None:
         hook = ROOT / "claude/scripts/preuse-supply-chain-gate.sh"
-        for command in ("npm install", "npm i", "pnpm install", "yarn install"):
+        for command in (
+            "npm install", "npm i", "pnpm install", "yarn install",
+            "npm install;", "pnpm install && echo done", "yarn install | cat",
+        ):
             with self.subTest(command=command):
                 result = subprocess.run(
                     ["bash", str(hook)],

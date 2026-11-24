@@ -69,6 +69,25 @@ if [ "$COMMAND_COUNT" -ne 1 ]; then
   echo "reinstall duplicated the supply-chain hook" >&2
   exit 1
 fi
+python3 - "$SETTINGS" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+settings = Path(sys.argv[1])
+settings.write_text(json.dumps(json.loads(settings.read_text()), separators=(",", ":")) + "\n")
+PY
+HOOK_SETTINGS_INODE="$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_dev}:{s.st_ino}")' "$SETTINGS")"
+HOOK_BACKUP_COUNT="$(find "$HOME/.crosscheck-recovery" -maxdepth 1 -name 'settings-*.bak' -type f 2>/dev/null | wc -l | tr -d ' ')"
+if ! "$INSTALLER" "$SETTINGS" "$HOOK" | grep -Fq 'already current'; then
+  echo "installer did not report an unchanged semantic-settings no-op" >&2
+  exit 1
+fi
+if [ "$HOOK_SETTINGS_INODE" != "$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_dev}:{s.st_ino}")' "$SETTINGS")" ] \
+  || [ "$HOOK_BACKUP_COUNT" != "$(find "$HOME/.crosscheck-recovery" -maxdepth 1 -name 'settings-*.bak' -type f 2>/dev/null | wc -l | tr -d ' ')" ]; then
+  echo "unchanged installer replaced the settings inode or added a recovery backup" >&2
+  exit 1
+fi
 
 INSTALLED_COMMAND="$(jq -r --arg hook "$HOOK" '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[] | select(.type == "command" and (.command | contains($hook))) | .command' "$SETTINGS")"
 if printf '%s' '{"tool_name":"Bash","tool_input":{"command":"npm install"}}' | GATE_MARKER="$TEMP_DIR/invoked" bash -c "$INSTALLED_COMMAND" 2> "$TEMP_DIR/hook.stderr"; then
@@ -1239,6 +1258,78 @@ if sys.platform.startswith("linux"):
         module.os.getxattr = actual_os_getxattr
         module.os.setxattr = actual_os_setxattr
 
+    # Linux default ACLs are inherited by newly created stage directories and
+    # files. Clearing them must prevent a named-user ACL from widening a
+    # mode-only settings replacement after fchmod.
+    import struct
+
+    linux_acl_publish_root = scratch / "linux-acl-publish-root"
+    linux_acl_publish_root.mkdir()
+    linux_acl_publish_target = linux_acl_publish_root / "settings.json"
+    linux_acl_publish_target.write_text('{"setting":"original"}\n')
+    linux_acl_publish_target.chmod(0o640)
+    linux_acl_default = struct.pack("<I", 2) + b"".join(
+        struct.pack("<HHI", tag, permissions, user_id)
+        for tag, permissions, user_id in (
+            (0x01, 0x07, 0xFFFFFFFF),
+            (0x02, 0x04, 65534),
+            (0x04, 0x00, 0xFFFFFFFF),
+            (0x10, 0x04, 0xFFFFFFFF),
+            (0x20, 0x00, 0xFFFFFFFF),
+        )
+    )
+    try:
+        os.setxattr(linux_acl_publish_root, "system.posix_acl_default", linux_acl_default)
+    except OSError as error:
+        if error.errno not in (errno.ENOTSUP, errno.EOPNOTSUPP):
+            raise
+    else:
+        linux_acl_parent_fd = os.open(
+            linux_acl_publish_root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        )
+        try:
+            stage_fd, stage_name, stage_path = module._new_private_stage_directory(
+                linux_acl_parent_fd,
+                str(linux_acl_publish_root),
+                linux_acl_publish_target.stat().st_dev,
+            )
+            try:
+                for attribute in ("system.posix_acl_access", "system.posix_acl_default"):
+                    try:
+                        os.getxattr(stage_fd, attribute)
+                    except OSError as error:
+                        if error.errno != getattr(errno, "ENODATA", errno.ENOENT):
+                            raise
+                    else:
+                        raise SystemExit(f"private Linux stage directory retained inherited {attribute}")
+                if stat.S_IMODE(os.fstat(stage_fd).st_mode) != 0o700:
+                    raise SystemExit("private Linux stage directory lost its 0700 mode")
+            finally:
+                os.close(stage_fd)
+                os.rmdir(stage_name, dir_fd=linux_acl_parent_fd)
+        finally:
+            os.close(linux_acl_parent_fd)
+        linux_acl_publish_snapshot = scratch / "linux-acl-publish-snapshot.json"
+        linux_acl_publish_stage = scratch / "linux-acl-publish-stage.json"
+        linux_acl_publish_stage.write_text('{"setting":"updated"}\n')
+        if not module.snapshot_file(
+            str(linux_acl_publish_root), "settings.json", str(linux_acl_publish_snapshot)
+        ):
+            raise SystemExit("could not snapshot mode-only settings before the Linux ACL publish test")
+        module.publish_file(
+            str(linux_acl_publish_root), "settings.json",
+            str(linux_acl_publish_snapshot), str(linux_acl_publish_stage),
+        )
+        try:
+            os.getxattr(linux_acl_publish_target, "system.posix_acl_access")
+        except OSError as error:
+            if error.errno != getattr(errno, "ENODATA", errno.ENOENT):
+                raise
+        else:
+            raise SystemExit("Linux settings publish retained an inherited named-user access ACL")
+        if stat.S_IMODE(linux_acl_publish_target.stat().st_mode) != 0o640:
+            raise SystemExit("Linux settings publish changed the mode-only target permissions")
+
 # A command migration uses the commands directory as the recovery boundary so
 # a normal home directory remains writable as the private recovery location.
 command_boundary_home = scratch / "command-recovery-boundary-home"
@@ -2400,24 +2491,33 @@ symlink_rollback_race_snapshot.write_text("original managed command\n")
 symlink_rollback_race_source = scratch / "symlink-rollback-race-source.md"
 symlink_rollback_race_source.write_text("replacement managed command\n")
 real_verify = module._verify_parent_path
-real_readlink = module.os.readlink
+real_exchange = module._rename_exchange
+exchange_calls = []
 race_injected = []
+verification_failed = []
 
 def fail_after_install_with_late_save(root_fd, root_path, relative_target, parent_fd):
-    if symlink_rollback_race_target.is_symlink() and not race_injected:
+    if symlink_rollback_race_target.is_symlink() and not verification_failed:
+        verification_failed.append(True)
         raise module.ConcurrentUpdate("injected post-install verification failure")
     return real_verify(root_fd, root_path, relative_target, parent_fd)
 
-def save_after_rollback_quarantines_link(path, *, dir_fd=None):
-    if path == "rollback-candidate" and not race_injected:
+def save_during_atomic_rollback_exchange(first_fd, first, second_fd, second):
+    if not os.path.lexists(symlink_rollback_race_target):
+        raise SystemExit("managed command path was missing before an atomic exchange")
+    exchange_calls.append((first, second))
+    if len(exchange_calls) == 2 and not race_injected:
         user_save = symlink_rollback_race_target.with_name("user-save.md")
         user_save.write_text("concurrent user save\n")
         os.replace(user_save, symlink_rollback_race_target)
         race_injected.append(True)
-    return real_readlink(path, dir_fd=dir_fd)
+    result = real_exchange(first_fd, first, second_fd, second)
+    if not os.path.lexists(symlink_rollback_race_target):
+        raise SystemExit("managed command path was missing after an atomic exchange")
+    return result
 
 module._verify_parent_path = fail_after_install_with_late_save
-module.os.readlink = save_after_rollback_quarantines_link
+module._rename_exchange = save_during_atomic_rollback_exchange
 try:
     try:
         module.sync_symlink(
@@ -2431,12 +2531,12 @@ try:
         raise SystemExit("rollback reported success after a concurrent save replaced its new link")
 finally:
     module._verify_parent_path = real_verify
-    module.os.readlink = real_readlink
+    module._rename_exchange = real_exchange
 if not race_injected or symlink_rollback_race_target.read_text() != "concurrent user save\n":
     raise SystemExit("symlink rollback deleted a concurrent atomic save")
 
-# If syncing the removal of a failed new symlink errors, still attempt to
-# restore the displaced command before returning a fatal status.
+# If syncing an atomic rollback exchange errors, keep the original command
+# live and return a fatal status with recovery data intact.
 symlink_rollback_home = scratch / "symlink-rollback-home"
 symlink_rollback_home.joinpath(".claude/commands").mkdir(parents=True)
 symlink_rollback_target = symlink_rollback_home / ".claude/commands/managed.md"
@@ -2454,8 +2554,10 @@ if not module.snapshot_file(
 symlink_rollback_source.write_text("new command\n")
 real_verify = module._verify_parent_path
 real_fsync = module.os.fsync
-fsync_calls = [0]
 verify_calls = [0]
+rollback_exchange_done = []
+real_exchange = module._rename_exchange
+exchange_calls = [0]
 
 def fail_after_install(root_fd, root_path, relative_target, parent_fd):
     verify_calls[0] += 1
@@ -2463,14 +2565,26 @@ def fail_after_install(root_fd, root_path, relative_target, parent_fd):
         raise module.ConcurrentUpdate("injected post-link verification failure")
     return real_verify(root_fd, root_path, relative_target, parent_fd)
 
-def fail_unlink_sync(directory_fd):
-    fsync_calls[0] += 1
-    if fsync_calls[0] >= 9 and not symlink_rollback_target.exists():
+def mark_rollback_exchange(first_fd, first, second_fd, second):
+    if not os.path.lexists(symlink_rollback_target):
+        raise SystemExit("managed command path was missing before rollback exchange")
+    exchange_calls[0] += 1
+    result = real_exchange(first_fd, first, second_fd, second)
+    if not os.path.lexists(symlink_rollback_target):
+        raise SystemExit("managed command path was missing after rollback exchange")
+    if exchange_calls[0] == 2:
+        rollback_exchange_done.append(True)
+    return result
+
+def fail_rollback_sync(file_descriptor):
+    if rollback_exchange_done and not getattr(fail_rollback_sync, "failed", False):
+        fail_rollback_sync.failed = True
         raise OSError(5, "injected rollback directory fsync failure")
-    return real_fsync(directory_fd)
+    return real_fsync(file_descriptor)
 
 module._verify_parent_path = fail_after_install
-module.os.fsync = fail_unlink_sync
+module._rename_exchange = mark_rollback_exchange
+module.os.fsync = fail_rollback_sync
 original_argv = module.sys.argv
 module.sys.argv = [
     "atomic-publish-file.py", "symlink", str(symlink_rollback_home),
@@ -2483,9 +2597,10 @@ try:
 finally:
     module.sys.argv = original_argv
     module._verify_parent_path = real_verify
+    module._rename_exchange = real_exchange
     module.os.fsync = real_fsync
-if symlink_rollback_target.is_symlink() or symlink_rollback_target.read_text() != "old command\n":
-    raise SystemExit("Claude symlink rollback left the live command missing")
+if not symlink_rollback_target.exists() or symlink_rollback_target.is_symlink() or symlink_rollback_target.read_text() != "old command\n":
+    raise SystemExit("Claude symlink rollback left the live command missing or changed")
 
 # A concurrent symlink replacement plus parent move must not be restored only
 # into the detached directory and reported as a harmless no-op.
@@ -2576,8 +2691,8 @@ if not any(path.read_text() == "old command\n" for path in stable_command_backup
 if moved_commands_target.exists() or moved_commands_target.is_symlink():
     raise SystemExit("test fixture unexpectedly restored through the detached command directory")
 
-# If the command file is replaced with identical bytes after the initial
-# recovery link, a later parent move must report a backup of the displaced inode.
+# If a command file is replaced with identical bytes before its parent moves,
+# stop before exchange and keep the concurrent replacement in the moved parent.
 replaced_commands_home = scratch / "replaced-commands-home"
 replaced_commands_dir = replaced_commands_home / ".claude/commands"
 replaced_commands_dir.mkdir(parents=True)
@@ -2621,10 +2736,9 @@ try:
     )
 except module.RestorationFailed as error:
     if not error.recovery_path or not Path(error.recovery_path).is_file():
-        raise SystemExit("moved parent did not report the displaced command recovery backup")
-    recovery_stat = Path(error.recovery_path).stat()
-    if (recovery_stat.st_dev, recovery_stat.st_ino) != displaced_command_identity[0]:
-        raise SystemExit("moved parent reported a recovery backup for the pre-replacement inode")
+        raise SystemExit("moved parent did not report the original command recovery backup")
+    if Path(error.recovery_path).read_text() != "old command\n":
+        raise SystemExit("moved parent reported an invalid original command backup")
 else:
     raise SystemExit("moved command parent did not report incomplete restoration")
 finally:
@@ -2632,11 +2746,11 @@ finally:
     module._verify_parent_path = real_verify
     os.environ["HOME"] = previous_home
 moved_replacement_entries = list(replaced_commands_home.rglob(".crosscheck-publish-*/original"))
-if not any(
-    (entry.stat().st_dev, entry.stat().st_ino) == displaced_command_identity[0]
-    for entry in moved_replacement_entries
-):
-    raise SystemExit("moved command directory lost the actually displaced inode")
+if moved_replacement_entries:
+    raise SystemExit("publisher exchanged a command after its parent moved")
+detached_replacement = replaced_commands_dir.with_name("commands-moved") / "managed.md"
+if (detached_replacement.stat().st_dev, detached_replacement.stat().st_ino) != displaced_command_identity[0]:
+    raise SystemExit("moved command directory lost the concurrent replacement")
 if (old_command_identity == displaced_command_identity[0]):
     raise SystemExit("test did not create a distinct byte-identical replacement inode")
 
@@ -2664,26 +2778,28 @@ def replace_fsync_race_command(parent_fd, parent_path):
     return result
 
 real_fsync_directory = module._fsync_directory
-fsync_race_parent_identity = (fsync_race_dir.stat().st_dev, fsync_race_dir.stat().st_ino)
 displacement_happened = [False]
-real_rename_noreplace = module._rename_noreplace
+real_exchange = module._rename_exchange
+exchange_calls = [0]
+fail_sync_once = []
 
-def fail_fsync_race_restore(source_fd, source, destination_fd, destination):
-    if source == "original" and destination == "managed.md" and displacement_happened[0]:
+def fail_fsync_race_restore(first_fd, first, second_fd, second):
+    exchange_calls[0] += 1
+    if exchange_calls[0] == 2:
         raise OSError(errno.EIO, "injected restore failure after displacement")
-    result = real_rename_noreplace(source_fd, source, destination_fd, destination)
-    if source == "managed.md" and destination == "original":
+    result = real_exchange(first_fd, first, second_fd, second)
+    if exchange_calls[0] == 1:
         displacement_happened[0] = True
     return result
 
 def fail_fsync_after_displacement(directory_fd):
-    info = os.fstat(directory_fd)
-    if displacement_happened[0] and (info.st_dev, info.st_ino) == fsync_race_parent_identity:
+    if displacement_happened[0] and not fail_sync_once:
+        fail_sync_once.append(True)
         raise OSError(errno.EIO, "injected parent sync failure after displacement")
     return real_fsync_directory(directory_fd)
 
 module._new_recovery_directory = replace_fsync_race_command
-module._rename_noreplace = fail_fsync_race_restore
+module._rename_exchange = fail_fsync_race_restore
 module._fsync_directory = fail_fsync_after_displacement
 previous_home = os.environ["HOME"]
 os.environ["HOME"] = str(fsync_race_home)
@@ -2702,7 +2818,7 @@ else:
     raise SystemExit("post-displacement fsync failure was not reported as a restoration failure")
 finally:
     module._new_recovery_directory = real_new_recovery_directory
-    module._rename_noreplace = real_rename_noreplace
+    module._rename_exchange = real_exchange
     module._fsync_directory = real_fsync_directory
     os.environ["HOME"] = previous_home
 
@@ -3277,7 +3393,7 @@ try:
             str(parent_check_home), ".claude/commands/managed.md", "snapshot",
             str(parent_check_snapshot), "/repo/claude/skill-sources/managed.md",
         )
-    except OSError:
+    except module.RestorationFailed:
         pass
     else:
         raise SystemExit("Claude command migration accepted a replaced backup during its final parent check")
@@ -3291,11 +3407,16 @@ parent_check_fd.write("late write after parent check\n")
 parent_check_fd.flush()
 parent_check_fd.close()
 parent_check_backups = list((Path(previous_home) / ".crosscheck-recovery").glob("settings-*.bak"))
-if not any(
+recovery_link_has_original = any(
     (backup.stat().st_dev, backup.stat().st_ino) == parent_check_identity
     and backup.read_text() == "late write after parent check\n"
     for backup in parent_check_backups
-):
+)
+live_command_has_original = (
+    not parent_check_command.is_symlink()
+    and (parent_check_command.stat().st_dev, parent_check_command.stat().st_ino) == parent_check_identity
+)
+if not recovery_link_has_original and not live_command_has_original:
     raise SystemExit("Claude migration lost the original inode after backup replacement during parent check")
 if parent_check_command.is_symlink() or parent_check_command.read_text() != "late write after parent check\n":
     raise SystemExit("Claude migration failed to restore the original command after backup replacement")
@@ -3306,21 +3427,23 @@ race_command.parent.mkdir(parents=True)
 race_snapshot = scratch / "command-race-snapshot.md"
 race_command.write_text("published command\n")
 race_snapshot.write_text("published command\n")
-real_rename = module._rename_noreplace
+real_exchange = module._rename_exchange
+race_edit_injected = []
 
-def edit_command_after_claim(source_fd, source, destination_fd, destination):
-    result = real_rename(source_fd, source, destination_fd, destination)
-    if destination == "original" and source == "managed.md":
+def edit_command_after_exchange(first_fd, first, second_fd, second):
+    result = real_exchange(first_fd, first, second_fd, second)
+    if first == "managed.md" and second == "original" and not race_edit_injected:
         (race_command.parent / next(race_command.parent.glob(".crosscheck-publish-*")) / "original").write_text("concurrent user edit\n")
+        race_edit_injected.append(True)
     return result
 
-module._rename_noreplace = edit_command_after_claim
+module._rename_exchange = edit_command_after_exchange
 try:
     module.sync_symlink(
         str(race_dir), ".claude/commands/managed.md", "snapshot", str(race_snapshot), "/repo/claude/skill-sources/managed.md"
     )
 finally:
-    module._rename_noreplace = real_rename
+    module._rename_exchange = real_exchange
 if race_command.is_symlink() or race_command.read_text() != "concurrent user edit\n":
     raise SystemExit("Claude command migration replaced a concurrently edited command")
 PY
@@ -3336,14 +3459,24 @@ if [ ! -L "$CRITICAL_HOME/.claude/settings.json" ] || ! jq -e '.custom == "keep"
 fi
 CRITICAL_SETTINGS_INODE="$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_dev}:{s.st_ino}")' "$CRITICAL_HOME/.claude/actual.json")"
 CRITICAL_BACKUP_COUNT="$(find "$HOME/.crosscheck-recovery" -maxdepth 1 -name 'settings-*.bak' -type f 2>/dev/null | wc -l | tr -d ' ')"
+python3 - "$CRITICAL_HOME/.claude/actual.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+settings = Path(sys.argv[1])
+settings.write_text(json.dumps(json.loads(settings.read_text()), separators=(",", ":")) + "\n")
+PY
 for SETTINGS_SYNC in "$REPO_ROOT/scripts/sync-critical-settings.sh" \
   "$REPO_ROOT/claude/scripts/sync-critical-settings.sh" \
   "$REPO_ROOT/codex/scripts/sync-critical-settings.sh"; do
-  for sync_run in 1 2 3; do
+  sync_run=0
+  while [ "$sync_run" -lt 3 ]; do
     if ! TMPDIR="$TEMP_DIR" "$SETTINGS_SYNC" "$CRITICAL_HOME/.claude/settings.json" --include-ask | grep -Fq 'already current'; then
       echo "$SETTINGS_SYNC did not report an unchanged critical settings no-op" >&2
       exit 1
     fi
+    sync_run=$((sync_run + 1))
   done
 done
 if [ "$CRITICAL_SETTINGS_INODE" != "$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_dev}:{s.st_ino}")' "$CRITICAL_HOME/.claude/actual.json")" ] \

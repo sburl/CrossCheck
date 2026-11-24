@@ -140,6 +140,10 @@ if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
   echo "Claude settings path changed while the supply-chain hook was being installed; refusing to update: $SETTINGS_FILE" >&2
   exit 1
 fi
+if cmp -s <(jq -S -c . "$SETTINGS_SNAPSHOT") <(jq -S -c . "$TEMP_FILE"); then
+  echo "Claude supply-chain hook is already current in $SETTINGS_FILE"
+  exit 0
+fi
 PUBLISH_STARTED=1
 if ! python3 "$PUBLISH_HELPER" publish "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SETTINGS_SNAPSHOT" "$TEMP_FILE" "$SETTINGS_MODE"; then
   exit 1

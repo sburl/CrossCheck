@@ -295,7 +295,19 @@ def cleanup_snapshot(snapshot_path: str) -> str | None:
 
 
 def _clear_inherited_acl(directory_fd: int) -> None:
-    """Remove inherited macOS ACL entries before storing readable staged files."""
+    """Remove inherited ACL entries before using a private staging directory."""
+    if sys.platform.startswith("linux"):
+        for attribute in ("system.posix_acl_access", "system.posix_acl_default"):
+            try:
+                os.removexattr(directory_fd, attribute)
+            except OSError as error:
+                if error.errno in (
+                    getattr(errno, "ENODATA", errno.ENOENT), errno.ENOTSUP, errno.EOPNOTSUPP
+                ):
+                    continue
+                raise PermissionError(f"could not remove inherited {attribute} from private staging directory: {error}") from error
+        os.fchmod(directory_fd, 0o700)
+        return
     if sys.platform != "darwin":
         return
     try:
@@ -313,7 +325,16 @@ def _clear_inherited_acl(directory_fd: int) -> None:
 
 
 def _clear_inherited_file_acl(file_fd: int) -> None:
-    """Remove inherited macOS ACL entries from a private temporary file."""
+    """Remove inherited ACL entries from a private temporary file."""
+    if sys.platform.startswith("linux"):
+        try:
+            os.removexattr(file_fd, "system.posix_acl_access")
+        except OSError as error:
+            if error.errno not in (
+                getattr(errno, "ENODATA", errno.ENOENT), errno.ENOTSUP, errno.EOPNOTSUPP
+            ):
+                raise PermissionError(f"could not remove inherited POSIX access ACL from private temporary file: {error}") from error
+        return
     if sys.platform != "darwin":
         return
     try:
@@ -540,6 +561,7 @@ def _copy_into_directory(source_path: str, directory_fd: int, mode_override: int
                     written = os.write(destination_fd, view)
                     view = view[written:]
             destination_mode = stat.S_IMODE(source_info.st_mode) if mode_override is None else mode_override
+            _clear_inherited_file_acl(destination_fd)
             os.fchmod(destination_fd, destination_mode)
             os.fsync(destination_fd)
         except BaseException:
@@ -1682,17 +1704,40 @@ def sync_symlink(
     moved = False
     created_link = False
     created_link_identity: tuple[int, int] | None = None
+    published_at_live = False
 
-    def install_new_link() -> bool:
-        nonlocal created_link, created_link_identity
+    def install_new_link(*, exchange_existing: bool = False) -> bool:
+        nonlocal created_link, created_link_identity, moved, published_at_live
+        nonlocal recovery_fd, recovery_name, recovery_path
         if recovery_fd is None:
             raise OSError("managed command has no private staging directory")
-        staged_name = f"new-link-{secrets.token_hex(8)}"
+        if exchange_existing:
+            try:
+                _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+            except ConcurrentUpdate as error:
+                retained_path = stable_backup_path or initial_stable_backup_path or expected_recovery_path
+                _discard_recovery(parent_fd, recovery_fd, recovery_name)
+                recovery_fd = None
+                recovery_name = None
+                recovery_path = None
+                raise RestorationFailed(
+                    f"managed command parent changed before atomic publication: {target}", retained_path
+                ) from error
+        staged_name = "original" if exchange_existing else f"new-link-{secrets.token_hex(8)}"
         os.symlink(new_link, staged_name, dir_fd=recovery_fd)
         staged_info = os.stat(staged_name, dir_fd=recovery_fd, follow_symlinks=False)
         if not stat.S_ISLNK(staged_info.st_mode):
             raise OSError("managed command staging entry is not a symlink")
         staged_identity = (staged_info.st_dev, staged_info.st_ino)
+        if exchange_existing:
+            _rename_exchange(parent_fd, target_name, recovery_fd, staged_name)
+            created_link = True
+            created_link_identity = staged_identity
+            moved = True
+            published_at_live = True
+            _fsync_directory(parent_fd)
+            _fsync_directory(recovery_fd)
+            return True
         try:
             _rename_noreplace(recovery_fd, staged_name, parent_fd, target_name)
         except FileExistsError:
@@ -1721,6 +1766,91 @@ def sync_symlink(
         created_link_identity = staged_identity
         _fsync_directory(recovery_fd)
         return True
+
+    def restore_exchanged_link() -> None:
+        """Restore the displaced path with an exchange, keeping the live name populated."""
+        nonlocal created_link, moved, published_at_live
+        if recovery_fd is None or not moved or not published_at_live:
+            raise RestorationFailed(
+                f"could not safely stage rollback of the managed command: {target}", stable_backup_path or recovery_path
+            )
+        try:
+            _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+            _rename_exchange(parent_fd, target_name, recovery_fd, "original")
+        except OSError as error:
+            if error.errno != errno.ENOENT:
+                raise RestorationFailed(
+                    f"could not restore managed command with an atomic exchange: {target}",
+                    stable_backup_path or recovery_path,
+                ) from error
+            # If another writer removed the published link, put the displaced
+            # entry back only when the live name is still absent.
+            try:
+                _rename_noreplace(recovery_fd, "original", parent_fd, target_name)
+            except OSError as restore_error:
+                raise RestorationFailed(
+                    f"could not restore the managed command after its live path disappeared: {target}",
+                    stable_backup_path or recovery_path,
+                ) from restore_error
+            moved = False
+            created_link = False
+            published_at_live = False
+            _fsync_directory(recovery_fd)
+            _fsync_directory(parent_fd)
+            _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+            raise ConcurrentUpdate(f"managed command disappeared during CrossCheck rollback: {target}") from error
+        except ConcurrentUpdate as error:
+            raise RestorationFailed(
+                f"could not restore managed command with an atomic exchange: {target}",
+                stable_backup_path or recovery_path,
+            ) from error
+
+        published_at_live = False
+        try:
+            _fsync_directory(parent_fd)
+            _fsync_directory(recovery_fd)
+        except OSError as error:
+            raise RestorationFailed(
+                f"managed command was restored but its directory could not be synced: {target}",
+                stable_backup_path or recovery_path,
+            ) from error
+        try:
+            candidate_info = os.stat("original", dir_fd=recovery_fd, follow_symlinks=False)
+            candidate_is_ours = (
+                stat.S_ISLNK(candidate_info.st_mode)
+                and created_link_identity == (candidate_info.st_dev, candidate_info.st_ino)
+                and os.readlink("original", dir_fd=recovery_fd) == new_link
+            )
+        except OSError:
+            candidate_is_ours = False
+        if not candidate_is_ours:
+            try:
+                _rename_exchange(parent_fd, target_name, recovery_fd, "original")
+                published_at_live = True
+                _fsync_directory(parent_fd)
+                _fsync_directory(recovery_fd)
+                _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+            except OSError as error:
+                raise RestorationFailed(
+                    f"could not put a concurrent managed command path back live: {target}",
+                    os.path.join(recovery_path or "", "original"),
+                ) from error
+            created_link = False
+            raise RestorationFailed(
+                f"a concurrent path replaced the managed command during rollback: {target}",
+                stable_backup_path or os.path.join(recovery_path or "", "original"),
+            )
+        try:
+            os.unlink("original", dir_fd=recovery_fd)
+            _fsync_directory(recovery_fd)
+            _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+        except OSError as error:
+            raise RestorationFailed(
+                f"managed command was restored but its rollback link could not be removed: {target}",
+                stable_backup_path or recovery_path,
+            ) from error
+        moved = False
+        created_link = False
 
     def preserve_moved_snapshot() -> None:
         nonlocal stable_recovery_name, stable_backup_path
@@ -1887,16 +2017,17 @@ def sync_symlink(
         if expected_kind == "link" and os.readlink(target_name, dir_fd=parent_fd) == new_link:
             return None
         recovery_fd, recovery_name, recovery_path = _new_recovery_directory(parent_fd, parent_path)
-        _rename_noreplace(parent_fd, target_name, recovery_fd, "original")
-        moved = True
         if expected_kind == "snapshot":
             stable_recovery_name = None
             stable_backup_path = None
-        _fsync_directory(parent_fd)
-        if stat.S_ISREG(target_info.st_mode):
-            _fsync_file_at(recovery_fd, "original")
-        _fsync_directory(recovery_fd)
+        if not install_new_link(exchange_existing=True):
+            raise ConcurrentUpdate(
+                f"managed command link appeared during CrossCheck update: {target}",
+                stable_backup_path or recovery_path,
+            )
         moved_info = os.stat("original", dir_fd=recovery_fd, follow_symlinks=False)
+        if stat.S_ISREG(moved_info.st_mode):
+            _fsync_file_at(recovery_fd, "original")
         if expected_kind == "snapshot":
             if stat.S_ISREG(moved_info.st_mode):
                 moved_state = _entry_state_at(recovery_fd, "original")
@@ -1951,42 +2082,17 @@ def sync_symlink(
                 stable_recovery_name = initial_stable_recovery_name
                 stable_backup_path = initial_stable_backup_path
             if not stat.S_ISREG(moved_info.st_mode) or _read_signature_at(recovery_fd, "original") != expected_signature:
-                try:
-                    _rename_noreplace(recovery_fd, "original", parent_fd, target_name)
-                    _fsync_directory(recovery_fd)
-                    _fsync_directory(parent_fd)
-                    _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
-                    moved = False
-                    _discard_recovery(parent_fd, recovery_fd, recovery_name)
-                    recovery_fd = None
-                    recovery_name = None
-                    return None
-                except OSError as error:
-                    raise ConcurrentUpdate(
-                        f"managed command changed during CrossCheck update: {target}", recovery_path
-                    ) from error
-        elif not stat.S_ISLNK(moved_info.st_mode) or os.readlink("original", dir_fd=recovery_fd) != expected_link:
-            try:
-                _rename_noreplace(recovery_fd, "original", parent_fd, target_name)
-                _fsync_directory(recovery_fd)
-                _fsync_directory(parent_fd)
-                _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
-                moved = False
+                restore_exchanged_link()
                 _discard_recovery(parent_fd, recovery_fd, recovery_name)
                 recovery_fd = None
                 recovery_name = None
                 return None
-            except OSError as error:
-                raise ConcurrentUpdate(
-                    f"managed command changed during CrossCheck update: {target}", recovery_path
-                ) from error
-
-        if not install_new_link():
-            raise ConcurrentUpdate(
-                f"managed command link appeared during CrossCheck update: {target}",
-                stable_backup_path or recovery_path,
-            )
-        _fsync_directory(parent_fd)
+        elif not stat.S_ISLNK(moved_info.st_mode) or os.readlink("original", dir_fd=recovery_fd) != expected_link:
+            restore_exchanged_link()
+            _discard_recovery(parent_fd, recovery_fd, recovery_name)
+            recovery_fd = None
+            recovery_name = None
+            return None
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
         if expected_kind == "snapshot":
@@ -2034,66 +2140,73 @@ def sync_symlink(
         recovery_name = None
         moved = False
         return ""
+    except RestorationFailed:
+        if moved and created_link and published_at_live:
+            restore_exchanged_link()
+        raise
     except BaseException as error:
         rollback_sync_error: OSError | None = None
         preserve_moved_snapshot()
         if created_link:
-            if recovery_fd is None:
+            if moved and published_at_live:
+                restore_exchanged_link()
+            elif recovery_fd is None:
                 raise RestorationFailed(
                     f"could not safely stage rollback of the managed command: {target}", recovery_path
                 ) from error
-            candidate_name = "rollback-candidate"
-            candidate_path = os.path.join(recovery_path or "", candidate_name)
-            try:
-                _rename_noreplace(parent_fd, target_name, recovery_fd, candidate_name)
-            except FileNotFoundError:
-                created_link = False
-            except OSError as rollback_error:
-                raise RestorationFailed(
-                    f"could not isolate the failed managed command link: {target}", recovery_path
-                ) from rollback_error
             else:
+                candidate_name = "rollback-candidate"
+                candidate_path = os.path.join(recovery_path or "", candidate_name)
                 try:
-                    candidate_info = os.stat(candidate_name, dir_fd=recovery_fd, follow_symlinks=False)
-                    candidate_is_ours = (
-                        stat.S_ISLNK(candidate_info.st_mode)
-                        and created_link_identity == (candidate_info.st_dev, candidate_info.st_ino)
-                        and os.readlink(candidate_name, dir_fd=recovery_fd) == new_link
-                    )
-                except OSError:
-                    candidate_is_ours = False
-                if candidate_is_ours:
-                    try:
-                        os.unlink(candidate_name, dir_fd=recovery_fd)
-                    except OSError as rollback_error:
-                        raise RestorationFailed(
-                            f"could not remove the failed managed command link: {target}", candidate_path
-                        ) from rollback_error
+                    _rename_noreplace(parent_fd, target_name, recovery_fd, candidate_name)
+                except FileNotFoundError:
                     created_link = False
+                except OSError as rollback_error:
+                    raise RestorationFailed(
+                        f"could not isolate the failed managed command link: {target}", recovery_path
+                    ) from rollback_error
+                else:
                     try:
-                        _fsync_directory(recovery_fd)
+                        candidate_info = os.stat(candidate_name, dir_fd=recovery_fd, follow_symlinks=False)
+                        candidate_is_ours = (
+                            stat.S_ISLNK(candidate_info.st_mode)
+                            and created_link_identity == (candidate_info.st_dev, candidate_info.st_ino)
+                            and os.readlink(candidate_name, dir_fd=recovery_fd) == new_link
+                        )
+                    except OSError:
+                        candidate_is_ours = False
+                    if candidate_is_ours:
+                        try:
+                            os.unlink(candidate_name, dir_fd=recovery_fd)
+                        except OSError as rollback_error:
+                            raise RestorationFailed(
+                                f"could not remove the failed managed command link: {target}", candidate_path
+                            ) from rollback_error
+                        created_link = False
+                        try:
+                            _fsync_directory(recovery_fd)
+                        except OSError as rollback_error:
+                            rollback_sync_error = rollback_error
+                    else:
+                        retained_path = stable_backup_path or recovery_path
+                        try:
+                            _rename_noreplace(recovery_fd, candidate_name, parent_fd, target_name)
+                            _fsync_directory(parent_fd)
+                        except FileExistsError:
+                            candidate_path = os.path.join(recovery_path or "", candidate_name)
+                            retained_path = candidate_path
+                        except OSError as rollback_error:
+                            raise RestorationFailed(
+                                f"could not restore a concurrent managed command path: {target}", candidate_path
+                            ) from rollback_error
+                        raise RestorationFailed(
+                            f"a concurrent path replaced the managed command during rollback: {target}", retained_path
+                        ) from error
+                if not created_link:
+                    try:
+                        _fsync_directory(parent_fd)
                     except OSError as rollback_error:
                         rollback_sync_error = rollback_error
-                else:
-                    retained_path = stable_backup_path or recovery_path
-                    try:
-                        _rename_noreplace(recovery_fd, candidate_name, parent_fd, target_name)
-                        _fsync_directory(parent_fd)
-                    except FileExistsError:
-                        candidate_path = os.path.join(recovery_path or "", candidate_name)
-                        retained_path = candidate_path
-                    except OSError as rollback_error:
-                        raise RestorationFailed(
-                            f"could not restore a concurrent managed command path: {target}", candidate_path
-                        ) from rollback_error
-                    raise RestorationFailed(
-                        f"a concurrent path replaced the managed command during rollback: {target}", retained_path
-                    ) from error
-            if not created_link:
-                try:
-                    _fsync_directory(parent_fd)
-                except OSError as rollback_error:
-                    rollback_sync_error = rollback_error
         if moved and recovery_fd is not None and recovery_name is not None:
             try:
                 try:

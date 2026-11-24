@@ -119,7 +119,7 @@ if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
   echo "Settings path changed during CrossCheck update; refusing to publish: $SETTINGS_FILE" >&2
   exit 1
 fi
-if cmp -s "$SNAPSHOT" "$STAGED"; then
+if cmp -s <(jq -S -c . "$SNAPSHOT") <(jq -S -c . "$STAGED"); then
   echo "CrossCheck critical deny rules are already current in $SETTINGS_FILE"
   exit 0
 fi

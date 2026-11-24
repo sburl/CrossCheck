@@ -130,47 +130,28 @@ echo ""
 
 # 3. Copy settings template if needed
 echo "📝 Step 3: Configure settings..."
-if [ ! -f "$HOME/.codex/settings.json" ]; then
-    echo "   Creating ~/.codex/settings.json from template..."
-    mkdir -p "$HOME/.codex"  # Ensure directory exists
-    cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.codex/settings.json"
-    echo "   ⚠️  TODO: Edit ~/.codex/settings.json to customize for your stack"
-    echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
-else
+SETTINGS_FILE="$HOME/.codex/settings.json"
+if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
     echo "   ✅ Settings already exist at ~/.codex/settings.json"
-
-    # Sync critical deny rules even when settings exist
-    echo "   Checking critical deny rules..."
-    CRITICAL_DENY_RULES=(
-        'Bash(gh*--admin*)'
-        'Bash(*--admin*)'
-        'Bash(gh api*rulesets*)'
-        'Bash(gh api*branches/*/protection*)'
-        'Bash(*graphql*BranchProtection*)'
-        'Bash(*graphql*Ruleset*)'
-    )
-
-    DENY_UPDATED=0
-    DENY_FAILED=0
-    for rule in "${CRITICAL_DENY_RULES[@]}"; do
-        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$HOME/.codex/settings.json" >/dev/null 2>&1; then
-            if jq --arg r "$rule" '.permissions.deny += [$r]' "$HOME/.codex/settings.json" > "$HOME/.codex/settings.json.tmp" \
-                && mv "$HOME/.codex/settings.json.tmp" "$HOME/.codex/settings.json"; then
-                echo "   + Added critical deny rule: $rule"
-                DENY_UPDATED=$((DENY_UPDATED + 1))
-            else
-                echo "   ⚠️  Failed to add deny rule: $rule (jq or write error)"
-                DENY_FAILED=$((DENY_FAILED + 1))
-            fi
-        fi
-    done
-
-    if [ "$DENY_FAILED" -gt 0 ]; then
-        echo "   ⚠️  $DENY_FAILED deny rule(s) failed to sync — check settings.json is valid JSON"
-    elif [ "$DENY_UPDATED" -eq 0 ]; then
-        echo "   ✅ All critical deny rules present"
+    "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE"
+else
+    echo "   Creating ~/.codex/settings.json from template..."
+    SETTINGS_STAGE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-codex-settings.XXXXXX")"
+    trap 'rm -f "$SETTINGS_STAGE"' EXIT
+    cp "$CROSSCHECK_ROOT_DIR/settings.template.json" "$SETTINGS_STAGE"
+    if python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
+        "$HOME" ".codex/settings.json" --absent "$SETTINGS_STAGE"; then
+        echo "   ⚠️  TODO: Edit ~/.codex/settings.json to customize for your stack"
+        echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
     else
-        echo "   ✅ Added $DENY_UPDATED critical security rule(s)"
+        PUBLISH_STATUS=$?
+        if [ "$PUBLISH_STATUS" -eq 3 ] && [ -f "$SETTINGS_FILE" ]; then
+            echo "   Settings appeared during setup; updating the existing file safely"
+            "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE"
+        else
+            echo "   ❌ Could not safely create ~/.codex/settings.json" >&2
+            exit 1
+        fi
     fi
 fi
 echo ""

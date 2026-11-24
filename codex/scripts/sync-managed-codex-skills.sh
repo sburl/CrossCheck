@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CROSSCHECK_ROOT="$(cd "${1:?usage: sync-managed-codex-skills.sh CROSSCHECK_ROOT HOME}" && pwd)"
-TARGET_HOME="$(cd "${2:?usage: sync-managed-codex-skills.sh CROSSCHECK_ROOT HOME}" && pwd)"
+CROSSCHECK_ROOT="$(cd "${1:?usage: sync-managed-codex-skills.sh CROSSCHECK_ROOT HOME}" && pwd -P)"
+TARGET_HOME="$(cd "${2:?usage: sync-managed-codex-skills.sh CROSSCHECK_ROOT HOME}" && pwd -P)"
 if [ -d "$CROSSCHECK_ROOT/codex/skills" ]; then
   SOURCE_ROOT="$CROSSCHECK_ROOT/codex/skills"
   SOURCE_PREFIX="codex/skills"
@@ -45,7 +45,6 @@ if [ -L "$TARGET_HOME/.codex" ] || [ -L "$SKILLS_ROOT" ]; then
   exit 0
 fi
 
-mkdir -p "$SKILLS_ROOT"
 for skill_dir in "$SOURCE_ROOT"/*; do
   [ -d "$skill_dir" ] && [ ! -L "$skill_dir" ] || continue
   [ -f "$skill_dir/SKILL.md" ] || continue
@@ -59,11 +58,11 @@ for skill_dir in "$SOURCE_ROOT"/*; do
     PRESERVED=$((PRESERVED + 1))
     continue
   fi
-  mkdir -p "$target_dir"
   skill_changed=0
   while IFS= read -r -d '' source_file; do
     relative_path="${source_file#"$skill_dir"/}"
     target_file="$target_dir/$relative_path"
+    target_relative=".codex/skills/$skill_name/$relative_path"
     target_parent="$(dirname "$target_file")"
     if has_symlink_ancestor "$target_parent" "$target_dir" || [ -L "$target_file" ] || { [ -e "$target_file" ] && [ ! -f "$target_file" ]; }; then
       echo "Preserving linked or non-regular Codex skill path: $skill_name/$relative_path"
@@ -72,15 +71,9 @@ for skill_dir in "$SOURCE_ROOT"/*; do
     fi
 
     expected_snapshot="--absent"
-    if [ -f "$target_file" ]; then
-      if cmp -s "$source_file" "$target_file"; then
-        continue
-      fi
-      CURRENT_SNAPSHOT="$(mktemp "${target_file}.snapshot.XXXXXX")"
-      cp -p "$target_file" "$CURRENT_SNAPSHOT"
-      if ! cmp -s "$target_file" "$CURRENT_SNAPSHOT"; then
-        echo "Preserving Codex skill changed during inspection: $skill_name/$relative_path"
-        PRESERVED=$((PRESERVED + 1))
+    CURRENT_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-snapshot.XXXXXX")"
+    if python3 "$PUBLISH_HELPER" snapshot "$TARGET_HOME" "$target_relative" "$CURRENT_SNAPSHOT"; then
+      if cmp -s "$source_file" "$CURRENT_SNAPSHOT"; then
         rm -f "$CURRENT_SNAPSHOT"
         CURRENT_SNAPSHOT=""
         continue
@@ -94,12 +87,20 @@ for skill_dir in "$SOURCE_ROOT"/*; do
         continue
       fi
       expected_snapshot="$CURRENT_SNAPSHOT"
+    else
+      snapshot_status=$?
+      rm -f "$CURRENT_SNAPSHOT"
+      CURRENT_SNAPSHOT=""
+      if [ "$snapshot_status" -ne 4 ]; then
+        echo "Preserving linked, unsafe, or changed Codex skill path: $skill_name/$relative_path"
+        PRESERVED=$((PRESERVED + 1))
+        continue
+      fi
     fi
 
-    mkdir -p "$target_parent"
-    CURRENT_STAGE="$(mktemp "${target_file}.stage.XXXXXX")"
+    CURRENT_STAGE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-stage.XXXXXX")"
     cp -p "$source_file" "$CURRENT_STAGE"
-    if python3 "$PUBLISH_HELPER" "$target_file" "$expected_snapshot" "$CURRENT_STAGE"; then
+    if python3 "$PUBLISH_HELPER" publish "$TARGET_HOME" "$target_relative" "$expected_snapshot" "$CURRENT_STAGE"; then
       skill_changed=1
     else
       PRESERVED=$((PRESERVED + 1))

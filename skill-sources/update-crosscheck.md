@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version — pulls from main. Skills
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-11-23-23-00
+**Last Updated:** 2026-11-24-02-12
 
 # Update CrossCheck
 
@@ -53,62 +53,30 @@ CURRENT=$(cat "$CROSSCHECK_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo 
 echo "   Current version: $CURRENT"
 ```
 
-## Step 3: Sync Critical Deny Rules
+## Step 3: Sync Critical Deny Rules and the Claude Hook
 
-Critical security deny rules must propagate to existing settings even when settings
-are not fully overwritten. This runs BEFORE the up-to-date check so it always executes.
+Update existing settings through the managed scripts. They preserve a settings
+symlink and refuse to replace concurrent edits.
 
 ```bash
-# Critical deny rules that MUST exist in settings (security boundary)
-CRITICAL_DENY_RULES=(
-    'Bash(gh*--admin*)'
-    'Bash(*--admin*)'
-    'Bash(gh api*rulesets*)'
-    'Bash(gh api*branches/*/protection*)'
-    'Bash(*graphql*BranchProtection*)'
-    'Bash(*graphql*Ruleset*)'
-)
-
-SETTINGS_UPDATED=0
-SETTINGS_FAILED=0
-
-for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json" "$HOME/.gemini/settings.json"; do
-    [ -f "$SETTINGS_FILE" ] || continue
-
-    for rule in "${CRITICAL_DENY_RULES[@]}"; do
-        if ! jq -e --arg r "$rule" '.permissions.deny | index($r)' "$SETTINGS_FILE" >/dev/null 2>&1; then
-            if jq --arg r "$rule" '.permissions.deny += [$r]' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
-                && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"; then
-                echo "   + Added critical deny rule to $(basename "$SETTINGS_FILE"): $rule"
-                SETTINGS_UPDATED=$((SETTINGS_UPDATED + 1))
-            else
-                echo "   ⚠️  Failed to add deny rule to $(basename "$SETTINGS_FILE"): $rule"
-                SETTINGS_FAILED=$((SETTINGS_FAILED + 1))
-            fi
-        fi
-    done
-
-    # Also ensure gh api is in ask list (not auto-allowed)
-    if ! jq -e '.permissions.ask | index("Bash(gh api *)")' "$SETTINGS_FILE" >/dev/null 2>&1; then
-        if jq '.permissions.ask += ["Bash(gh api *)"]' "$SETTINGS_FILE" > "${SETTINGS_FILE}.tmp" \
-            && mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"; then
-            echo "   + Added gh api to ask list in $(basename "$SETTINGS_FILE")"
-            SETTINGS_UPDATED=$((SETTINGS_UPDATED + 1))
-        else
-            echo "   ⚠️  Failed to update ask list in $(basename "$SETTINGS_FILE")"
-            SETTINGS_FAILED=$((SETTINGS_FAILED + 1))
-        fi
+for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
+    if [ -f "$SETTINGS_FILE" ]; then
+        "$CROSSCHECK_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --include-ask
     fi
 done
 
-if [ "$SETTINGS_FAILED" -gt 0 ]; then
-    echo "   ⚠️  $SETTINGS_FAILED setting(s) failed to sync — check settings files are valid JSON"
-elif [ "$SETTINGS_UPDATED" -eq 0 ]; then
-    echo "   ✅ All critical deny rules present"
-else
-    echo "   ✅ $SETTINGS_UPDATED setting(s) updated with critical security rules"
+if [ -f "$HOME/.claude/settings.json" ]; then
+    "$CROSSCHECK_DIR/claude/scripts/install-supply-chain-hook.sh" \
+        "$HOME/.claude/settings.json" \
+        "$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh"
 fi
 ```
+
+This keeps the critical deny rules and `Bash(gh api *)` ask rule current, and
+refreshes the Claude supply-chain hook without replacing unrelated settings.
+When an existing file is replaced, the updater prints a private recovery
+path for the prior file. Keep it until apps that may have the file open are
+closed and any late save has been checked.
 
 ## Step 4: Pull Latest
 

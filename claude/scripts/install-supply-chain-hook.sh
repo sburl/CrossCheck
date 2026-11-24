@@ -14,6 +14,8 @@ if [ ! -x "$HOOK_FILE" ]; then
 fi
 
 SETTINGS_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
+SETTINGS_ROOT="$(dirname "$SETTINGS_TARGET")"
+SETTINGS_RELATIVE="$(basename "$SETTINGS_TARGET")"
 if stat -c '%a' "$SETTINGS_TARGET" >/dev/null 2>&1; then
   SETTINGS_MODE="$(stat -c '%a' "$SETTINGS_TARGET")"
 else
@@ -22,10 +24,14 @@ fi
 
 HOOK_RUNNER='CROSSCHECK_SUPPLY_CHAIN_GATE_V1=1; hook=$1; if [[ ! -x "$hook" ]]; then printf "Claude supply-chain gate unavailable or non-executable: %s\\n" "$hook" >&2; exit 2; fi; if bash "$hook"; then status=0; else status=$?; fi; if [[ "$status" -ne 0 && "$status" -ne 2 ]]; then printf "Claude supply-chain gate failed (%d): %s\\n" "$status" "$hook" >&2; exit 2; fi; exit "$status"'
 printf -v HOOK_COMMAND 'bash -c %q -- %q' "$HOOK_RUNNER" "$HOOK_FILE"
-SETTINGS_SNAPSHOT="$(mktemp "${SETTINGS_TARGET}.source.XXXXXX")"
+PUBLISH_HELPER="$(cd "$(dirname "$0")/../.." && pwd)/scripts/atomic-publish-file.py"
+SETTINGS_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-settings-snapshot.XXXXXX")"
 TEMP_FILE=""
 trap 'rm -f "$TEMP_FILE" "$SETTINGS_SNAPSHOT"' EXIT
-cp "$SETTINGS_TARGET" "$SETTINGS_SNAPSHOT"
+if ! python3 "$PUBLISH_HELPER" snapshot "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SETTINGS_SNAPSHOT"; then
+  echo "Claude settings changed or became unsafe while it was being read: $SETTINGS_FILE" >&2
+  exit 1
+fi
 
 # Work from one private snapshot and refuse to publish if another process
 # changes the live settings while validation is running.
@@ -42,7 +48,7 @@ if ! jq -s -e '
   exit 1
 fi
 
-TEMP_FILE="$(mktemp "${SETTINGS_TARGET}.tmp.XXXXXX")"
+TEMP_FILE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-settings-stage.XXXXXX")"
 
 if ! jq --arg hook "$HOOK_COMMAND" --argjson rules '[
   "Bash(gh*--admin*)",
@@ -124,8 +130,7 @@ if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
   echo "Claude settings path changed while the supply-chain hook was being installed; refusing to update: $SETTINGS_FILE" >&2
   exit 1
 fi
-PUBLISH_HELPER="$(cd "$(dirname "$0")/../.." && pwd)/scripts/atomic-publish-file.py"
-if ! python3 "$PUBLISH_HELPER" "$SETTINGS_TARGET" "$SETTINGS_SNAPSHOT" "$TEMP_FILE" "$SETTINGS_MODE"; then
+if ! python3 "$PUBLISH_HELPER" publish "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SETTINGS_SNAPSHOT" "$TEMP_FILE" "$SETTINGS_MODE"; then
   exit 1
 fi
 TEMP_FILE=""

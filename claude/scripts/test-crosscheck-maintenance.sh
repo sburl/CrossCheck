@@ -118,8 +118,7 @@ import sys
 from pathlib import Path
 
 marker = Path(sys.argv[2])
-settings = os.path.realpath(os.environ["TEMP_MODE_TARGET"])
-temps = glob.glob(settings + ".tmp.*")
+temps = glob.glob(os.path.join(os.environ["TMPDIR"], "crosscheck-settings-stage.*"))
 if temps and not marker.exists():
     mode = stat.S_IMODE(os.stat(temps[0]).st_mode)
     marker.write_text(oct(mode))
@@ -131,7 +130,7 @@ SH
 chmod +x "$PRIVATE_JQ_BIN/jq"
 (
   umask 022
-  PATH="$PRIVATE_JQ_BIN:$PATH" REAL_JQ="$REAL_JQ" TEMP_MODE_MARKER="$PRIVATE_MODE_MARKER" TEMP_MODE_TARGET="$PRIVATE_SETTINGS" "$INSTALLER" "$PRIVATE_SETTINGS" "$HOOK"
+  PATH="$PRIVATE_JQ_BIN:$PATH" TMPDIR="$TEMP_DIR" REAL_JQ="$REAL_JQ" TEMP_MODE_MARKER="$PRIVATE_MODE_MARKER" TEMP_MODE_TARGET="$PRIVATE_SETTINGS" "$INSTALLER" "$PRIVATE_SETTINGS" "$HOOK"
 )
 if [ "$(cat "$PRIVATE_MODE_MARKER")" != "0o600" ] || [ "$(python3 -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "$PRIVATE_SETTINGS")" != "0o600" ]; then
   echo "installer did not keep private settings and its intermediate file at mode 0600" >&2
@@ -405,6 +404,14 @@ done
 # process and cannot rely on a shell-local CROSSCHECK_DIR.
 grep -Fq 'sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"' "$REPO_ROOT/claude/skill-sources/update-crosscheck.md"
 grep -Fq 'sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"' "$REPO_ROOT/codex/skills/update-crosscheck/SKILL.md"
+for updater in "$REPO_ROOT/skill-sources/update-crosscheck.md" "$REPO_ROOT/claude/skill-sources/update-crosscheck.md" "$REPO_ROOT/codex/skill-sources/update-crosscheck.md" "$REPO_ROOT/codex/skills/update-crosscheck/SKILL.md"; do
+  grep -Fq 'scripts/sync-critical-settings.sh' "$updater"
+  grep -Fq 'install-supply-chain-hook.sh' "$updater"
+  if grep -Fq 'mv "${SETTINGS_FILE}.tmp" "$SETTINGS_FILE"' "$updater"; then
+    echo "updater still replaces settings with a check-then-move: $updater" >&2
+    exit 1
+  fi
+done
 for updater in "$REPO_ROOT/skill-sources/update-crosscheck.md" "$REPO_ROOT/codex/skill-sources/update-crosscheck.md"; do
   if ! grep -Fq 'sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"' "$updater"; then
     echo "legacy updater does not refresh Claude commands through the managed mirror: $updater" >&2
@@ -465,33 +472,142 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 scratch = Path(sys.argv[2]) / "atomic-publish-race"
 scratch.mkdir()
-target = scratch / "settings.json"
+settings_dir = scratch / ".claude"
+settings_dir.mkdir()
+target = settings_dir / "settings.json"
 snapshot = scratch / "snapshot.json"
 staged = scratch / "staged.json"
 target.write_text('{"setting":"original"}\n')
 snapshot.write_text('{"setting":"original"}\n')
 staged.write_text('{"setting":"updated"}\n')
-real_publish = module._rename_noreplace
+open_file = target.open("r+")
+recovery_path = module.publish_file(str(scratch), ".claude/settings.json", str(snapshot), str(staged))
+if target.read_text() != '{"setting":"updated"}\n':
+    raise SystemExit("atomic publisher did not install the staged settings")
+open_file.seek(0)
+open_file.truncate()
+open_file.write('{"concurrentWriter":"late save"}\n')
+open_file.flush()
+open_file.close()
+if not recovery_path or (Path(recovery_path) / "original").read_text() != '{"concurrentWriter":"late save"}\n':
+    raise SystemExit("atomic publisher did not preserve a save through an already-open settings file")
 
-def write_during_publish(source, destination):
-    if source == str(staged) and destination == str(target):
-        originals = list(scratch.glob(".crosscheck-publish-*/original"))
-        assert len(originals) == 1, "publisher did not atomically claim the old file first"
-        originals[0].write_text('{"concurrentWriter":"latest edit"}\n')
-    return real_publish(source, destination)
+# A publish error after moving the live file must restore it to the live path.
+error_dir = scratch / "publish-error"
+error_dir.mkdir()
+(error_dir / ".claude").mkdir()
+error_target = error_dir / ".claude/settings.json"
+error_snapshot = error_dir / "snapshot.json"
+error_stage = error_dir / "staged.json"
+error_target.write_text('{"setting":"original"}\n')
+error_snapshot.write_text('{"setting":"original"}\n')
+error_stage.write_text('{"setting":"updated"}\n')
+real_rename = module._rename_noreplace
 
-module._rename_noreplace = write_during_publish
+def fail_stage_publish(source_fd, source, destination_fd, destination):
+    if source.startswith(".crosscheck-stage-") and destination == "settings.json":
+        raise OSError(95, "injected publish failure")
+    return real_rename(source_fd, source, destination_fd, destination)
+
+module._rename_noreplace = fail_stage_publish
 try:
-    module.publish_file(str(target), str(snapshot), str(staged))
-except module.ConcurrentUpdate:
+    module.publish_file(str(error_dir), ".claude/settings.json", str(error_snapshot), str(error_stage))
+except OSError as error:
+    if "injected publish failure" not in str(error):
+        raise
+else:
+    raise SystemExit("atomic publisher accepted an injected publish failure")
+finally:
+    module._rename_noreplace = real_rename
+if error_target.read_text() != '{"setting":"original"}\n':
+    raise SystemExit("atomic publisher failed to restore settings after a publish error")
+if list((error_dir / ".claude").glob(".crosscheck-publish-*")):
+    raise SystemExit("atomic publisher left recovery data after successful restoration")
+
+# A directory symlink introduced during staging must not redirect publication.
+link_root = scratch / "codex-home"
+skill_dir = link_root / ".codex/skills/example"
+outside = scratch / "outside"
+skill_dir.mkdir(parents=True)
+outside.mkdir()
+link_stage = scratch / "skill-stage"
+link_stage.write_text("managed skill\n")
+real_copy = module._copy_into_directory
+
+def swap_skill_directory(source_path, directory_fd):
+    moved_dir = skill_dir.with_name("example-moved")
+    skill_dir.rename(moved_dir)
+    skill_dir.symlink_to(outside, target_is_directory=True)
+    return real_copy(source_path, directory_fd)
+
+module._copy_into_directory = swap_skill_directory
+try:
+    module.publish_file(str(link_root), ".codex/skills/example/SKILL.md", None, str(link_stage))
+except (module.ConcurrentUpdate, OSError):
     pass
 else:
-    raise SystemExit("atomic publisher accepted a concurrent settings edit")
-if target.read_text() != '{"concurrentWriter":"latest edit"}\n':
-    raise SystemExit("atomic publisher lost the settings edit made after its snapshot comparison")
-if list(scratch.glob(".crosscheck-publish-*")):
-    raise SystemExit("atomic publisher left recovery files after restoring the concurrent edit")
+    raise SystemExit("atomic publisher followed a directory symlink introduced during staging")
+finally:
+    module._copy_into_directory = real_copy
+if (outside / "SKILL.md").exists():
+    raise SystemExit("atomic publisher wrote a Codex skill through a concurrent directory symlink")
+
+# Managed Claude-copy migration must preserve a concurrent editor save.
+claude_home = scratch / "claude-home"
+command_dir = claude_home / ".claude/commands"
+command_dir.mkdir(parents=True)
+command = command_dir / "managed.md"
+command_snapshot = scratch / "command-snapshot.md"
+command.write_text("published command\n")
+command_snapshot.write_text("published command\n")
+command_fd = command.open("r+")
+command_backup = module.sync_symlink(
+    str(claude_home), ".claude/commands/managed.md", "snapshot", str(command_snapshot), "/repo/claude/skill-sources/managed.md"
+)
+if not command.is_symlink() or not command_backup:
+    raise SystemExit("managed Claude command was not migrated with a recovery copy")
+command_fd.seek(0)
+command_fd.truncate()
+command_fd.write("late user edit\n")
+command_fd.flush()
+command_fd.close()
+if (Path(command_backup) / "original").read_text() != "late user edit\n":
+    raise SystemExit("Claude command migration lost a save through an open file descriptor")
+
+race_dir = scratch / "command-race-home"
+race_command = race_dir / ".claude/commands/managed.md"
+race_command.parent.mkdir(parents=True)
+race_snapshot = scratch / "command-race-snapshot.md"
+race_command.write_text("published command\n")
+race_snapshot.write_text("published command\n")
+real_rename = module._rename_noreplace
+
+def edit_command_after_claim(source_fd, source, destination_fd, destination):
+    result = real_rename(source_fd, source, destination_fd, destination)
+    if destination == "original" and source == "managed.md":
+        (race_command.parent / next(race_command.parent.glob(".crosscheck-publish-*")) / "original").write_text("concurrent user edit\n")
+    return result
+
+module._rename_noreplace = edit_command_after_claim
+try:
+    module.sync_symlink(
+        str(race_dir), ".claude/commands/managed.md", "snapshot", str(race_snapshot), "/repo/claude/skill-sources/managed.md"
+    )
+finally:
+    module._rename_noreplace = real_rename
+if race_command.is_symlink() or race_command.read_text() != "concurrent user edit\n":
+    raise SystemExit("Claude command migration replaced a concurrently edited command")
 PY
+
+CRITICAL_HOME="$TEMP_DIR/critical-settings-home"
+mkdir -p "$CRITICAL_HOME/.claude"
+printf '{"permissions":{"deny":[],"ask":[]},"custom":"keep"}\n' > "$CRITICAL_HOME/.claude/actual.json"
+ln -s "$CRITICAL_HOME/.claude/actual.json" "$CRITICAL_HOME/.claude/settings.json"
+TMPDIR="$TEMP_DIR" "$REPO_ROOT/scripts/sync-critical-settings.sh" "$CRITICAL_HOME/.claude/settings.json" --include-ask
+if [ ! -L "$CRITICAL_HOME/.claude/settings.json" ] || ! jq -e '.custom == "keep" and (.permissions.deny | length == 6) and (.permissions.ask | index("Bash(gh api *)") != null)' "$CRITICAL_HOME/.claude/settings.json" >/dev/null; then
+  echo "critical settings sync replaced its symlink or missed a security rule" >&2
+  exit 1
+fi
 for install_guide in "$REPO_ROOT/skill-sources/INSTALL.md" "$REPO_ROOT/claude/skill-sources/INSTALL.md"; do
   if ! grep -Fq 'sync-managed-claude-skills.sh ~/.crosscheck "$HOME"' "$install_guide"; then
     echo "install guide does not use the managed Claude command sync: $install_guide" >&2
@@ -528,12 +644,21 @@ if ! grep -Fq 'sync-managed-codex-skills.sh' "$REPO_ROOT/codex/scripts/bootstrap
   echo "Codex bootstrap does not use the managed native-skill sync" >&2
   exit 1
 fi
+if grep -Fq 'cp -R ~/.crosscheck/codex/skills/* ~/.codex/skills/' "$REPO_ROOT/skill-sources/INSTALL.md" || ! grep -Fq 'sync-managed-codex-skills.sh ~/.crosscheck "$HOME"' "$REPO_ROOT/skill-sources/INSTALL.md"; then
+  echo "root installation guide does not use safe managed Codex skill sync" >&2
+  exit 1
+fi
+if ! grep -Fq 'atomic-publish-file.py" publish' "$REPO_ROOT/codex/scripts/bootstrap-crosscheck.sh" || ! grep -Fq 'sync-critical-settings.sh' "$REPO_ROOT/codex/scripts/bootstrap-crosscheck.sh"; then
+  echo "Codex bootstrap does not publish and update settings through the safe helpers" >&2
+  exit 1
+fi
 
 SYNC_ROOT="$TEMP_DIR/crosscheck"
 HOME_FIXTURE="$TEMP_DIR/home-sync"
 EMPTY_GIT_CONFIG="$TEMP_DIR/empty-git-config"
 : > "$EMPTY_GIT_CONFIG"
-mkdir -p "$SYNC_ROOT/claude/skill-sources" "$SYNC_ROOT/skill-sources" "$HOME_FIXTURE/.claude/commands" "$HOME_FIXTURE/.crosscheck"
+mkdir -p "$SYNC_ROOT/claude/skill-sources" "$SYNC_ROOT/skill-sources" "$SYNC_ROOT/scripts" "$HOME_FIXTURE/.claude/commands" "$HOME_FIXTURE/.crosscheck"
+cp "$REPO_ROOT/scripts/atomic-publish-file.py" "$SYNC_ROOT/scripts/atomic-publish-file.py"
 printf 'Old Claude shipped command\n' > "$SYNC_ROOT/claude/skill-sources/managed.md"
 printf 'Old root shipped command\n' > "$SYNC_ROOT/skill-sources/managed.md"
 git -C "$SYNC_ROOT" init -q

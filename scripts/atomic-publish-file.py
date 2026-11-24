@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import ctypes
 import errno
+import json
 import os
 import secrets
 import stat
+import subprocess
 import sys
 
 
@@ -181,6 +183,132 @@ def _read_signature(path: str) -> tuple[bytes, int]:
         return _read_signature_at(directory_fd, os.path.basename(path))
     finally:
         os.close(directory_fd)
+
+
+def _snapshot_identity_path(snapshot_path: str) -> str:
+    return f"{snapshot_path}.crosscheck-identity"
+
+
+def _read_snapshot_metadata(snapshot_path: str) -> dict[str, object]:
+    """Read the pinned target identity and recovery link for a snapshot."""
+    identity_path = _snapshot_identity_path(snapshot_path)
+    fd = os.open(identity_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
+            raise PermissionError(f"snapshot identity is not private: {identity_path}")
+        raw = os.read(fd, 4096)
+        if os.read(fd, 1):
+            raise OSError(f"invalid snapshot identity: {identity_path}")
+    finally:
+        os.close(fd)
+    try:
+        metadata = json.loads(raw)
+        device, inode = metadata["device"], metadata["inode"]
+        recovery_base = metadata["recovery_base"]
+        recovery_name = metadata["recovery_name"]
+        recovery_path = metadata["recovery_path"]
+        target_root = metadata["target_root"]
+        target_relative = metadata["target_relative"]
+        strict_root = metadata["strict_root"]
+    except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise OSError(f"invalid snapshot identity: {identity_path}") from error
+    if (
+        not isinstance(device, int)
+        or not isinstance(inode, int)
+        or device < 0
+        or inode < 0
+        or not all(isinstance(value, str) and os.path.isabs(value) for value in (recovery_base, recovery_path, target_root))
+        or not isinstance(recovery_name, str)
+        or not recovery_name
+        or not isinstance(target_relative, str)
+        or not target_relative
+        or not isinstance(strict_root, bool)
+    ):
+        raise OSError(f"invalid snapshot identity: {identity_path}")
+    if (
+        os.path.basename(recovery_name) != recovery_name
+        or recovery_name in (".", "..")
+        or os.path.dirname(recovery_path) != os.path.join(recovery_base, recovery_name)
+    ):
+        raise OSError(f"invalid snapshot recovery path: {identity_path}")
+    return metadata
+
+
+def _read_snapshot_identity(snapshot_path: str) -> tuple[int, int]:
+    metadata = _read_snapshot_metadata(snapshot_path)
+    return int(metadata["device"]), int(metadata["inode"])
+
+
+def cleanup_snapshot(snapshot_path: str) -> None:
+    """Remove an unused snapshot's recovery link only while its target is unchanged."""
+    if not os.path.lexists(_snapshot_identity_path(snapshot_path)):
+        return
+    metadata = _read_snapshot_metadata(snapshot_path)
+    identity = (int(metadata["device"]), int(metadata["inode"]))
+    try:
+        root_fd, root_path = _open_root(
+            str(metadata["target_root"]), reject_leaf_symlink=bool(metadata["strict_root"])
+        )
+    except OSError as error:
+        raise OSError(f"snapshot target cannot be verified; recovery data remains at {metadata['recovery_path']}") from error
+    parent_fd: int | None = None
+    base_fd: int | None = None
+    recovery_fd: int | None = None
+    try:
+        relative_target = str(metadata["target_relative"])
+        parent_fd, _, target_name = _open_relative_parent(root_fd, root_path, relative_target, create=False)
+        try:
+            target_info = os.stat(target_name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError as error:
+            raise OSError(f"snapshot target disappeared; recovery data remains at {metadata['recovery_path']}") from error
+        if (target_info.st_dev, target_info.st_ino) != identity:
+            raise OSError(f"snapshot target changed; recovery data remains at {metadata['recovery_path']}")
+
+        base_path = str(metadata["recovery_base"])
+        recovery_name = str(metadata["recovery_name"])
+        recovery_path = str(metadata["recovery_path"])
+        base_fd, _ = _open_root(base_path)
+        recovery_fd = os.open(
+            recovery_name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=base_fd,
+        )
+        recovery_dir = os.path.join(base_path, recovery_name)
+        _verify_stable_recovery_path(base_fd, base_path, recovery_fd, recovery_name, recovery_dir)
+        entry_name = os.path.basename(recovery_path)
+        entry_info = os.stat(entry_name, dir_fd=recovery_fd, follow_symlinks=False)
+        if not stat.S_ISREG(entry_info.st_mode) or (entry_info.st_dev, entry_info.st_ino) != identity:
+            raise OSError(f"snapshot recovery link changed; data remains at {recovery_path}")
+        os.unlink(entry_name, dir_fd=recovery_fd)
+        _fsync_directory(recovery_fd)
+        _fsync_directory(base_fd)
+    finally:
+        if recovery_fd is not None:
+            os.close(recovery_fd)
+        if base_fd is not None:
+            os.close(base_fd)
+        if parent_fd is not None:
+            os.close(parent_fd)
+        os.close(root_fd)
+
+
+def _clear_inherited_acl(directory_fd: int) -> None:
+    """Remove inherited macOS ACL entries before storing readable staged files."""
+    if sys.platform != "darwin":
+        return
+    try:
+        subprocess.run(
+            ["/bin/chmod", "-N", f"/dev/fd/{directory_fd}"],
+            check=True,
+            pass_fds=(directory_fd,),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) else str(error)
+        raise PermissionError(f"could not remove inherited ACL from private staging directory: {detail}") from error
 
 
 def _rename_noreplace(
@@ -413,6 +541,7 @@ def _new_private_stage_directory(
             os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
             dir_fd=parent_fd,
         )
+        _clear_inherited_acl(stage_fd)
         info = os.fstat(stage_fd)
         if (
             info.st_dev != target_device
@@ -476,6 +605,7 @@ def _open_private_recovery_directory(base_path: str, target_device: int) -> tupl
             os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
             dir_fd=base_fd,
         )
+        _clear_inherited_acl(recovery_fd)
         info = os.fstat(recovery_fd)
         if (
             info.st_dev != target_device
@@ -785,6 +915,8 @@ def publish_file(
     staged_file: str,
     expected_mode: int | None = None,
     strict_root: bool = False,
+    expected_identity: tuple[int, int] | None = None,
+    expected_recovery_path: str | None = None,
 ) -> str | None:
     root_fd, root_path = _open_root(root, reject_leaf_symlink=strict_root)
     parent_fd, parent_path, target_name = _open_relative_parent(
@@ -865,10 +997,19 @@ def publish_file(
         stable_base_fd, stable_recovery_fd, stable_recovery_dir = _open_stable_recovery_directory(
             root_path, parent_path, os.fstat(parent_fd).st_dev
         )
-        stable_recovery_name, recovery_path = _new_stable_recovery_link(
-            parent_fd, target_name, stable_recovery_fd, stable_recovery_dir
-        )
         stable_base_path = os.path.dirname(stable_recovery_dir)
+        if expected_recovery_path is not None:
+            if os.path.dirname(os.path.abspath(expected_recovery_path)) != stable_recovery_dir:
+                raise ConcurrentUpdate(
+                    f"snapshot recovery directory changed; previous file remains at {expected_recovery_path}",
+                    expected_recovery_path,
+                )
+            stable_recovery_name = os.path.basename(expected_recovery_path)
+            recovery_path = expected_recovery_path
+        else:
+            stable_recovery_name, recovery_path = _new_stable_recovery_link(
+                parent_fd, target_name, stable_recovery_fd, stable_recovery_dir
+            )
         _sync_stable_recovery_entry(
             stable_base_fd,
             stable_base_path,
@@ -879,19 +1020,26 @@ def publish_file(
         )
         original_state = _entry_state_at(stable_recovery_fd, stable_recovery_name)
         recovered_entries[original_state[0][:2]] = (stable_recovery_name, recovery_path)
+        if expected_identity is not None and original_state[0][:2] != expected_identity:
+            raise ConcurrentUpdate(
+                f"file identity changed since snapshot, refusing to overwrite: {target}", recovery_path
+            )
         if original_state[1] != expected_signature:
             raise ConcurrentUpdate(
                 f"file changed during CrossCheck update, refusing to overwrite: {target}"
             )
 
         try:
-            current_signature = _read_signature_at(parent_fd, target_name)
+            current_state = _entry_state_at(parent_fd, target_name)
         except OSError as error:
             raise ConcurrentUpdate(
-                f"target changed type during CrossCheck update: {target}"
+                f"target changed type during CrossCheck update: {target}", recovery_path
             ) from error
-        if current_signature != expected_signature:
-            raise ConcurrentUpdate(f"file changed during CrossCheck update, refusing to overwrite: {target}")
+        if current_state != original_state:
+            raise ConcurrentUpdate(
+                f"file identity changed since snapshot, refusing to overwrite: {target}",
+                recovery_path if expected_recovery_path is not None else None,
+            )
 
         published_state = _entry_state_at(stage_fd, staged_name)
         # RENAME_SWAP leaves the live name populated and moves the old inode
@@ -1042,7 +1190,7 @@ def publish_file(
             raise ConcurrentUpdate(
                 f"publication failed; the previous settings were restored at {target}", failure_recovery_path
             ) from error
-        if stable_recovery_fd is not None and not exchange_attempted:
+        if stable_recovery_fd is not None and not exchange_attempted and expected_recovery_path is None:
             _unlink_stable_recovery(stable_recovery_fd, stable_recovery_name)
             stable_recovery_name = None
         raise
@@ -1111,12 +1259,17 @@ def snapshot_file(
     private: bool = False,
     strict_root: bool = False,
 ) -> bool:
-    """Copy a regular target to a snapshot without following symlinks."""
+    """Copy a regular target and pin its inode until its publisher resolves it."""
     try:
         root_fd, root_path = _open_root(root, reject_leaf_symlink=strict_root)
     except FileNotFoundError:
         return False
     parent_fd: int | None = None
+    stable_base_fd: int | None = None
+    stable_recovery_fd: int | None = None
+    stable_recovery_name: str | None = None
+    recovery_path: str | None = None
+    snapshot_complete = False
     try:
         try:
             parent_fd, _, target_name = _open_relative_parent(
@@ -1126,9 +1279,34 @@ def snapshot_file(
             return False
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
         try:
-            content, mode = _read_signature_at(parent_fd, target_name)
+            before = os.stat(target_name, dir_fd=parent_fd, follow_symlinks=False)
         except FileNotFoundError:
             return False
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError(f"not a regular file: {relative_target}")
+
+        stable_base_fd, stable_recovery_fd, stable_recovery_dir = _open_stable_recovery_directory(
+            root_path, os.path.dirname(os.path.join(root_path, relative_target)), before.st_dev
+        )
+        stable_recovery_name, recovery_path = _new_stable_recovery_link(
+            parent_fd, target_name, stable_recovery_fd, stable_recovery_dir
+        )
+        stable_base_path = os.path.dirname(stable_recovery_dir)
+        recovery_name = os.path.basename(stable_recovery_dir)
+        _sync_stable_recovery_entry(
+            stable_base_fd,
+            stable_base_path,
+            stable_recovery_fd,
+            recovery_name,
+            stable_recovery_dir,
+            stable_recovery_name,
+        )
+        pinned_state = _entry_state_at(stable_recovery_fd, stable_recovery_name)
+        target_identity = (before.st_dev, before.st_ino)
+        if pinned_state[0][:2] != target_identity or pinned_state[1] is None:
+            raise OSError(f"file identity changed while being snapshotted: {relative_target}")
+        content, mode = pinned_state[1]
+
         output_fd = os.open(
             os.path.abspath(output_path),
             os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0),
@@ -1142,8 +1320,47 @@ def snapshot_file(
             os.fsync(output_fd)
         finally:
             os.close(output_fd)
+        identity_path = _snapshot_identity_path(output_path)
+        identity_fd = os.open(
+            os.path.abspath(identity_path),
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        try:
+            os.fchmod(identity_fd, 0o600)
+            metadata = {
+                "device": before.st_dev,
+                "inode": before.st_ino,
+                "recovery_base": stable_base_path,
+                "recovery_name": recovery_name,
+                "recovery_path": recovery_path,
+                "target_root": root_path,
+                "target_relative": relative_target,
+                "strict_root": strict_root,
+            }
+            encoded = json.dumps(metadata, separators=(",", ":")).encode("utf-8")
+            view = memoryview(encoded)
+            while view:
+                written = os.write(identity_fd, view)
+                view = view[written:]
+            os.fsync(identity_fd)
+        finally:
+            os.close(identity_fd)
+        snapshot_complete = True
         return True
     finally:
+        if not snapshot_complete and stable_recovery_fd is not None and stable_recovery_name is not None:
+            try:
+                _unlink_stable_recovery(stable_recovery_fd, stable_recovery_name)
+                _fsync_directory(stable_recovery_fd)
+                if stable_base_fd is not None:
+                    _fsync_directory(stable_base_fd)
+            except OSError:
+                pass
+        if stable_recovery_fd is not None:
+            os.close(stable_recovery_fd)
+        if stable_base_fd is not None:
+            os.close(stable_base_fd)
         if parent_fd is not None:
             os.close(parent_fd)
         os.close(root_fd)
@@ -1514,6 +1731,13 @@ def sync_symlink(
 
 
 def main() -> int:
+    if len(sys.argv) == 3 and sys.argv[1] == "snapshot-cleanup":
+        try:
+            cleanup_snapshot(sys.argv[2])
+        except OSError as error:
+            sys.stderr.write(f"could not clean unused snapshot safely: {error}\n")
+            return 2
+        return 0
     if len(sys.argv) == 4 and sys.argv[1] == "ensure-directory":
         _, _, root, relative_directory = sys.argv
         try:
@@ -1569,6 +1793,7 @@ def main() -> int:
         sys.stderr.write(
             "usage: atomic-publish-file.py publish ROOT RELATIVE_TARGET EXPECTED_SNAPSHOT|--absent STAGED_FILE [EXPECTED_MODE] [--strict-root]\n"
             "       atomic-publish-file.py snapshot ROOT RELATIVE_TARGET OUTPUT_SNAPSHOT [--private] [--strict-root]\n"
+            "       atomic-publish-file.py snapshot-cleanup SNAPSHOT\n"
             "       atomic-publish-file.py ensure-directory ROOT RELATIVE_DIRECTORY\n"
             "       atomic-publish-file.py symlink ROOT RELATIVE_TARGET absent|snapshot|link EXPECTED_VALUE NEW_LINK\n",
         )
@@ -1584,7 +1809,13 @@ def main() -> int:
     except ValueError:
         sys.stderr.write("publish expected mode must be octal\n")
         return 2
+    expected_identity: tuple[int, int] | None = None
+    expected_recovery_path: str | None = None
     try:
+        if expected != "--absent":
+            expected_identity = _read_snapshot_identity(expected)
+            if os.path.lexists(_snapshot_identity_path(expected)):
+                expected_recovery_path = str(_read_snapshot_metadata(expected)["recovery_path"])
         recovery_path = publish_file(
             root,
             relative_target,
@@ -1592,6 +1823,8 @@ def main() -> int:
             staged,
             expected_mode,
             strict_root,
+            expected_identity,
+            expected_recovery_path,
         )
     except RestorationFailed as error:
         sys.stderr.write(f"{error}\n")
@@ -1605,6 +1838,8 @@ def main() -> int:
         return 3
     except OSError as error:
         sys.stderr.write(f"could not safely publish file {relative_target}: {error}\n")
+        if expected_recovery_path:
+            sys.stderr.write(f"recovery data remains at {expected_recovery_path}\n")
         return 2
     if recovery_path:
         sys.stderr.write(f"previous file preserved at {recovery_path}\n")

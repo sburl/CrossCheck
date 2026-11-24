@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version — pulls from main. Skills
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-11-24-03-44
+**Last Updated:** 2026-11-24-08-12
 
 # Update CrossCheck
 
@@ -103,30 +103,43 @@ Update existing settings through the managed scripts. They preserve a settings
 symlink and refuse to replace concurrent edits.
 
 ```bash
+SETTINGS_SYNC_FAILED=0
+CLAUDE_SYNC_FAILED=0
 for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
     if [ -f "$SETTINGS_FILE" ]; then
         if ! "$CROSSCHECK_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --include-ask; then
             echo "❌ Failed to sync critical settings in $SETTINGS_FILE." >&2
-            exit 1
+            SETTINGS_SYNC_FAILED=1
+            if [ "$SETTINGS_FILE" = "$HOME/.claude/settings.json" ]; then
+                CLAUDE_SYNC_FAILED=1
+            fi
         fi
     fi
 done
 
-if [ -f "$HOME/.claude/settings.json" ]; then
+if [ -f "$HOME/.claude/settings.json" ] && [ "$CLAUDE_SYNC_FAILED" -eq 0 ]; then
     if ! "$CROSSCHECK_DIR/claude/scripts/install-supply-chain-hook.sh" \
         "$HOME/.claude/settings.json" \
         "$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh"; then
         echo "❌ Failed to install the Claude supply-chain hook." >&2
-        exit 1
+        SETTINGS_SYNC_FAILED=1
     fi
+fi
+
+if [ "$SETTINGS_SYNC_FAILED" -ne 0 ]; then
+    echo "❌ One or more settings updates failed; successful updates were retained." >&2
+    exit 1
 fi
 ```
 
 This keeps the critical deny rules and `Bash(gh api *)` ask rule current, and
 refreshes the Claude supply-chain hook without replacing unrelated settings.
-When an existing file is replaced, the updater prints a private recovery
-path for the prior file. Keep it until apps that may have the file open are
-closed and any late save has been checked.
+The updater attempts every existing settings file before it exits on an error,
+so a Claude or Codex failure does not skip the Gemini refresh. It installs the
+Claude hook only after Claude settings sync succeeds. When an existing file is
+replaced, the updater prints a private recovery path for the prior file. Keep
+it until apps that may have the file open are closed and any late save has been
+checked.
 
 
 Settings sync still runs when `main` is already current. Continue to Steps 5

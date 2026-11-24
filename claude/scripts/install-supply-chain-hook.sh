@@ -27,7 +27,17 @@ printf -v HOOK_COMMAND 'bash -c %q -- %q' "$HOOK_RUNNER" "$HOOK_FILE"
 PUBLISH_HELPER="$(cd "$(dirname "$0")/../.." && pwd)/scripts/atomic-publish-file.py"
 SETTINGS_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-settings-snapshot.XXXXXX")"
 TEMP_FILE=""
-trap 'rm -f "$TEMP_FILE" "$SETTINGS_SNAPSHOT"' EXIT
+PUBLISH_STARTED=0
+cleanup_hook_stages() {
+  local exit_status=$?
+  trap - EXIT
+  if [ "$PUBLISH_STARTED" -eq 0 ]; then
+    python3 "$PUBLISH_HELPER" snapshot-cleanup "$SETTINGS_SNAPSHOT" || true
+  fi
+  rm -f "$TEMP_FILE" "$SETTINGS_SNAPSHOT" "$SETTINGS_SNAPSHOT.crosscheck-identity"
+  exit "$exit_status"
+}
+trap cleanup_hook_stages EXIT
 if ! python3 "$PUBLISH_HELPER" snapshot "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SETTINGS_SNAPSHOT" --private; then
   echo "Claude settings changed or became unsafe while it was being read: $SETTINGS_FILE" >&2
   exit 1
@@ -129,6 +139,7 @@ if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
   echo "Claude settings path changed while the supply-chain hook was being installed; refusing to update: $SETTINGS_FILE" >&2
   exit 1
 fi
+PUBLISH_STARTED=1
 if ! python3 "$PUBLISH_HELPER" publish "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SETTINGS_SNAPSHOT" "$TEMP_FILE" "$SETTINGS_MODE"; then
   exit 1
 fi

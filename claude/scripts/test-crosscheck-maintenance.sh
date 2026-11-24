@@ -379,6 +379,48 @@ if stat.S_IMODE(os.stat(sys.argv[1]).st_mode) != 0o640:
     raise SystemExit("Codex bootstrap changed the existing AGENTS.md mode")
 PY
 
+# Codex bootstrap must reject a replacement .codex symlink at the settings
+# sync boundary, including when settings existed during the shell preflight.
+CODEX_SETTINGS_RACE_REPO="$TEMP_DIR/workspace/codex-settings-symlink-race/CrossCheck"
+CODEX_SETTINGS_RACE_HOME="$TEMP_DIR/home-codex-settings-symlink-race"
+CODEX_SETTINGS_RACE_OUTSIDE="$TEMP_DIR/codex-settings-symlink-outside"
+CODEX_SETTINGS_RACE_MARKER="$TEMP_DIR/codex-settings-symlink-swapped"
+mkdir -p "$(dirname "$CODEX_SETTINGS_RACE_REPO")" "$CODEX_SETTINGS_RACE_HOME/.codex" "$CODEX_SETTINGS_RACE_OUTSIDE"
+python3 - "$REPO_ROOT" "$CODEX_SETTINGS_RACE_REPO" <<'PY'
+import shutil
+import sys
+shutil.copytree(sys.argv[1], sys.argv[2], ignore=shutil.ignore_patterns(".git"))
+PY
+printf '{"permissions":{"deny":[]}}\n' > "$CODEX_SETTINGS_RACE_HOME/.codex/settings.json"
+printf '{"outside":"must stay unchanged"}\n' > "$CODEX_SETTINGS_RACE_OUTSIDE/settings.json"
+mv "$CODEX_SETTINGS_RACE_REPO/scripts/sync-critical-settings.sh" \
+  "$CODEX_SETTINGS_RACE_REPO/scripts/sync-critical-settings-real.sh"
+cat > "$CODEX_SETTINGS_RACE_REPO/scripts/sync-critical-settings.sh" <<'SH'
+#!/usr/bin/env bash
+set -e
+if [ "$1" = "$HOME/.codex/settings.json" ] && [ ! -e "$CODEX_SETTINGS_RACE_MARKER" ]; then
+  mv "$HOME/.codex" "$HOME/.codex-before-symlink"
+  ln -s "$CODEX_SETTINGS_RACE_OUTSIDE" "$HOME/.codex"
+  : > "$CODEX_SETTINGS_RACE_MARKER"
+fi
+exec "$(dirname "$0")/sync-critical-settings-real.sh" "$@"
+SH
+chmod +x "$CODEX_SETTINGS_RACE_REPO/scripts/sync-critical-settings.sh"
+if HOME="$CODEX_SETTINGS_RACE_HOME" CODEX_SETTINGS_RACE_MARKER="$CODEX_SETTINGS_RACE_MARKER" \
+  CODEX_SETTINGS_RACE_OUTSIDE="$CODEX_SETTINGS_RACE_OUTSIDE" TMPDIR="$TEMP_DIR" \
+  bash "$CODEX_SETTINGS_RACE_REPO/codex/scripts/bootstrap-crosscheck.sh" \
+  > "$TEMP_DIR/codex-settings-symlink-race.log" 2>&1; then
+  echo "Codex bootstrap followed a replacement .codex symlink while syncing settings" >&2
+  exit 1
+fi
+if [ ! -e "$CODEX_SETTINGS_RACE_MARKER" ] \
+  || ! grep -Fq "Settings changed or became unsafe while it was being read" "$TEMP_DIR/codex-settings-symlink-race.log" \
+  || [ "$(cat "$CODEX_SETTINGS_RACE_OUTSIDE/settings.json")" != '{"outside":"must stay unchanged"}' ]; then
+  echo "Codex bootstrap did not fail safely on a replacement .codex symlink" >&2
+  cat "$TEMP_DIR/codex-settings-symlink-race.log" >&2
+  exit 1
+fi
+
 # Codex bootstrap must detect an atomic edit to global instructions between
 # reading the source snapshot and publishing the managed block.
 AGENT_RACE_REPO="$TEMP_DIR/workspace/codex-agent-race/CrossCheck"
@@ -684,6 +726,55 @@ if ! grep -Fq '"$HOME/.gemini/settings.json"' "$REPO_ROOT/skill-sources/update-c
   echo "root updater no longer refreshes Gemini critical settings" >&2
   exit 1
 fi
+python3 - "$REPO_ROOT/skill-sources/update-crosscheck.md" "$TEMP_DIR" <<'PY'
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1]).read_text()
+step = source.split("## Step 4:", 1)[1]
+start = step.index("```bash\n") + len("```bash\n")
+end = step.index("\n```", start)
+script = step[start:end]
+root = Path(sys.argv[2]) / "gemini-after-settings-failure"
+home = root / "home"
+checkout = root / "checkout"
+for app in (".claude", ".codex", ".gemini"):
+    app_dir = home / app
+    app_dir.mkdir(parents=True, exist_ok=True)
+    (app_dir / "settings.json").write_text("{}\n")
+helper = checkout / "scripts" / "sync-critical-settings.sh"
+helper.parent.mkdir(parents=True)
+helper.write_text(
+    "#!/usr/bin/env bash\n"
+    "set -e\n"
+    "app=$(basename \"$(dirname \"$1\")\")\n"
+    "printf '%s\\n' \"$app\" >> \"$SYNC_LOG\"\n"
+    "if [ \"$app\" = .claude ]; then exit 1; fi\n"
+    "if [ \"$app\" = .gemini ]; then : > \"$HOME/.gemini/refreshed\"; fi\n"
+)
+helper.chmod(0o755)
+hook = checkout / "claude" / "scripts" / "install-supply-chain-hook.sh"
+hook.parent.mkdir(parents=True)
+hook.write_text("#!/usr/bin/env bash\nprintf called > \"$HOOK_CALLED\"\n")
+hook.chmod(0o755)
+env = os.environ.copy()
+env.update(
+    HOME=str(home),
+    CROSSCHECK_DIR=str(checkout),
+    SYNC_LOG=str(root / "sync.log"),
+    HOOK_CALLED=str(root / "hook-called"),
+)
+result = subprocess.run(["/bin/bash", "-c", script], env=env, capture_output=True, text=True)
+calls = (root / "sync.log").read_text().splitlines()
+if result.returncode == 0 or calls != [".claude", ".codex", ".gemini"]:
+    raise SystemExit(f"updater stopped before Gemini after a Claude sync error: {calls!r}; {result.stderr}")
+if not (home / ".gemini" / "refreshed").exists():
+    raise SystemExit("updater did not refresh Gemini settings after a Claude sync error")
+if (root / "hook-called").exists():
+    raise SystemExit("updater installed the Claude hook after Claude settings sync failed")
+PY
 for drain_skill in "$REPO_ROOT/skill-sources/drain-repo.md" "$REPO_ROOT/claude/skill-sources/drain-repo.md" "$REPO_ROOT/codex/skill-sources/drain-repo.md" "$REPO_ROOT/codex/skills/drain-repo/SKILL.md"; do
   if grep -Fq 'core.hooksPath=/dev/null' "$drain_skill" || grep -Fq 'Merge is YOURS to execute' "$drain_skill"; then
     echo "drain skill still recommends bypassing configured workflow gates: $drain_skill" >&2
@@ -825,6 +916,20 @@ spec.loader.exec_module(module)
 scratch = Path(sys.argv[2]) / "atomic-publish-race"
 scratch.mkdir()
 
+# Older in-process publisher fixtures use hand-written snapshots. Supply the
+# target identity at invocation for those tests; the subprocess test below
+# verifies that the real CLI reads snapshot identity sidecars.
+real_read_snapshot_identity = module._read_snapshot_identity
+
+def read_fixture_snapshot_identity(snapshot_path):
+    if Path(module._snapshot_identity_path(snapshot_path)).exists():
+        return real_read_snapshot_identity(snapshot_path)
+    root, relative_target = module.sys.argv[2], module.sys.argv[3]
+    info = os.stat(os.path.join(root, relative_target), follow_symlinks=False)
+    return info.st_dev, info.st_ino
+
+module._read_snapshot_identity = read_fixture_snapshot_identity
+
 def stage_entries(root):
     return [
         entry
@@ -872,6 +977,11 @@ os.chmod(private_stage_root, 0o755)
 os.chmod(private_stage_target, 0o644)
 os.chmod(private_stage_snapshot, 0o644)
 os.chmod(private_stage_source, 0o600)
+if sys.platform == "darwin":
+    subprocess.run(
+        ["/bin/chmod", "+a", "everyone allow list,search,file_inherit,directory_inherit", str(private_stage_root)],
+        check=True,
+    )
 real_exchange = module._rename_exchange
 private_stage_observed = []
 
@@ -889,6 +999,15 @@ def inspect_private_publisher_stage(first_fd, first, second_fd, second):
         raise SystemExit(
             f"publisher stage was exposed: directory={oct(directory_mode)}, file={oct(file_mode)}"
         )
+    if sys.platform == "darwin":
+        directory_acl = subprocess.run(
+            ["/bin/ls", "-le", str(staging_directory)], capture_output=True, text=True, check=True
+        ).stdout
+        file_acl = subprocess.run(
+            ["/bin/ls", "-le", str(entries[0])], capture_output=True, text=True, check=True
+        ).stdout
+        if "everyone" in directory_acl or "everyone" in file_acl:
+            raise SystemExit("publisher staging directory or file retained an inherited everyone ACL")
     private_stage_observed.append((directory_mode, file_mode))
     return real_exchange(first_fd, first, second_fd, second)
 
@@ -904,6 +1023,73 @@ if not private_stage_observed:
     raise SystemExit("publisher did not exercise the private-stage check")
 if list(private_stage_root.glob(".crosscheck-staging-*")):
     raise SystemExit("publisher left its private staging directory after success")
+
+# The CLI must reject a byte-identical replacement made after the snapshot.
+# Its inode identity is part of the snapshot contract, not just the contents.
+snapshot_identity_root = scratch / "snapshot-identity-race"
+snapshot_identity_root.mkdir()
+snapshot_identity_target = snapshot_identity_root / "settings.json"
+snapshot_identity_target.write_text('{"identity":"same bytes"}\n')
+snapshot_identity_open = snapshot_identity_target.open("r+")
+snapshot_identity_copy = scratch / "snapshot-identity-copy"
+snapshot_identity_stage = scratch / "snapshot-identity-stage"
+snapshot_identity_copy.write_text("")
+snapshot_identity_stage.write_text('{"identity":"updated"}\n')
+if not module.snapshot_file(
+    str(snapshot_identity_root), "settings.json", str(snapshot_identity_copy), private=True
+):
+    raise SystemExit("atomic publisher could not snapshot the identity-race fixture")
+original_identity = module._read_snapshot_identity(str(snapshot_identity_copy))
+replacement = snapshot_identity_root / "replacement.json"
+replacement.write_text('{"identity":"same bytes"}\n')
+replacement.replace(snapshot_identity_target)
+result = subprocess.run(
+    [
+        sys.executable,
+        sys.argv[1],
+        "publish",
+        str(snapshot_identity_root),
+        "settings.json",
+        str(snapshot_identity_copy),
+        str(snapshot_identity_stage),
+        oct(stat.S_IMODE(snapshot_identity_target.stat().st_mode))[2:],
+    ],
+    capture_output=True,
+    text=True,
+)
+if result.returncode != 3 or "file identity changed since snapshot" not in result.stderr:
+    raise SystemExit(f"publisher accepted a byte-identical replacement after snapshot: {result.stderr}")
+if snapshot_identity_target.read_text() != '{"identity":"same bytes"}\n':
+    raise SystemExit("publisher changed the target after detecting a snapshot identity race")
+recovery_line = next(
+    (line for line in result.stderr.splitlines() if line.startswith("preserved concurrent file at ")),
+    None,
+)
+if recovery_line is None:
+    raise SystemExit("publisher did not report its snapshot-time inode recovery link")
+snapshot_identity_open.seek(0)
+snapshot_identity_open.truncate()
+snapshot_identity_open.write('{"identity":"late save"}\n')
+snapshot_identity_open.flush()
+if Path(recovery_line.removeprefix("preserved concurrent file at ")).read_text() != '{"identity":"late save"}\n':
+    raise SystemExit("publisher did not retain the snapshotted inode for a late save")
+snapshot_identity_open.close()
+
+cleanup_snapshot_root = scratch / "unused-snapshot-cleanup"
+cleanup_snapshot_root.mkdir()
+cleanup_snapshot_target = cleanup_snapshot_root / "settings.json"
+cleanup_snapshot_target.write_text('{"cleanup":"unchanged"}\n')
+cleanup_snapshot_copy = scratch / "unused-snapshot-copy"
+cleanup_snapshot_copy.write_text("")
+if not module.snapshot_file(str(cleanup_snapshot_root), "settings.json", str(cleanup_snapshot_copy)):
+    raise SystemExit("atomic publisher could not create an unused-snapshot fixture")
+cleanup_metadata = module._read_snapshot_metadata(str(cleanup_snapshot_copy))
+cleanup_backup = Path(str(cleanup_metadata["recovery_path"]))
+if not cleanup_backup.exists():
+    raise SystemExit("snapshot did not pin its target inode in recovery storage")
+module.cleanup_snapshot(str(cleanup_snapshot_copy))
+if cleanup_backup.exists():
+    raise SystemExit("unused snapshot cleanup left a stale recovery link")
 
 settings_dir = scratch / ".claude"
 settings_dir.mkdir()
@@ -945,6 +1131,7 @@ real_entry_state = module._entry_state_at
 final_race_injected = []
 final_race_identity = []
 final_race_recovery = []
+final_race_target_samples = [0]
 
 def replace_live_file_before_final_check(directory_fd, name):
     directory_info = os.fstat(directory_fd)
@@ -953,10 +1140,12 @@ def replace_live_file_before_final_check(directory_fd, name):
         and name == "settings.json"
         and (directory_info.st_dev, directory_info.st_ino) == final_race_root_identity
     ):
-        os.replace(final_race_concurrent, final_race_target)
-        info = final_race_target.stat()
-        final_race_identity.append((info.st_dev, info.st_ino))
-        final_race_injected.append(True)
+        final_race_target_samples[0] += 1
+        if final_race_target_samples[0] == 2:
+            os.replace(final_race_concurrent, final_race_target)
+            info = final_race_target.stat()
+            final_race_identity.append((info.st_dev, info.st_ino))
+            final_race_injected.append(True)
     return real_entry_state(directory_fd, name)
 
 module._entry_state_at = replace_live_file_before_final_check

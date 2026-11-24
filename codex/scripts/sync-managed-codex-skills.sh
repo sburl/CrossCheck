@@ -19,7 +19,20 @@ UPDATED=0
 PRESERVED=0
 CURRENT_SNAPSHOT=""
 CURRENT_STAGE=""
-trap 'rm -f "$CURRENT_SNAPSHOT" "$CURRENT_STAGE"' EXIT
+CURRENT_PUBLISH_STARTED=0
+cleanup_current_snapshot() {
+  local exit_status=$?
+  trap - EXIT
+  if [ -n "$CURRENT_SNAPSHOT" ] && [ "$CURRENT_PUBLISH_STARTED" -eq 0 ]; then
+    python3 "$PUBLISH_HELPER" snapshot-cleanup "$CURRENT_SNAPSHOT" || true
+  fi
+  if [ -n "$CURRENT_SNAPSHOT" ]; then
+    rm -f "$CURRENT_SNAPSHOT" "$CURRENT_SNAPSHOT.crosscheck-identity"
+  fi
+  [ -z "$CURRENT_STAGE" ] || rm -f "$CURRENT_STAGE"
+  exit "$exit_status"
+}
+trap cleanup_current_snapshot EXIT
 
 is_known_shipped_file() {
   local file_snapshot="$1" source_path="$2" revision
@@ -80,7 +93,13 @@ for skill_dir in "$SOURCE_ROOT"/*; do
     CURRENT_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-snapshot.XXXXXX")"
     if python3 "$PUBLISH_HELPER" snapshot "$CODEX_ROOT" "$target_relative" "$CURRENT_SNAPSHOT" --strict-root; then
       if cmp -s "$source_file" "$CURRENT_SNAPSHOT"; then
-        rm -f "$CURRENT_SNAPSHOT"
+        if ! python3 "$PUBLISH_HELPER" snapshot-cleanup "$CURRENT_SNAPSHOT"; then
+          PRESERVED=$((PRESERVED + 1))
+          rm -f "$CURRENT_SNAPSHOT" "$CURRENT_SNAPSHOT.crosscheck-identity"
+          CURRENT_SNAPSHOT=""
+          continue
+        fi
+        rm -f "$CURRENT_SNAPSHOT" "$CURRENT_SNAPSHOT.crosscheck-identity"
         CURRENT_SNAPSHOT=""
         continue
       fi
@@ -88,14 +107,15 @@ for skill_dir in "$SOURCE_ROOT"/*; do
       if ! is_known_shipped_file "$CURRENT_SNAPSHOT" "$source_path"; then
         echo "Preserving customized Codex skill file: $skill_name/$relative_path"
         PRESERVED=$((PRESERVED + 1))
-        rm -f "$CURRENT_SNAPSHOT"
+        python3 "$PUBLISH_HELPER" snapshot-cleanup "$CURRENT_SNAPSHOT" || true
+        rm -f "$CURRENT_SNAPSHOT" "$CURRENT_SNAPSHOT.crosscheck-identity"
         CURRENT_SNAPSHOT=""
         continue
       fi
       expected_snapshot="$CURRENT_SNAPSHOT"
     else
       snapshot_status=$?
-      rm -f "$CURRENT_SNAPSHOT"
+      rm -f "$CURRENT_SNAPSHOT" "$CURRENT_SNAPSHOT.crosscheck-identity"
       CURRENT_SNAPSHOT=""
       if [ "$snapshot_status" -eq 4 ]; then
         : # A missing target file is an expected first-install case.
@@ -107,6 +127,7 @@ for skill_dir in "$SOURCE_ROOT"/*; do
 
     CURRENT_STAGE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-stage.XXXXXX")"
     cp -p "$source_file" "$CURRENT_STAGE"
+    CURRENT_PUBLISH_STARTED=1
     if python3 "$PUBLISH_HELPER" publish "$CODEX_ROOT" "$target_relative" "$expected_snapshot" "$CURRENT_STAGE" --strict-root; then
       skill_changed=1
     else
@@ -118,9 +139,10 @@ for skill_dir in "$SOURCE_ROOT"/*; do
         exit "$publish_status"
       fi
     fi
-    rm -f "$CURRENT_SNAPSHOT" "$CURRENT_STAGE"
+    rm -f "$CURRENT_SNAPSHOT" "$CURRENT_SNAPSHOT.crosscheck-identity" "$CURRENT_STAGE"
     CURRENT_SNAPSHOT=""
     CURRENT_STAGE=""
+    CURRENT_PUBLISH_STARTED=0
   done < <(find "$skill_dir" -type f -print0)
   if [ "$skill_changed" -eq 1 ]; then
     UPDATED=$((UPDATED + 1))

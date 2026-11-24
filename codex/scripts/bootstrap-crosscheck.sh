@@ -6,8 +6,15 @@
 set -e
 
 CODEX_AGENTS_TEMP_DIR=""
+CODEX_AGENTS_SNAPSHOT=""
+CODEX_AGENTS_PUBLISH_STARTED=0
 SETTINGS_STAGE=""
 cleanup_bootstrap_stages() {
+    if [ -n "$CODEX_AGENTS_SNAPSHOT" ] && [ "$CODEX_AGENTS_PUBLISH_STARTED" -eq 0 ] \
+        && [ -n "${CROSSCHECK_ROOT_DIR:-}" ]; then
+        python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" snapshot-cleanup \
+            "$CODEX_AGENTS_SNAPSHOT" || true
+    fi
     [ -z "$CODEX_AGENTS_TEMP_DIR" ] || rm -rf "$CODEX_AGENTS_TEMP_DIR"
     [ -z "$SETTINGS_STAGE" ] || rm -f "$SETTINGS_STAGE"
 }
@@ -115,7 +122,7 @@ CODEX_AGENTS_STAGE="$CODEX_AGENTS_TEMP_DIR/stage"
 : > "$CODEX_AGENTS_SNAPSHOT"
 : > "$CODEX_AGENTS_STAGE"
 if python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" snapshot \
-    "$HOME" ".codex/AGENTS.md" "$CODEX_AGENTS_SNAPSHOT"; then
+    "$HOME/.codex" "AGENTS.md" "$CODEX_AGENTS_SNAPSHOT" --strict-root; then
     CODEX_AGENTS_EXPECTED="$CODEX_AGENTS_SNAPSHOT"
 else
     SNAPSHOT_STATUS=$?
@@ -178,6 +185,7 @@ if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" ensure-direct
     echo "❌ Could not safely create $HOME/.codex" >&2
     exit 1
 fi
+CODEX_AGENTS_PUBLISH_STARTED=1
 if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
     "$HOME/.codex" "AGENTS.md" "$CODEX_AGENTS_EXPECTED" "$CODEX_AGENTS_STAGE" --strict-root; then
     echo "❌ Could not safely register workflow in $CODEX_AGENTS_FILE" >&2
@@ -192,21 +200,21 @@ echo "📝 Step 3: Configure settings..."
 SETTINGS_FILE="$HOME/.codex/settings.json"
 if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
     echo "   ✅ Settings already exist at ~/.codex/settings.json"
-    "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE"
+    "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --strict-root
 else
     echo "   Creating ~/.codex/settings.json from template..."
     SETTINGS_STAGE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-codex-settings.XXXXXX")"
     cp "$CROSSCHECK_ROOT_DIR/codex/settings.template.json" "$SETTINGS_STAGE"
     "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_STAGE"
     if python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
-        "$HOME" ".codex/settings.json" --absent "$SETTINGS_STAGE"; then
+        "$HOME/.codex" "settings.json" --absent "$SETTINGS_STAGE" --strict-root; then
         echo "   ⚠️  TODO: Edit ~/.codex/settings.json to customize for your stack"
         echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
     else
         PUBLISH_STATUS=$?
         if [ "$PUBLISH_STATUS" -eq 3 ] && [ -f "$SETTINGS_FILE" ]; then
             echo "   Settings appeared during setup; updating the existing file safely"
-            "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE"
+            "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --strict-root
         else
             echo "   ❌ Could not safely create ~/.codex/settings.json" >&2
             exit 1

@@ -1246,6 +1246,43 @@ finally:
 if symlink_rollback_target.is_symlink() or symlink_rollback_target.read_text() != "old command\n":
     raise SystemExit("Claude symlink rollback left the live command missing")
 
+# A concurrent symlink replacement plus parent move must not be restored only
+# into the detached directory and reported as a harmless no-op.
+detached_symlink_home = scratch / "detached-symlink-home"
+detached_symlink_dir = detached_symlink_home / ".claude/commands"
+detached_symlink_dir.mkdir(parents=True)
+detached_symlink_target = detached_symlink_dir / "managed.md"
+detached_symlink_target.symlink_to("/expected/command.md")
+detached_symlink_source = scratch / "detached-symlink-source.md"
+detached_symlink_source.write_text("new command\n")
+real_new_recovery_directory = module._new_recovery_directory
+
+def replace_and_move_symlink_parent(parent_fd, parent_path):
+    result = real_new_recovery_directory(parent_fd, parent_path)
+    replacement = detached_symlink_target.with_name("managed.replacement")
+    replacement.symlink_to("/concurrent/command.md")
+    os.replace(replacement, detached_symlink_target)
+    detached_symlink_dir.rename(detached_symlink_dir.with_name("commands-moved"))
+    detached_symlink_dir.mkdir()
+    return result
+
+module._new_recovery_directory = replace_and_move_symlink_parent
+try:
+    module.sync_symlink(
+        str(detached_symlink_home), ".claude/commands/managed.md", "link",
+        "/expected/command.md", str(detached_symlink_source),
+    )
+except module.RestorationFailed:
+    pass
+else:
+    raise SystemExit("detached symlink rollback was not reported as fatal")
+finally:
+    module._new_recovery_directory = real_new_recovery_directory
+if detached_symlink_target.exists() or detached_symlink_target.is_symlink():
+    raise SystemExit("detached symlink fixture unexpectedly restored into the live parent")
+if os.readlink(detached_symlink_dir.with_name("commands-moved") / "managed.md") != "/concurrent/command.md":
+    raise SystemExit("detached symlink fixture lost the concurrent replacement")
+
 # If the command directory moves after symlink creation, do not report a safe
 # rollback through the detached directory descriptor as status 3.
 moved_commands_home = scratch / "moved-commands-home"
@@ -1353,6 +1390,72 @@ if not any(
 if (old_command_identity == displaced_command_identity[0]):
     raise SystemExit("test did not create a distinct byte-identical replacement inode")
 
+# If an operation fails immediately after displacement, publish a stable backup
+# of the inode actually moved before reporting any recovery path.
+fsync_race_home = scratch / "fsync-race-home"
+fsync_race_dir = fsync_race_home / ".claude/commands"
+fsync_race_dir.mkdir(parents=True)
+fsync_race_target = fsync_race_dir / "managed.md"
+fsync_race_snapshot = scratch / "fsync-race-snapshot.md"
+fsync_race_source = scratch / "fsync-race-source.md"
+fsync_race_target.write_text("old command\n")
+fsync_race_snapshot.write_text("old command\n")
+fsync_race_source.write_text("new command\n")
+fsync_race_replacement_identity = [None]
+real_new_recovery_directory = module._new_recovery_directory
+
+def replace_fsync_race_command(parent_fd, parent_path):
+    result = real_new_recovery_directory(parent_fd, parent_path)
+    replacement = fsync_race_target.with_name("managed.replacement")
+    replacement.write_text("old command\n")
+    os.replace(replacement, fsync_race_target)
+    replacement_stat = fsync_race_target.stat()
+    fsync_race_replacement_identity[0] = (replacement_stat.st_dev, replacement_stat.st_ino)
+    return result
+
+real_fsync_directory = module._fsync_directory
+fsync_race_parent_identity = (fsync_race_dir.stat().st_dev, fsync_race_dir.stat().st_ino)
+displacement_happened = [False]
+real_rename_noreplace = module._rename_noreplace
+
+def fail_fsync_race_restore(source_fd, source, destination_fd, destination):
+    if source == "original" and destination == "managed.md" and displacement_happened[0]:
+        raise OSError(errno.EIO, "injected restore failure after displacement")
+    result = real_rename_noreplace(source_fd, source, destination_fd, destination)
+    if source == "managed.md" and destination == "original":
+        displacement_happened[0] = True
+    return result
+
+def fail_fsync_after_displacement(directory_fd):
+    info = os.fstat(directory_fd)
+    if displacement_happened[0] and (info.st_dev, info.st_ino) == fsync_race_parent_identity:
+        raise OSError(errno.EIO, "injected parent sync failure after displacement")
+    return real_fsync_directory(directory_fd)
+
+module._new_recovery_directory = replace_fsync_race_command
+module._rename_noreplace = fail_fsync_race_restore
+module._fsync_directory = fail_fsync_after_displacement
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(fsync_race_home)
+try:
+    module.sync_symlink(
+        str(fsync_race_home), ".claude/commands/managed.md", "snapshot",
+        str(fsync_race_snapshot), str(fsync_race_source),
+    )
+except module.RestorationFailed as error:
+    if not error.recovery_path or not Path(error.recovery_path).is_file():
+        raise SystemExit("post-displacement failure did not report a stable command backup")
+    backup_stat = Path(error.recovery_path).stat()
+    if (backup_stat.st_dev, backup_stat.st_ino) != fsync_race_replacement_identity[0]:
+        raise SystemExit("post-displacement failure reported a backup of the pre-replacement inode")
+else:
+    raise SystemExit("post-displacement fsync failure was not reported as a restoration failure")
+finally:
+    module._new_recovery_directory = real_new_recovery_directory
+    module._rename_noreplace = real_rename_noreplace
+    module._fsync_directory = real_fsync_directory
+    os.environ["HOME"] = previous_home
+
 # A symlink created after an absent-path check is a preserved no-op.
 absent_race_home = scratch / "absent-link-race-home"
 absent_race_home.joinpath(".claude/commands").mkdir(parents=True)
@@ -1417,6 +1520,59 @@ finally:
     module._new_stable_recovery_link = real_recovery_link
 if recovery_rename_target.read_text() != '{"setting":"original"}\n':
     raise SystemExit("publisher changed settings before validating the recovery pathname")
+
+# If the stable recovery directory moves after rollback links are synced, keep
+# the staged entry and report fatal restoration instead of a stale backup path.
+rollback_recovery_home = scratch / "rollback-recovery-home"
+rollback_recovery_root = scratch / "rollback-recovery-root"
+rollback_recovery_home.mkdir()
+rollback_recovery_root.mkdir()
+rollback_recovery_target = rollback_recovery_root / "settings.json"
+rollback_recovery_snapshot = scratch / "rollback-recovery-snapshot.json"
+rollback_recovery_stage = scratch / "rollback-recovery-stage.json"
+rollback_recovery_target.write_text('{"setting":"original"}\n')
+rollback_recovery_snapshot.write_text('{"setting":"original"}\n')
+rollback_recovery_stage.write_text('{"setting":"updated"}\n')
+real_exchange = module._rename_exchange
+exchange_calls = [0]
+
+def move_recovery_before_rollback_exchange(first_fd, first, second_fd, second):
+    exchange_calls[0] += 1
+    if exchange_calls[0] == 2:
+        stable_dir = rollback_recovery_home / ".crosscheck-recovery"
+        stable_dir.rename(rollback_recovery_home / ".crosscheck-recovery-moved")
+    return real_exchange(first_fd, first, second_fd, second)
+
+real_verify = module._verify_parent_path
+verify_calls = [0]
+
+def fail_after_first_publish_exchange(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 2:
+        raise module.ConcurrentUpdate("injected update failure before rollback")
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+module._rename_exchange = move_recovery_before_rollback_exchange
+module._verify_parent_path = fail_after_first_publish_exchange
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(rollback_recovery_home)
+original_argv = module.sys.argv
+module.sys.argv = [
+    "atomic-publish-file.py", "publish", str(rollback_recovery_root), "settings.json",
+    str(rollback_recovery_snapshot), str(rollback_recovery_stage),
+]
+try:
+    if module.main() != 5:
+        raise SystemExit("moved rollback recovery directory did not return fatal status 5")
+finally:
+    module.sys.argv = original_argv
+    module._rename_exchange = real_exchange
+    module._verify_parent_path = real_verify
+    os.environ["HOME"] = previous_home
+if rollback_recovery_target.read_text() != '{"setting":"original"}\n':
+    raise SystemExit("moved rollback recovery fixture did not restore the original settings")
+if not list(rollback_recovery_root.glob(".crosscheck-stage-*")):
+    raise SystemExit("moved rollback recovery directory allowed cleanup of the staged inode")
 
 # Managed link no-ops have an explicit status instead of looking like updates.
 noop_root = scratch / "managed-link-noop"
@@ -1489,6 +1645,49 @@ if not final_sync_failed[0]:
     raise SystemExit("first-time publish returned success without syncing its final name")
 if not absent_publish_target.is_file() or absent_publish_target.read_text() != '{"setting":"first"}\n':
     raise SystemExit("final publish sync failure did not leave the first-published file intact")
+
+# Every newly created ancestor must have its containing directory synced before
+# publication can report success.
+ancestor_sync_root = scratch / "ancestor-sync-root"
+ancestor_sync_root.mkdir()
+ancestor_sync_stage = scratch / "ancestor-sync-stage.md"
+ancestor_sync_stage.write_text("nested skill\n")
+ancestor_sync_skills = ancestor_sync_root / "skills"
+ancestor_sync_new = ancestor_sync_skills / "new"
+ancestor_sync_target = ancestor_sync_new / "SKILL.md"
+ancestor_sync_root_identity = (ancestor_sync_root.stat().st_dev, ancestor_sync_root.stat().st_ino)
+ancestor_root_synced_before_child = [False]
+ancestor_parent_synced_before_file = [False]
+real_fsync_directory = module._fsync_directory
+
+def track_ancestor_directory_sync(directory_fd):
+    info = os.fstat(directory_fd)
+    identity = (info.st_dev, info.st_ino)
+    if identity == ancestor_sync_root_identity and ancestor_sync_skills.exists() and not ancestor_sync_new.exists():
+        ancestor_root_synced_before_child[0] = True
+    if ancestor_sync_skills.exists():
+        skills_stat = ancestor_sync_skills.stat()
+        if (
+            identity == (skills_stat.st_dev, skills_stat.st_ino)
+            and ancestor_sync_new.exists()
+            and not ancestor_sync_target.exists()
+        ):
+            ancestor_parent_synced_before_file[0] = True
+    return real_fsync_directory(directory_fd)
+
+module._fsync_directory = track_ancestor_directory_sync
+try:
+    module.publish_file(
+        str(ancestor_sync_root), "skills/new/SKILL.md", None, str(ancestor_sync_stage)
+    )
+finally:
+    module._fsync_directory = real_fsync_directory
+if not ancestor_root_synced_before_child[0]:
+    raise SystemExit("publisher did not sync the root after creating the first path component")
+if not ancestor_parent_synced_before_file[0]:
+    raise SystemExit("publisher did not sync the intermediate directory after creating its child")
+if ancestor_sync_target.read_text() != "nested skill\n":
+    raise SystemExit("nested first-time publication did not leave the requested file")
 
 # Managed Claude-copy migration must preserve a concurrent editor save.
 claude_home = scratch / "claude-home"

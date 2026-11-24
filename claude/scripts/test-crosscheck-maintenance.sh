@@ -6,6 +6,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 INSTALLER="$SCRIPT_DIR/install-supply-chain-hook.sh"
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
+mkdir -p "$TEMP_DIR/test-home"
+export HOME="$TEMP_DIR/test-home"
 
 HOOK="$TEMP_DIR/preuse-supply-chain-gate.sh"
 cat > "$HOOK" <<'HOOK_EOF'
@@ -134,6 +136,10 @@ chmod +x "$PRIVATE_JQ_BIN/jq"
 )
 if [ "$(cat "$PRIVATE_MODE_MARKER")" != "0o600" ] || [ "$(python3 -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "$PRIVATE_SETTINGS")" != "0o600" ]; then
   echo "installer did not keep private settings and its intermediate file at mode 0600" >&2
+  exit 1
+fi
+if find "$TEMP_DIR" -maxdepth 1 -name 'crosscheck-settings-stage.*' -print -quit | grep -q .; then
+  echo "installer left its private staged settings file in TMPDIR" >&2
   exit 1
 fi
 
@@ -411,6 +417,16 @@ for updater in "$REPO_ROOT/skill-sources/update-crosscheck.md" "$REPO_ROOT/claud
     echo "updater still replaces settings with a check-then-move: $updater" >&2
     exit 1
   fi
+  pull_line="$(grep -n -m1 'git pull origin main --quiet' "$updater" | cut -d: -f1)"
+  settings_line="$(grep -n -m1 'scripts/sync-critical-settings.sh' "$updater" | cut -d: -f1)"
+  if [ -z "$pull_line" ] || [ -z "$settings_line" ] || [ "$settings_line" -le "$pull_line" ]; then
+    echo "updater runs the settings helper before pulling the code that provides it: $updater" >&2
+    exit 1
+  fi
+  if ! grep -Fq '"$HOME" --count-only)' "$updater" || grep -Fq 'CLAUDE_SYNC_RESULT##*:' "$updater"; then
+    echo "updater does not use the Claude helper's numeric count output: $updater" >&2
+    exit 1
+  fi
 done
 for updater in "$REPO_ROOT/skill-sources/update-crosscheck.md" "$REPO_ROOT/codex/skill-sources/update-crosscheck.md"; do
   if ! grep -Fq 'sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"' "$updater"; then
@@ -489,8 +505,38 @@ open_file.truncate()
 open_file.write('{"concurrentWriter":"late save"}\n')
 open_file.flush()
 open_file.close()
-if not recovery_path or (Path(recovery_path) / "original").read_text() != '{"concurrentWriter":"late save"}\n':
+if not recovery_path or Path(recovery_path).read_text() != '{"concurrentWriter":"late save"}\n':
     raise SystemExit("atomic publisher did not preserve a save through an already-open settings file")
+
+# The reported recovery path must remain valid if the target parent is renamed
+# immediately after publication.
+settings_dir.rename(scratch / "settings-dir-before-rename-test")
+settings_dir.mkdir()
+target = settings_dir / "settings.json"
+snapshot.write_text('{"setting":"original again"}\n')
+target.write_text('{"setting":"original again"}\n')
+staged.write_text('{"setting":"updated after rename"}\n')
+real_verify = module._verify_parent_path
+verify_calls = [0]
+
+def rename_parent_after_publish(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 2:
+        settings_dir.rename(scratch / "settings-dir-moved-during-publish")
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+module._verify_parent_path = rename_parent_after_publish
+try:
+    module.publish_file(str(scratch), ".claude/settings.json", str(snapshot), str(staged))
+except module.ConcurrentUpdate as error:
+    if not error.recovery_path or Path(error.recovery_path).read_text() != '{"setting":"original again"}\n':
+        raise SystemExit("atomic publisher reported a recovery path that did not survive a parent rename")
+else:
+    raise SystemExit("atomic publisher accepted a target parent rename during publication")
+finally:
+    module._verify_parent_path = real_verify
+if (scratch / "settings-dir-moved-during-publish/settings.json").read_text() != '{"setting":"updated after rename"}\n':
+    raise SystemExit("atomic publisher lost its staged settings after a target parent rename")
 
 # A publish error after moving the live file must restore it to the live path.
 error_dir = scratch / "publish-error"
@@ -684,6 +730,17 @@ ln -s "$SYNC_ROOT/claude/skill-sources/linked.md" "$HOME_FIXTURE/.claude/command
 printf 'user-owned command\n' > "$HOME_FIXTURE/.claude/commands/custom.md"
 printf 'skipped\n' > "$HOME_FIXTURE/.crosscheck/skip-skills"
 "$REPO_ROOT/claude/scripts/sync-managed-claude-skills.sh" "$SYNC_ROOT" "$HOME_FIXTURE" >/dev/null
+COUNT_OUTPUT="$("$REPO_ROOT/claude/scripts/sync-managed-claude-skills.sh" "$SYNC_ROOT" "$HOME_FIXTURE" --count-only 2> "$TEMP_DIR/claude-sync-count-summary")"
+case "$COUNT_OUTPUT" in
+  ''|*[!0-9]*)
+    echo "Claude sync count mode did not return an integer: $COUNT_OUTPUT" >&2
+    exit 1
+    ;;
+esac
+if ! grep -Fq 'Claude command links added or refreshed:' "$TEMP_DIR/claude-sync-count-summary"; then
+  echo "Claude sync count mode omitted its human-readable summary" >&2
+  exit 1
+fi
 
 if [ ! -L "$HOME_FIXTURE/.claude/commands/managed.md" ] || [ "$(cat "$HOME_FIXTURE/.claude/commands/managed.md")" != "Claude-specific managed command" ]; then
   echo "managed Claude copy was not refreshed from the Claude mirror" >&2

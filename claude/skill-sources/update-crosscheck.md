@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version — pulls from main. Skills
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-11-24-02-12
+**Last Updated:** 2026-11-24-02-36
 
 # Update CrossCheck
 
@@ -53,32 +53,7 @@ CURRENT=$(cat "$CROSSCHECK_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo 
 echo "   Current version: $CURRENT"
 ```
 
-## Step 3: Sync Critical Deny Rules and the Claude Hook
-
-Update existing settings through the managed scripts. They preserve a settings
-symlink and refuse to replace concurrent edits.
-
-```bash
-for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
-    if [ -f "$SETTINGS_FILE" ]; then
-        "$CROSSCHECK_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --include-ask
-    fi
-done
-
-if [ -f "$HOME/.claude/settings.json" ]; then
-    "$CROSSCHECK_DIR/claude/scripts/install-supply-chain-hook.sh" \
-        "$HOME/.claude/settings.json" \
-        "$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh"
-fi
-```
-
-This keeps the critical deny rules and `Bash(gh api *)` ask rule current, and
-refreshes the Claude supply-chain hook without replacing unrelated settings.
-When an existing file is replaced, the updater prints a private recovery
-path for the prior file. Keep it until apps that may have the file open are
-closed and any late save has been checked.
-
-## Step 4: Pull Latest
+## Step 3: Pull Latest
 
 ```bash
 cd "$CROSSCHECK_DIR"
@@ -106,8 +81,36 @@ else
 fi
 ```
 
-Continue to Steps 5 and 6 when `main` is already current. Step 6 refreshes
-installed Codex-native skill copies even when there are no new Git commits.
+
+## Step 4: Sync Critical Deny Rules and the Claude Hook
+
+Update existing settings through the managed scripts. They preserve a settings
+symlink and refuse to replace concurrent edits.
+
+```bash
+for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
+    if [ -f "$SETTINGS_FILE" ]; then
+        "$CROSSCHECK_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --include-ask
+    fi
+done
+
+if [ -f "$HOME/.claude/settings.json" ]; then
+    "$CROSSCHECK_DIR/claude/scripts/install-supply-chain-hook.sh" \
+        "$HOME/.claude/settings.json" \
+        "$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh"
+fi
+```
+
+This keeps the critical deny rules and `Bash(gh api *)` ask rule current, and
+refreshes the Claude supply-chain hook without replacing unrelated settings.
+When an existing file is replaced, the updater prints a private recovery
+path for the prior file. Keep it until apps that may have the file open are
+closed and any late save has been checked.
+
+
+Settings sync still runs when `main` is already current. Continue to Steps 5
+and 6; Step 6 refreshes installed Codex-native skill copies even when there
+are no new Git commits.
 
 ## Step 5: Show New Version
 
@@ -133,9 +136,13 @@ NEW_LINKED=0
 
 # Claude commands: use the Claude mirror, not the Codex-oriented root sources.
 ROOT_SKILL_DIR="$CROSSCHECK_DIR/skill-sources"
-CLAUDE_SYNC_RESULT="$("$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME")"
-echo "   $CLAUDE_SYNC_RESULT"
-CLAUDE_SYNC_COUNT="${CLAUDE_SYNC_RESULT##*: }"
+CLAUDE_SYNC_COUNT="$("$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME" --count-only)"
+case "$CLAUDE_SYNC_COUNT" in
+    ''|*[!0-9]*)
+        echo "❌ Claude command sync returned an invalid count: $CLAUDE_SYNC_COUNT" >&2
+        exit 1
+        ;;
+esac
 NEW_LINKED=$((NEW_LINKED + CLAUDE_SYNC_COUNT))
 
 # Codex compatibility commands still use the root sources.
@@ -194,7 +201,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
   refreshes exact CrossCheck copies, and leaves customized user files alone.
 - **CLAUDE.md updates instantly** — symlinked in multi-project mode; git pull
   propagates changes to all sessions automatically.
-- **Settings are not overwritten,** but **critical deny rules are synced.** Step 3
+- **Settings are not overwritten,** but **critical deny rules are synced.** Step 4
   ensures security-critical deny rules (like `--admin` bypass prevention) are always
   present in your settings — this runs even when already up to date.
 - **Git hooks are not updated.** If CrossCheck ships hook changes, re-run

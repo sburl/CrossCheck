@@ -133,7 +133,6 @@ fi
 if ! python3 "$PUBLISH_HELPER" publish "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SETTINGS_SNAPSHOT" "$TEMP_FILE" "$SETTINGS_MODE"; then
   exit 1
 fi
-TEMP_FILE=""
 CURRENT_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
 if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
   echo "Claude settings path changed during the supply-chain hook update: $SETTINGS_FILE" >&2

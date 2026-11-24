@@ -220,6 +220,72 @@ def _remove_recovery(parent_fd: int, recovery_fd: int, recovery_name: str) -> No
     os.rmdir(recovery_name, dir_fd=parent_fd)
 
 
+def _discard_recovery(parent_fd: int, recovery_fd: int, recovery_name: str) -> None:
+    """Best-effort cleanup after the durable recovery hard link is secured."""
+    try:
+        os.unlink("original", dir_fd=recovery_fd)
+    except OSError:
+        pass
+    try:
+        os.close(recovery_fd)
+    except OSError:
+        pass
+    try:
+        os.rmdir(recovery_name, dir_fd=parent_fd)
+    except OSError:
+        pass
+
+
+def _open_stable_recovery_directory() -> tuple[int, int, str]:
+    """Open a private recovery directory outside the target's parent tree."""
+    home_fd, home_path = _open_root(os.path.expanduser("~"))
+    name = ".crosscheck-recovery"
+    try:
+        try:
+            os.mkdir(name, 0o700, dir_fd=home_fd)
+        except FileExistsError:
+            pass
+        recovery_fd = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=home_fd,
+        )
+        info = os.fstat(recovery_fd)
+        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
+            os.close(recovery_fd)
+            raise PermissionError(f"recovery directory is not private: {os.path.join(home_path, name)}")
+        return home_fd, recovery_fd, os.path.join(home_path, name)
+    except BaseException:
+        os.close(home_fd)
+        raise
+
+
+def _new_stable_recovery_link(
+    source_fd: int, recovery_fd: int, recovery_dir: str
+) -> tuple[str, str]:
+    while True:
+        name = f"settings-{secrets.token_hex(12)}.bak"
+        try:
+            os.link(
+                "original",
+                name,
+                src_dir_fd=source_fd,
+                dst_dir_fd=recovery_fd,
+                follow_symlinks=False,
+            )
+            return name, os.path.join(recovery_dir, name)
+        except FileExistsError:
+            continue
+
+
+def _unlink_stable_recovery(recovery_fd: int, name: str | None) -> None:
+    if name is not None:
+        try:
+            os.unlink(name, dir_fd=recovery_fd)
+        except FileNotFoundError:
+            pass
+
+
 def publish_file(
     root: str,
     relative_target: str,
@@ -235,8 +301,12 @@ def publish_file(
     staged_name: str | None = None
     recovery_fd: int | None = None
     recovery_name: str | None = None
+    stable_home_fd: int | None = None
+    stable_recovery_fd: int | None = None
+    stable_recovery_name: str | None = None
     recovery_path: str | None = None
     original_moved = False
+    published = False
     try:
         staged_name = _copy_into_directory(staged_file, parent_fd)
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
@@ -261,10 +331,16 @@ def publish_file(
             _rename_noreplace(parent_fd, target_name, recovery_fd, "original")
             original_moved = True
         except FileNotFoundError as error:
-            _remove_recovery(parent_fd, recovery_fd, recovery_name)
-            recovery_fd = None
-            recovery_name = None
             raise ConcurrentUpdate(f"target disappeared during CrossCheck update: {target}") from error
+
+        stable_home_fd, stable_recovery_fd, stable_recovery_dir = _open_stable_recovery_directory()
+        stable_recovery_name, recovery_path = _new_stable_recovery_link(
+            recovery_fd, stable_recovery_fd, stable_recovery_dir
+        )
+        if _read_signature_at(stable_recovery_fd, stable_recovery_name) != expected_signature:
+            raise ConcurrentUpdate(
+                f"file changed during CrossCheck update, refusing to overwrite: {target}"
+            )
 
         try:
             current_signature = _read_signature_at(recovery_fd, "original")
@@ -273,41 +349,22 @@ def publish_file(
                 f"target changed type during CrossCheck update: {target}", recovery_path
             ) from error
         if current_signature != expected_signature:
-            try:
-                _rename_noreplace(recovery_fd, "original", parent_fd, target_name)
-                original_moved = False
-                _remove_recovery(parent_fd, recovery_fd, recovery_name)
-                recovery_fd = None
-                recovery_name = None
-                raise ConcurrentUpdate(f"file changed during CrossCheck update, refusing to overwrite: {target}")
-            except FileExistsError:
-                raise ConcurrentUpdate(
-                    f"file changed during CrossCheck update, refusing to overwrite: {target}", recovery_path
-                )
+            raise ConcurrentUpdate(f"file changed during CrossCheck update, refusing to overwrite: {target}")
 
         try:
             _rename_noreplace(parent_fd, staged_name, parent_fd, target_name)
             staged_name = None
+            published = True
         except OSError as error:
-            try:
-                _rename_noreplace(recovery_fd, "original", parent_fd, target_name)
-                original_moved = False
-                _remove_recovery(parent_fd, recovery_fd, recovery_name)
-                recovery_fd = None
-                recovery_name = None
-            except OSError:
-                raise ConcurrentUpdate(
-                    f"could not publish file without replacing a concurrent update: {target}", recovery_path
-                ) from error
             if isinstance(error, FileExistsError):
                 raise ConcurrentUpdate(f"destination appeared during CrossCheck update: {target}") from error
             raise
 
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
-        # Keep the previous inode in a private recovery directory after success.
-        # A writer with an already-open descriptor can still save to that inode
-        # after this function returns; retaining it makes that save recoverable.
+        # Keep a private hard link outside the target's parent tree. A writer
+        # with an already-open descriptor can still save to the old inode, and
+        # the reported path remains valid if the target directory is renamed.
         try:
             if _read_signature_at(recovery_fd, "original") != expected_signature:
                 raise ConcurrentUpdate(
@@ -317,21 +374,36 @@ def publish_file(
             raise ConcurrentUpdate(
                 f"could not verify previous file after CrossCheck update: {target}", recovery_path
             ) from error
+        if recovery_fd is not None and recovery_name is not None:
+            _discard_recovery(parent_fd, recovery_fd, recovery_name)
+            recovery_fd = None
+            recovery_name = None
         return recovery_path
-    except BaseException:
+    except BaseException as error:
+        if published:
+            if recovery_fd is not None and recovery_name is not None:
+                _discard_recovery(parent_fd, recovery_fd, recovery_name)
+                recovery_fd = None
+                recovery_name = None
+            raise ConcurrentUpdate(
+                f"settings published but a concurrent path change needs attention: {target}", recovery_path
+            ) from error
         if original_moved and recovery_fd is not None and recovery_name is not None:
             try:
                 _rename_noreplace(recovery_fd, "original", parent_fd, target_name)
                 original_moved = False
-                _remove_recovery(parent_fd, recovery_fd, recovery_name)
-                recovery_fd = None
-                recovery_name = None
-                recovery_path = None
             except OSError as restore_error:
                 # Leave a durable, private recovery path and name it to callers.
                 raise ConcurrentUpdate(
                     f"could not restore or publish settings safely: {target}", recovery_path
                 ) from restore_error
+        if stable_recovery_fd is not None:
+            _unlink_stable_recovery(stable_recovery_fd, stable_recovery_name)
+            stable_recovery_name = None
+        if recovery_fd is not None and recovery_name is not None and not original_moved:
+            _discard_recovery(parent_fd, recovery_fd, recovery_name)
+            recovery_fd = None
+            recovery_name = None
         raise
     finally:
         if staged_name is not None:
@@ -341,6 +413,10 @@ def publish_file(
                 pass
         if recovery_fd is not None:
             os.close(recovery_fd)
+        if stable_recovery_fd is not None:
+            os.close(stable_recovery_fd)
+        if stable_home_fd is not None:
+            os.close(stable_home_fd)
         os.close(parent_fd)
         os.close(root_fd)
 

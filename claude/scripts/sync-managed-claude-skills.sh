@@ -3,6 +3,13 @@ set -euo pipefail
 
 CROSSCHECK_DIR="$(cd "${1:?usage: sync-managed-claude-skills.sh CROSSCHECK_DIR [HOME_DIR]}" && pwd -P)"
 HOME_DIR="$(cd "${2:-$HOME}" && pwd -P)"
+COUNT_ONLY=0
+if [ "${3:-}" = "--count-only" ]; then
+  COUNT_ONLY=1
+elif [ "$#" -gt 2 ]; then
+  echo "usage: sync-managed-claude-skills.sh CROSSCHECK_DIR [HOME_DIR] [--count-only]" >&2
+  exit 2
+fi
 CLAUDE_SKILL_DIR="$CROSSCHECK_DIR/claude/skill-sources"
 ROOT_SKILL_DIR="$CROSSCHECK_DIR/skill-sources"
 TARGET_DIR="$HOME_DIR/.claude/commands"
@@ -89,4 +96,10 @@ for skill_file in "$CLAUDE_SKILL_DIR/"*.md; do
   fi
 done
 
-echo "Claude command links added or refreshed: $UPDATED; preserved $PRESERVED customized, linked, or concurrent path(s)"
+SUMMARY="Claude command links added or refreshed: $UPDATED; preserved $PRESERVED customized, linked, or concurrent path(s)"
+if [ "$COUNT_ONLY" -eq 1 ]; then
+  printf '%s\n' "$UPDATED"
+  printf '%s\n' "$SUMMARY" >&2
+else
+  printf '%s\n' "$SUMMARY"
+fi

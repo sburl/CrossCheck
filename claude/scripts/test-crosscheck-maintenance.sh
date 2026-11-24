@@ -149,7 +149,7 @@ run_bootstrap_with_declines() {
   local home="$1"
   local script="$2"
   local scenario="$3"
-  BOOTSTRAP_HOME="$home" BOOTSTRAP_SCRIPT="$script" BOOTSTRAP_SCENARIO="$scenario" python3 <<'PY'
+  BOOTSTRAP_HOME="$home" BOOTSTRAP_SCRIPT="$script" BOOTSTRAP_SCENARIO="$scenario" TMPDIR="$TEMP_DIR" python3 <<'PY'
 import os
 import pty
 import select
@@ -175,6 +175,7 @@ prompt_fragments = (
     b"Install Claude review hooks globally? (Y/n)",
     b"Install TokenPrint (AI usage dashboard)? (Y/n)",
 )
+decline_response = b"n\n" if "/codex/scripts/" in script else b"n"
 deadline = time.monotonic() + 90
 status = None
 while time.monotonic() < deadline:
@@ -188,7 +189,7 @@ while time.monotonic() < deadline:
             output.extend(chunk)
             for index, prompt in enumerate(prompt_fragments):
                 if index not in sent_prompts and prompt in output:
-                    os.write(fd, b"n")
+                    os.write(fd, decline_response)
                     sent_prompts.add(index)
     try:
         waited, wait_status = os.waitpid(pid, os.WNOHANG)
@@ -222,7 +223,7 @@ for declined in declined_outcomes:
 PY
 }
 
-for bootstrap in root claude; do
+for bootstrap in root claude codex; do
   BOOTSTRAP_REPO="$TEMP_DIR/workspace/$bootstrap/CrossCheck"
   BOOTSTRAP_HOME="$TEMP_DIR/home-$bootstrap"
   mkdir -p "$(dirname "$BOOTSTRAP_REPO")" "$BOOTSTRAP_HOME"
@@ -231,34 +232,54 @@ import shutil
 import sys
 shutil.copytree(sys.argv[1], sys.argv[2], ignore=shutil.ignore_patterns(".git"))
 PY
-  mkdir -p "$BOOTSTRAP_HOME/.claude"
-
   if [ "$bootstrap" = root ]; then
     SCRIPT="$BOOTSTRAP_REPO/scripts/bootstrap-crosscheck.sh"
-  else
+  elif [ "$bootstrap" = claude ]; then
     SCRIPT="$BOOTSTRAP_REPO/claude/scripts/bootstrap-crosscheck.sh"
+  else
+    SCRIPT="$BOOTSTRAP_REPO/codex/scripts/bootstrap-crosscheck.sh"
   fi
 
   run_bootstrap_with_declines "$BOOTSTRAP_HOME" "$SCRIPT" "fresh settings install"
 
-  SETTINGS="$BOOTSTRAP_HOME/.claude/settings.json"
-  jq -e '
-    (.hooks.PreToolUse | type == "array") and
-    (.permissions.deny as $deny | [
+  if [ "$bootstrap" = codex ]; then
+    SETTINGS="$BOOTSTRAP_HOME/.codex/settings.json"
+    COMMAND_LINK="$BOOTSTRAP_HOME/.codex/skills/update-crosscheck/SKILL.md"
+    EXPECTED_COMMAND="$BOOTSTRAP_REPO/codex/skills/update-crosscheck/SKILL.md"
+    jq -e '
+      (.permissions.deny as $deny | [
+        "Bash(gh*--admin*)", "Bash(*--admin*)", "Bash(gh api*rulesets*)",
+        "Bash(gh api*branches/*/protection*)", "Bash(*graphql*BranchProtection*)",
+        "Bash(*graphql*Ruleset*)"
+      ] | all(.[]; . as $rule | $deny | index($rule) != null))
+    ' "$SETTINGS" >/dev/null
+  else
+    SETTINGS="$BOOTSTRAP_HOME/.claude/settings.json"
+    COMMAND_LINK="$BOOTSTRAP_HOME/.claude/commands/update-crosscheck.md"
+    EXPECTED_COMMAND="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$BOOTSTRAP_REPO/claude/skill-sources/update-crosscheck.md")"
+    jq -e '
+      (.hooks.PreToolUse | type == "array") and
+      (.permissions.deny as $deny | [
       "Bash(gh*--admin*)", "Bash(*--admin*)", "Bash(gh api*rulesets*)",
       "Bash(gh api*branches/*/protection*)", "Bash(*graphql*BranchProtection*)",
       "Bash(*graphql*Ruleset*)"
-    ] | all(.[]; . as $rule | $deny | index($rule) != null))
-  ' "$SETTINGS" >/dev/null
+      ] | all(.[]; . as $rule | $deny | index($rule) != null))
+    ' "$SETTINGS" >/dev/null
+  fi
   [ -f "$SETTINGS" ]
   [ ! -L "$SETTINGS" ]
   jq -e 'has("PreToolUse") | not' "$SETTINGS" >/dev/null
-  COMMAND_LINK="$BOOTSTRAP_HOME/.claude/commands/update-crosscheck.md"
-  EXPECTED_COMMAND="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$BOOTSTRAP_REPO/claude/skill-sources/update-crosscheck.md")"
-  ACTUAL_COMMAND="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$COMMAND_LINK")"
-  if [ ! -L "$COMMAND_LINK" ] || [ "$ACTUAL_COMMAND" != "$EXPECTED_COMMAND" ]; then
-    echo "$bootstrap bootstrap installed $ACTUAL_COMMAND, expected $EXPECTED_COMMAND" >&2
-    exit 1
+  if [ "$bootstrap" = codex ]; then
+    if [ ! -f "$COMMAND_LINK" ] || ! cmp -s "$EXPECTED_COMMAND" "$COMMAND_LINK"; then
+      echo "Codex bootstrap did not install the managed native skill from $EXPECTED_COMMAND" >&2
+      exit 1
+    fi
+  else
+    ACTUAL_COMMAND="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$COMMAND_LINK")"
+    if [ ! -L "$COMMAND_LINK" ] || [ "$ACTUAL_COMMAND" != "$EXPECTED_COMMAND" ]; then
+      echo "$bootstrap bootstrap installed $ACTUAL_COMMAND, expected $EXPECTED_COMMAND" >&2
+      exit 1
+    fi
   fi
 done
 
@@ -283,8 +304,8 @@ cat > "$AGENT_RACE_BIN/python3" <<'SH'
 set -e
 if [ "$1" = "$AGENT_RACE_REPO/scripts/atomic-publish-file.py" ] \
   && [ "$2" = publish ] \
-  && [ "$3" = "$HOME/.codex" ] \
-  && [ "$4" = AGENTS.md ] \
+  && [ "$3" = "$HOME" ] \
+  && [ "$4" = .codex/AGENTS.md ] \
   && [ ! -e "$AGENT_RACE_MARKER" ]; then
   printf 'concurrent global instruction edit\n' > "$HOME/.codex/AGENTS.md"
   : > "$AGENT_RACE_MARKER"
@@ -316,7 +337,7 @@ fi
 
 # A malformed template must fail before either bootstrap publishes a settings
 # file at the live path.
-for bootstrap in root claude; do
+for bootstrap in root claude codex; do
   FAIL_REPO="$TEMP_DIR/workspace/fail-$bootstrap/CrossCheck"
   FAIL_HOME="$TEMP_DIR/home-fail-$bootstrap"
   mkdir -p "$(dirname "$FAIL_REPO")" "$FAIL_HOME"
@@ -328,21 +349,30 @@ PY
   if [ "$bootstrap" = root ]; then
     FAIL_TEMPLATE="$FAIL_REPO/settings.template.json"
     FAIL_SCRIPT="$FAIL_REPO/scripts/bootstrap-crosscheck.sh"
-  else
+    FAIL_SETTINGS="$FAIL_HOME/.claude/settings.json"
+    EXPECTED_VALIDATION='Claude settings file must contain exactly one valid JSON object:'
+  elif [ "$bootstrap" = claude ]; then
     FAIL_TEMPLATE="$FAIL_REPO/claude/settings.template.json"
     FAIL_SCRIPT="$FAIL_REPO/claude/scripts/bootstrap-crosscheck.sh"
+    FAIL_SETTINGS="$FAIL_HOME/.claude/settings.json"
+    EXPECTED_VALIDATION='Claude settings file must contain exactly one valid JSON object:'
+  else
+    FAIL_TEMPLATE="$FAIL_REPO/settings.template.json"
+    FAIL_SCRIPT="$FAIL_REPO/codex/scripts/bootstrap-crosscheck.sh"
+    FAIL_SETTINGS="$FAIL_HOME/.codex/settings.json"
+    EXPECTED_VALIDATION='Settings must contain exactly one valid JSON object:'
   fi
   printf '{not valid json\n' > "$FAIL_TEMPLATE"
-  if HOME="$FAIL_HOME" bash "$FAIL_SCRIPT" > "$TEMP_DIR/bootstrap-failure-$bootstrap.log" 2>&1; then
+  if HOME="$FAIL_HOME" TMPDIR="$TEMP_DIR" bash "$FAIL_SCRIPT" > "$TEMP_DIR/bootstrap-failure-$bootstrap.log" 2>&1; then
     echo "$bootstrap bootstrap unexpectedly accepted an invalid settings template" >&2
     exit 1
   fi
-  if ! grep -Fq 'Claude settings file must contain exactly one valid JSON object:' "$TEMP_DIR/bootstrap-failure-$bootstrap.log"; then
+  if ! grep -Fq "$EXPECTED_VALIDATION" "$TEMP_DIR/bootstrap-failure-$bootstrap.log"; then
     echo "$bootstrap bootstrap failed without the installer's settings validation diagnostic" >&2
     cat "$TEMP_DIR/bootstrap-failure-$bootstrap.log" >&2
     exit 1
   fi
-  if [ -e "$FAIL_HOME/.claude/settings.json" ] || [ -L "$FAIL_HOME/.claude/settings.json" ] || find "$FAIL_HOME/.claude" -name 'settings.json.bootstrap.*' -print -quit | grep -q .; then
+  if [ -e "$FAIL_SETTINGS" ] || [ -L "$FAIL_SETTINGS" ] || find "$TEMP_DIR" -maxdepth 1 -name 'crosscheck-codex-settings.*' -print -quit | grep -q . || find "$TEMP_DIR" -maxdepth 1 -name 'crosscheck-claude-settings.*' -print -quit | grep -q .; then
     echo "$bootstrap bootstrap left a partially published settings file" >&2
     exit 1
   fi
@@ -391,7 +421,7 @@ SH
 set -e
 REAL_INSTALLER="$(dirname "$0")/install-supply-chain-hook.sh.real"
 case "$1" in
-  "$HOME"/.claude/settings.json.bootstrap.*)
+  "$TMPDIR"/crosscheck-claude-settings.*)
     "$REAL_INSTALLER" "$@"
     if [ "$RACE_TARGET_KIND" = directory ]; then
       mkdir "$HOME/.claude/settings.json"
@@ -427,7 +457,7 @@ SH
     jq -e '.hooks.PreToolUse | type == "array"' "$RACE_SETTINGS" >/dev/null
   else
     if [ "$race_kind" = directory ]; then
-      if HOME="$RACE_HOME" RACE_TARGET_KIND="$race_kind" RACE_JQ_BIN="$RACE_JQ_BIN" RACE_REAL_JQ="$RACE_REAL_JQ" bash "$RACE_SCRIPT" > "$TEMP_DIR/bootstrap-directory-race-$bootstrap.log" 2>&1; then
+    if HOME="$RACE_HOME" TMPDIR="$TEMP_DIR" RACE_TARGET_KIND="$race_kind" RACE_JQ_BIN="$RACE_JQ_BIN" RACE_REAL_JQ="$RACE_REAL_JQ" bash "$RACE_SCRIPT" > "$TEMP_DIR/bootstrap-directory-race-$bootstrap.log" 2>&1; then
         echo "$bootstrap bootstrap unexpectedly accepted a directory at the settings path" >&2
         exit 1
       fi
@@ -441,7 +471,7 @@ SH
         exit 1
       fi
     else
-      if HOME="$RACE_HOME" RACE_TARGET_KIND="$race_kind" RACE_JQ_BIN="$RACE_JQ_BIN" RACE_REAL_JQ="$RACE_REAL_JQ" bash "$RACE_SCRIPT" > "$TEMP_DIR/bootstrap-edit-race-$bootstrap.log" 2>&1; then
+      if HOME="$RACE_HOME" TMPDIR="$TEMP_DIR" RACE_TARGET_KIND="$race_kind" RACE_JQ_BIN="$RACE_JQ_BIN" RACE_REAL_JQ="$RACE_REAL_JQ" bash "$RACE_SCRIPT" > "$TEMP_DIR/bootstrap-edit-race-$bootstrap.log" 2>&1; then
         echo "$bootstrap bootstrap unexpectedly overwrote a concurrent settings edit" >&2
         exit 1
       fi
@@ -457,7 +487,79 @@ SH
     echo "$bootstrap bootstrap left a staged settings file after resolving a publish collision" >&2
     exit 1
   fi
+  if find "$TEMP_DIR" -maxdepth 1 -name 'crosscheck-claude-settings.*' -print -quit | grep -q .; then
+    echo "$bootstrap bootstrap left its validated settings stage after resolving a publish collision" >&2
+    exit 1
+  fi
   done
+done
+
+# Both Claude entry points must fail visibly when syncing the first live
+# settings directory fails after its no-clobber publish.
+DIRSYNC_REPO="$TEMP_DIR/workspace/bootstrap-dirsync-failure/CrossCheck"
+mkdir -p "$(dirname "$DIRSYNC_REPO")"
+python3 - "$REPO_ROOT" "$DIRSYNC_REPO" <<'PY'
+import shutil
+import sys
+shutil.copytree(sys.argv[1], sys.argv[2], ignore=shutil.ignore_patterns(".git"))
+PY
+DIRSYNC_REAL_HELPER="$DIRSYNC_REPO/scripts/atomic-publish-file-real.py"
+mv "$DIRSYNC_REPO/scripts/atomic-publish-file.py" "$DIRSYNC_REAL_HELPER"
+cat > "$DIRSYNC_REPO/scripts/atomic-publish-file.py" <<'PY'
+#!/usr/bin/env python3
+import errno
+import importlib.util
+import os
+import sys
+
+helper_path = os.path.join(os.path.dirname(__file__), "atomic-publish-file-real.py")
+spec = importlib.util.spec_from_file_location("atomic_publish_file_real", helper_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+if (
+    len(sys.argv) >= 6
+    and sys.argv[1] == "publish"
+    and os.path.abspath(sys.argv[2]) == os.path.abspath(os.environ["HOME"])
+    and sys.argv[3] == ".claude/settings.json"
+    and sys.argv[4] == "--absent"
+):
+    real_fsync_directory = module._fsync_directory
+    target = os.path.join(os.environ["HOME"], ".claude", "settings.json")
+
+    def fail_after_live_settings_publish(directory_fd):
+        if os.path.lexists(target):
+            raise OSError(errno.EIO, "injected live settings directory sync failure")
+        return real_fsync_directory(directory_fd)
+
+    module._fsync_directory = fail_after_live_settings_publish
+sys.exit(module.main())
+PY
+chmod +x "$DIRSYNC_REPO/scripts/atomic-publish-file.py"
+for bootstrap in root claude; do
+  DIRSYNC_HOME="$TEMP_DIR/home-dirsync-$bootstrap"
+  mkdir -p "$DIRSYNC_HOME"
+  if [ "$bootstrap" = root ]; then
+    DIRSYNC_SCRIPT="$DIRSYNC_REPO/scripts/bootstrap-crosscheck.sh"
+  else
+    DIRSYNC_SCRIPT="$DIRSYNC_REPO/claude/scripts/bootstrap-crosscheck.sh"
+  fi
+  if HOME="$DIRSYNC_HOME" TMPDIR="$TEMP_DIR" bash "$DIRSYNC_SCRIPT" > "$TEMP_DIR/bootstrap-dirsync-$bootstrap.log" 2>&1; then
+    echo "$bootstrap bootstrap reported success after a settings directory sync failure" >&2
+    exit 1
+  fi
+  if ! grep -Fq "Could not safely publish prepared settings at $DIRSYNC_HOME/.claude/settings.json" "$TEMP_DIR/bootstrap-dirsync-$bootstrap.log"; then
+    echo "$bootstrap bootstrap failed without the settings publication diagnostic" >&2
+    cat "$TEMP_DIR/bootstrap-dirsync-$bootstrap.log" >&2
+    exit 1
+  fi
+  if ! jq -e '.hooks.PreToolUse | type == "array"' "$DIRSYNC_HOME/.claude/settings.json" >/dev/null; then
+    echo "$bootstrap bootstrap did not leave the fully validated settings file after the injected sync failure" >&2
+    exit 1
+  fi
+  if grep -Fq 'Claude supply-chain hook points to' "$TEMP_DIR/bootstrap-dirsync-$bootstrap.log"; then
+    echo "$bootstrap bootstrap announced success after its settings publication failed" >&2
+    exit 1
+  fi
 done
 
 # The updater must pass the checkout explicitly; this caller runs in a fresh
@@ -601,8 +703,90 @@ open_file.close()
 if not recovery_path or Path(recovery_path).read_text() != '{"concurrentWriter":"late save"}\n':
     raise SystemExit("atomic publisher did not preserve a save through an already-open settings file")
 
-# A target-parent rename detected after exchange must roll publication back
-# while retaining a durable recovery copy outside the moved tree.
+# Replacing the stable backup with a same-content inode must fail closed before
+# the displaced original can be unlinked during successful publication.
+backup_tamper_root = scratch / "backup-tamper-root"
+backup_tamper_root.mkdir()
+backup_tamper_target = backup_tamper_root / "settings.json"
+backup_tamper_snapshot = scratch / "backup-tamper-snapshot.json"
+backup_tamper_stage = scratch / "backup-tamper-stage.json"
+backup_tamper_target.write_text('{"setting":"original"}\n')
+backup_tamper_snapshot.write_text('{"setting":"original"}\n')
+backup_tamper_stage.write_text('{"setting":"updated"}\n')
+backup_tamper_identity = (backup_tamper_target.stat().st_dev, backup_tamper_target.stat().st_ino)
+backup_tamper_handle = backup_tamper_target.open("r+")
+real_verify_stable_path = module._verify_stable_recovery_path
+stable_path_checks = [0]
+
+def replace_backup_after_directory_verification(base_fd, base_path, recovery_fd, recovery_name, recovery_path):
+    result = real_verify_stable_path(base_fd, base_path, recovery_fd, recovery_name, recovery_path)
+    stable_path_checks[0] += 1
+    if stable_path_checks[0] == 3:
+        backup = Path(recovery_path) / recovery_name
+        backup_info = backup.stat()
+        replacement = backup.with_name(backup.name + ".replacement")
+        replacement.write_text('{"setting":"original"}\n')
+        os.chmod(replacement, module.stat.S_IMODE(backup_info.st_mode))
+        os.replace(replacement, backup)
+    return result
+
+module._verify_stable_recovery_path = replace_backup_after_directory_verification
+try:
+    module.publish_file(
+        str(backup_tamper_root), "settings.json", str(backup_tamper_snapshot), str(backup_tamper_stage)
+    )
+except module.ConcurrentUpdate as error:
+    if not error.recovery_path or Path(error.recovery_path).read_text() != '{"setting":"original"}\n':
+        raise SystemExit("publisher failed to retain the displaced original after backup tampering")
+else:
+    raise SystemExit("publisher accepted a same-content replacement of the stable recovery inode")
+finally:
+    module._verify_stable_recovery_path = real_verify_stable_path
+    backup_tamper_handle.close()
+if backup_tamper_target.read_text() != '{"setting":"original"}\n':
+    raise SystemExit("publisher did not roll back after detecting a replaced recovery inode")
+if (backup_tamper_target.stat().st_dev, backup_tamper_target.stat().st_ino) != backup_tamper_identity:
+    raise SystemExit("publisher lost the original settings inode after backup tampering")
+
+# Signature-read failures after copying must remove the private staging entry.
+for failed_signature_read in ("copied", "source"):
+    copy_failure_root = scratch / f"copy-signature-failure-{failed_signature_read}"
+    copy_failure_root.mkdir()
+    copy_failure_source = scratch / f"copy-signature-source-{failed_signature_read}.json"
+    copy_failure_source.write_text('{"setting":"new"}\n')
+    real_read_signature_at = module._read_signature_at
+    real_read_signature = module._read_signature
+
+    if failed_signature_read == "copied":
+        def fail_copied_signature(directory_fd, name):
+            if name.startswith(".crosscheck-stage-"):
+                raise OSError(errno.EIO, "injected copied-file signature read failure")
+            return real_read_signature_at(directory_fd, name)
+        module._read_signature_at = fail_copied_signature
+    else:
+        def fail_source_signature(path):
+            if path == str(copy_failure_source):
+                raise OSError(errno.EIO, "injected source signature read failure")
+            return real_read_signature(path)
+        module._read_signature = fail_source_signature
+    try:
+        try:
+            module.publish_file(
+                str(copy_failure_root), "settings.json", None, str(copy_failure_source)
+            )
+        except OSError:
+            pass
+        else:
+            raise SystemExit(f"publisher accepted a failed {failed_signature_read} signature read")
+    finally:
+        module._read_signature_at = real_read_signature_at
+        module._read_signature = real_read_signature
+    if list(copy_failure_root.glob(".crosscheck-stage-*")):
+        raise SystemExit(f"publisher left a staging file after a {failed_signature_read} signature read error")
+    if (copy_failure_root / "settings.json").exists():
+        raise SystemExit(f"publisher published a file after a {failed_signature_read} signature read error")
+
+# A moved and recreated target parent must not make detached rollback look safe.
 settings_dir.rename(scratch / "settings-dir-before-rename-test")
 settings_dir.mkdir()
 target = settings_dir / "settings.json"
@@ -616,20 +800,25 @@ def rename_parent_after_publish(root_fd, root_path, relative_target, parent_fd):
     verify_calls[0] += 1
     if verify_calls[0] == 2:
         settings_dir.rename(scratch / "settings-dir-moved-during-publish")
+        settings_dir.mkdir()
     return real_verify(root_fd, root_path, relative_target, parent_fd)
 
 module._verify_parent_path = rename_parent_after_publish
 try:
     module.publish_file(str(scratch), ".claude/settings.json", str(snapshot), str(staged))
-except module.ConcurrentUpdate as error:
+except module.RestorationFailed as error:
     if not error.recovery_path or Path(error.recovery_path).read_text() != '{"setting":"original again"}\n':
-        raise SystemExit("atomic publisher reported a recovery path that did not survive a parent rename")
+        raise SystemExit("atomic publisher did not report stable recovery after the parent moved")
 else:
-    raise SystemExit("atomic publisher accepted a target parent rename during publication")
+    raise SystemExit("atomic publisher reported a safe rollback through a detached parent")
 finally:
     module._verify_parent_path = real_verify
 if (scratch / "settings-dir-moved-during-publish/settings.json").read_text() != '{"setting":"original again"}\n':
     raise SystemExit("atomic publisher failed to restore the previous settings after a target parent rename")
+if settings_dir.joinpath("settings.json").exists():
+    raise SystemExit("atomic publisher restored settings only in the detached parent")
+if not list((scratch / "settings-dir-moved-during-publish").glob(".crosscheck-stage-*")):
+    raise SystemExit("atomic publisher cleaned the stage after failing live-parent verification")
 
 # Settings callers use the target directory as the publisher root. Moving that
 # root after publication must be detected, with recovery outside the root.
@@ -1014,10 +1203,13 @@ def write_after_final_published_sample(directory_fd, name):
     return state
 
 real_verify = module._verify_parent_path
+verify_calls_after_publish = [0]
 
 def fail_after_publishing(root_fd, root_path, relative_target, parent_fd):
     if published_identity[0] is not None:
-        raise module.ConcurrentUpdate("injected post-publish failure")
+        verify_calls_after_publish[0] += 1
+        if verify_calls_after_publish[0] == 1:
+            raise module.ConcurrentUpdate("injected post-publish failure")
     return real_verify(root_fd, root_path, relative_target, parent_fd)
 
 module._rename_exchange = capture_published_inode

@@ -109,15 +109,13 @@ fi
 # 2. Install a managed pointer in Codex's discovered global instruction file.
 echo "📝 Step 2: Register the global Codex workflow..."
 CODEX_AGENTS_FILE="$HOME/.codex/AGENTS.md"
-CODEX_AGENTS_DIR="$HOME/.codex"
-mkdir -p "$CODEX_AGENTS_DIR"
 CODEX_AGENTS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/crosscheck-codex-agents.XXXXXX")"
 CODEX_AGENTS_SNAPSHOT="$CODEX_AGENTS_TEMP_DIR/snapshot"
 CODEX_AGENTS_STAGE="$CODEX_AGENTS_TEMP_DIR/stage"
 : > "$CODEX_AGENTS_SNAPSHOT"
 : > "$CODEX_AGENTS_STAGE"
 if python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" snapshot \
-    "$CODEX_AGENTS_DIR" "AGENTS.md" "$CODEX_AGENTS_SNAPSHOT"; then
+    "$HOME" ".codex/AGENTS.md" "$CODEX_AGENTS_SNAPSHOT"; then
     CODEX_AGENTS_EXPECTED="$CODEX_AGENTS_SNAPSHOT"
 else
     SNAPSHOT_STATUS=$?
@@ -161,7 +159,7 @@ else:
 os.chmod(stage_file, mode)
 PY
 if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
-    "$CODEX_AGENTS_DIR" "AGENTS.md" "$CODEX_AGENTS_EXPECTED" "$CODEX_AGENTS_STAGE"; then
+    "$HOME" ".codex/AGENTS.md" "$CODEX_AGENTS_EXPECTED" "$CODEX_AGENTS_STAGE"; then
     echo "❌ Could not safely register workflow in $CODEX_AGENTS_FILE" >&2
     exit 1
 fi
@@ -179,6 +177,7 @@ else
     echo "   Creating ~/.codex/settings.json from template..."
     SETTINGS_STAGE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-codex-settings.XXXXXX")"
     cp "$CROSSCHECK_ROOT_DIR/settings.template.json" "$SETTINGS_STAGE"
+    "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_STAGE"
     if python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
         "$HOME" ".codex/settings.json" --absent "$SETTINGS_STAGE"; then
         echo "   ⚠️  TODO: Edit ~/.codex/settings.json to customize for your stack"

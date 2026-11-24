@@ -104,8 +104,7 @@ if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
     SETTINGS_TO_INSTALL="$SETTINGS_FILE"
 else
     echo "   Preparing settings.json from the template..."
-    mkdir -p "$HOME/.claude"
-    PENDING_SETTINGS_FILE="${SETTINGS_FILE}.bootstrap.$$"
+    PENDING_SETTINGS_FILE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-claude-settings.XXXXXX")"
     cp "$CROSSCHECK_DIR/settings.template.json" "$PENDING_SETTINGS_FILE"
     SETTINGS_TO_INSTALL="$PENDING_SETTINGS_FILE"
 fi
@@ -119,18 +118,19 @@ if ! "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_TO_INSTALL" "$SUPPLY_CHAIN_HOOK"; then
     exit 1
 fi
 if [ -n "$PENDING_SETTINGS_FILE" ]; then
-    # A same-directory hard link is an atomic no-clobber publish. Python's
-    # link call treats a raced-in directory as an existing path, not a target
-    # directory, so collisions cannot leave staged files inside it.
-    if python3 -c 'import os,sys; os.link(sys.argv[1],sys.argv[2])' "$PENDING_SETTINGS_FILE" "$SETTINGS_FILE" 2>/dev/null; then
+    PUBLISH_HELPER="$CROSSCHECK_DIR/scripts/atomic-publish-file.py"
+    if python3 "$PUBLISH_HELPER" publish "$HOME" ".claude/settings.json" --absent "$PENDING_SETTINGS_FILE"; then
         rm -f "$PENDING_SETTINGS_FILE"
-    elif [ -f "$SETTINGS_FILE" ]; then
-        rm -f "$PENDING_SETTINGS_FILE"
-        "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_FILE" "$SUPPLY_CHAIN_HOOK"
     else
-        echo "Could not safely publish prepared settings at $SETTINGS_FILE" >&2
+        PUBLISH_STATUS=$?
         rm -f "$PENDING_SETTINGS_FILE"
-        exit 1
+        if [ "$PUBLISH_STATUS" -eq 3 ] && [ -f "$SETTINGS_FILE" ]; then
+            echo "Settings appeared during setup; updating the existing file safely"
+            "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_FILE" "$SUPPLY_CHAIN_HOOK"
+        else
+            echo "Could not safely publish prepared settings at $SETTINGS_FILE" >&2
+            exit 1
+        fi
     fi
 fi
 echo "   ✅ Claude supply-chain hook points to $SUPPLY_CHAIN_HOOK"

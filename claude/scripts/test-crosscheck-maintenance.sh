@@ -572,6 +572,7 @@ python3 - "$REPO_ROOT/scripts/atomic-publish-file.py" "$TEMP_DIR" <<'PY'
 import errno
 import importlib.util
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -600,8 +601,8 @@ open_file.close()
 if not recovery_path or Path(recovery_path).read_text() != '{"concurrentWriter":"late save"}\n':
     raise SystemExit("atomic publisher did not preserve a save through an already-open settings file")
 
-# The reported recovery path must remain valid if the target parent is renamed
-# immediately after publication.
+# A target-parent rename detected after exchange must roll publication back
+# while retaining a durable recovery copy outside the moved tree.
 settings_dir.rename(scratch / "settings-dir-before-rename-test")
 settings_dir.mkdir()
 target = settings_dir / "settings.json"
@@ -627,8 +628,8 @@ else:
     raise SystemExit("atomic publisher accepted a target parent rename during publication")
 finally:
     module._verify_parent_path = real_verify
-if (scratch / "settings-dir-moved-during-publish/settings.json").read_text() != '{"setting":"updated after rename"}\n':
-    raise SystemExit("atomic publisher lost its staged settings after a target parent rename")
+if (scratch / "settings-dir-moved-during-publish/settings.json").read_text() != '{"setting":"original again"}\n':
+    raise SystemExit("atomic publisher failed to restore the previous settings after a target parent rename")
 
 # Settings callers use the target directory as the publisher root. Moving that
 # root after publication must be detected, with recovery outside the root.
@@ -673,8 +674,8 @@ else:
 finally:
     os.environ["HOME"] = previous_home
     module._verify_parent_path = real_verify
-if (root_home / "settings-root-case-moved/settings.json").read_text() != '{"rootCase":"updated"}\n':
-    raise SystemExit("publisher lost staged settings when the publisher root moved")
+if (root_home / "settings-root-case-moved/settings.json").read_text() != '{"rootCase":"original"}\n':
+    raise SystemExit("publisher failed to restore settings when the publisher root moved")
 
 # If there is no private same-volume recovery location outside both the
 # publisher root and target parent, publication must fail before moving live settings.
@@ -791,6 +792,217 @@ if race_target.read_text() != '{"setting":"concurrent user edit 9"}\n':
     raise SystemExit("atomic publisher did not restore the latest concurrent settings to the live path")
 if list(race_target_dir.glob(".crosscheck-stage-*")):
     raise SystemExit("atomic publisher left a staged file after a concurrent update")
+
+# A failed recovery link still triggers rollback, so the staged update is not
+# left live when the original target can be restored.
+link_failure_dir = scratch / "recovery-link-failure"
+link_failure_dir.mkdir()
+link_failure_target = link_failure_dir / "settings.json"
+link_failure_snapshot = scratch / "recovery-link-failure-snapshot.json"
+link_failure_stage = scratch / "recovery-link-failure-stage.json"
+link_failure_target.write_text('{"setting":"original"}\n')
+link_failure_snapshot.write_text('{"setting":"original"}\n')
+link_failure_stage.write_text('{"setting":"updated"}\n')
+real_verify = module._verify_parent_path
+verify_calls = [0]
+
+def fail_after_recovery_link(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 2:
+        raise module.ConcurrentUpdate("injected post-exchange verification failure")
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+real_recovery_link = module._new_stable_recovery_link
+link_calls = [0]
+
+def fail_competing_recovery_link(source_fd, source_name, recovery_fd, recovery_dir):
+    link_calls[0] += 1
+    if link_calls[0] == 2:
+        raise OSError(28, "injected recovery link failure")
+    return real_recovery_link(source_fd, source_name, recovery_fd, recovery_dir)
+
+module._verify_parent_path = fail_after_recovery_link
+module._new_stable_recovery_link = fail_competing_recovery_link
+try:
+    module.publish_file(
+        str(link_failure_dir), "settings.json", str(link_failure_snapshot), str(link_failure_stage)
+    )
+except module.ConcurrentUpdate as error:
+    if "injected post-exchange" not in str(error):
+        raise
+else:
+    raise SystemExit("atomic publisher accepted an injected post-exchange failure")
+finally:
+    module._verify_parent_path = real_verify
+    module._new_stable_recovery_link = real_recovery_link
+if link_failure_target.read_text() != '{"setting":"original"}\n':
+    raise SystemExit("atomic publisher left staged settings live after recovery-link failure")
+
+# Failed rollback is surfaced with a distinct fatal status so callers do not
+# mistake it for an ordinary preserved concurrent edit.
+rollback_failure_dir = scratch / "rollback-failure"
+rollback_failure_dir.mkdir()
+rollback_failure_target = rollback_failure_dir / "settings.json"
+rollback_failure_snapshot = scratch / "rollback-failure-snapshot.json"
+rollback_failure_stage = scratch / "rollback-failure-stage.json"
+rollback_failure_target.write_text('{"setting":"original"}\n')
+rollback_failure_snapshot.write_text('{"setting":"original"}\n')
+rollback_failure_stage.write_text('{"setting":"updated"}\n')
+real_verify = module._verify_parent_path
+verify_calls = [0]
+
+def fail_after_exchange_again(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 2:
+        raise module.ConcurrentUpdate("injected post-exchange verification failure")
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+real_exchange = module._rename_exchange
+exchange_calls = [0]
+
+def fail_rollback_exchange(first_fd, first, second_fd, second):
+    exchange_calls[0] += 1
+    if exchange_calls[0] == 2:
+        raise OSError(5, "injected rollback exchange failure")
+    return real_exchange(first_fd, first, second_fd, second)
+
+module._verify_parent_path = fail_after_exchange_again
+module._rename_exchange = fail_rollback_exchange
+original_argv = module.sys.argv
+module.sys.argv = [
+    "atomic-publish-file.py", "publish", str(rollback_failure_dir), "settings.json",
+    str(rollback_failure_snapshot), str(rollback_failure_stage),
+]
+try:
+    if module.main() != 5:
+        raise SystemExit("atomic publisher did not report incomplete restoration with fatal status 5")
+finally:
+    module.sys.argv = original_argv
+    module._verify_parent_path = real_verify
+    module._rename_exchange = real_exchange
+
+# The Claude sync caller must count a race that became a no-op as preserved,
+# not as an updated command.
+noop_sync_root = scratch / "claude-noop-sync-repo"
+noop_sync_home = scratch / "claude-noop-sync-home"
+noop_sync_root.joinpath("claude/skill-sources").mkdir(parents=True)
+noop_sync_root.joinpath("skill-sources").mkdir()
+noop_sync_root.joinpath("scripts").mkdir()
+noop_sync_home.joinpath(".claude/commands").mkdir(parents=True)
+noop_sync_home.joinpath(".crosscheck").mkdir()
+(noop_sync_root / "scripts/atomic-publish-file.py").write_bytes(Path(sys.argv[1]).read_bytes())
+noop_sync_claude = noop_sync_root / "claude/skill-sources/managed.md"
+noop_sync_root_skill = noop_sync_root / "skill-sources/managed.md"
+noop_sync_claude.write_text("old Claude command\n")
+noop_sync_root_skill.write_text("old root command\n")
+subprocess.run(["git", "init", "-q", str(noop_sync_root)], check=True)
+subprocess.run(["git", "-C", str(noop_sync_root), "add", "."], check=True)
+subprocess.run(
+    ["git", "-C", str(noop_sync_root), "-c", "user.name=CrossCheck test", "-c",
+     "user.email=crosscheck-test@example.invalid", "commit", "-qm", "fixture"],
+    check=True,
+)
+subprocess.run(
+    ["git", "-C", str(noop_sync_root), "update-ref", "refs/remotes/origin/main", "HEAD"], check=True
+)
+noop_sync_claude.write_text("new Claude command\n")
+noop_sync_target = noop_sync_home / ".claude/commands/managed.md"
+noop_sync_target.symlink_to(noop_sync_root_skill)
+readlink_shims = scratch / "readlink-shims"
+readlink_shims.mkdir()
+readlink_path = subprocess.run(["/usr/bin/which", "readlink"], check=True, text=True, capture_output=True).stdout.strip()
+readlink_shim = readlink_shims / "readlink"
+readlink_shim.write_text(
+    "#!/bin/sh\n"
+    'if [ "$1" = "$RACE_TARGET" ]; then\n'
+    '  old_link=$("$REAL_READLINK" "$1")\n'
+    '  ln -s "$RACE_NEW_LINK" "$RACE_TARGET.next"\n'
+    '  mv -f "$RACE_TARGET.next" "$RACE_TARGET"\n'
+    '  printf "%s\\n" "$old_link"\n'
+    'else\n'
+    '  exec "$REAL_READLINK" "$@"\n'
+    'fi\n'
+)
+readlink_shim.chmod(0o755)
+sync_env = os.environ.copy()
+sync_env.update(
+    PATH=f"{readlink_shims}:{sync_env['PATH']}",
+    REAL_READLINK=readlink_path,
+    RACE_TARGET=str(noop_sync_target.parent.resolve() / noop_sync_target.name),
+    RACE_NEW_LINK=str(noop_sync_claude.resolve()),
+)
+sync_result = subprocess.run(
+    ["bash", str(Path(sys.argv[1]).parents[1] / "claude/scripts/sync-managed-claude-skills.sh"),
+     str(noop_sync_root), str(noop_sync_home)],
+    check=False,
+    text=True,
+    capture_output=True,
+    env=sync_env,
+)
+if sync_result.returncode != 0:
+    raise SystemExit(f"Claude sync race fixture failed: {sync_result.stderr}\n{sync_result.stdout}")
+if "Claude command links added or refreshed: 0; preserved 1" not in sync_result.stdout:
+    raise SystemExit(
+        "Claude sync counted a concurrent no-op as an updated command: "
+        f"stdout={sync_result.stdout!r}; stderr={sync_result.stderr!r}; "
+        f"link={os.readlink(noop_sync_target)!r}"
+    )
+if os.path.realpath(noop_sync_target) != str(noop_sync_claude.resolve()):
+    raise SystemExit("Claude sync race fixture did not leave the user's current symlink live")
+
+# Recovery reports must not succeed after their opened directory is renamed.
+recovery_rename_home = scratch / "recovery-rename-home"
+recovery_rename_root = scratch / "recovery-rename-root"
+recovery_rename_home.mkdir()
+recovery_rename_root.mkdir()
+recovery_rename_target = recovery_rename_root / "settings.json"
+recovery_rename_snapshot = scratch / "recovery-rename-snapshot.json"
+recovery_rename_stage = scratch / "recovery-rename-stage.json"
+recovery_rename_target.write_text('{"setting":"original"}\n')
+recovery_rename_snapshot.write_text('{"setting":"original"}\n')
+recovery_rename_stage.write_text('{"setting":"updated"}\n')
+real_recovery_link = module._new_stable_recovery_link
+recovery_link_calls = [0]
+
+def rename_recovery_directory_after_link(source_fd, source_name, recovery_fd, recovery_dir):
+    result = real_recovery_link(source_fd, source_name, recovery_fd, recovery_dir)
+    recovery_link_calls[0] += 1
+    if recovery_link_calls[0] == 1:
+        Path(recovery_dir).rename(Path(recovery_dir).with_name(".crosscheck-recovery-moved"))
+    return result
+
+module._new_stable_recovery_link = rename_recovery_directory_after_link
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(recovery_rename_home)
+try:
+    module.publish_file(
+        str(recovery_rename_root), "settings.json", str(recovery_rename_snapshot), str(recovery_rename_stage)
+    )
+except OSError:
+    pass
+else:
+    raise SystemExit("atomic publisher reported success with a moved recovery directory")
+finally:
+    os.environ["HOME"] = previous_home
+    module._new_stable_recovery_link = real_recovery_link
+if recovery_rename_target.read_text() != '{"setting":"original"}\n':
+    raise SystemExit("publisher changed settings before validating the recovery pathname")
+
+# Managed link no-ops have an explicit status instead of looking like updates.
+noop_root = scratch / "managed-link-noop"
+noop_target = noop_root / ".claude/commands/managed.md"
+noop_target.parent.mkdir(parents=True)
+noop_target.symlink_to("/current/managed.md")
+original_argv = module.sys.argv
+module.sys.argv = [
+    "atomic-publish-file.py", "symlink", str(noop_root), ".claude/commands/managed.md",
+    "link", "/previous/managed.md", "/current/managed.md",
+]
+try:
+    if module.main() != 4:
+        raise SystemExit("managed link no-op did not return its distinct status 4")
+finally:
+    module.sys.argv = original_argv
 
 # A directory symlink introduced during staging must not redirect publication.
 link_root = scratch / "codex-home"

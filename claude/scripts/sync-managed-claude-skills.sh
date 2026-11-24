@@ -49,6 +49,20 @@ run_publisher() {
   fi
 }
 
+run_publisher_and_count() {
+  if run_publisher "$@"; then
+    UPDATED=$((UPDATED + 1))
+    return 0
+  else
+    local publish_status=$?
+  fi
+  if [ "$publish_status" -eq 3 ] || [ "$publish_status" -eq 4 ]; then
+    PRESERVED=$((PRESERVED + 1))
+    return 0
+  fi
+  return "$publish_status"
+}
+
 UPDATED=0
 PRESERVED=0
 
@@ -65,37 +79,31 @@ for skill_file in "$CLAUDE_SKILL_DIR/"*.md; do
   expected_claude="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$CLAUDE_SKILL_DIR/$skill_name.md")"
   expected_root="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$ROOT_SKILL_DIR/$skill_name.md")"
   if [ ! -e "$target" ] && [ ! -L "$target" ]; then
-    if run_publisher symlink "$HOME_DIR" "$target_relative" absent - "$skill_file"; then
-      UPDATED=$((UPDATED + 1))
-    else
-      PRESERVED=$((PRESERVED + 1))
-    fi
+    run_publisher_and_count symlink "$HOME_DIR" "$target_relative" absent - "$skill_file"
   elif [ -L "$target" ]; then
     target_source="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$target")"
     if [ "$target_source" = "$expected_claude" ] || [ "$target_source" = "$expected_root" ]; then
       if [ "$target_source" != "$expected_claude" ]; then
         target_link="$(readlink "$target")"
-        if run_publisher symlink "$HOME_DIR" "$target_relative" link "$target_link" "$skill_file"; then
-          UPDATED=$((UPDATED + 1))
-        else
-          PRESERVED=$((PRESERVED + 1))
-        fi
+        run_publisher_and_count symlink "$HOME_DIR" "$target_relative" link "$target_link" "$skill_file"
       fi
     fi
   elif [ -f "$target" ]; then
     CURRENT_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-command-snapshot.XXXXXX")"
     if run_publisher snapshot "$HOME_DIR" "$target_relative" "$CURRENT_SNAPSHOT"; then
       if is_known_shipped_copy "$CURRENT_SNAPSHOT" "$skill_name"; then
-        if run_publisher symlink "$HOME_DIR" "$target_relative" snapshot "$CURRENT_SNAPSHOT" "$skill_file"; then
-          UPDATED=$((UPDATED + 1))
-        else
-          PRESERVED=$((PRESERVED + 1))
-        fi
+        run_publisher_and_count symlink "$HOME_DIR" "$target_relative" snapshot "$CURRENT_SNAPSHOT" "$skill_file"
       else
         PRESERVED=$((PRESERVED + 1))
       fi
     else
-      PRESERVED=$((PRESERVED + 1))
+      snapshot_status=$?
+      if [ "$snapshot_status" -eq 4 ]; then
+        PRESERVED=$((PRESERVED + 1))
+      else
+        echo "Could not safely snapshot managed Claude command: $skill_name" >&2
+        exit "$snapshot_status"
+      fi
     fi
     rm -f "$CURRENT_SNAPSHOT"
     CURRENT_SNAPSHOT=""

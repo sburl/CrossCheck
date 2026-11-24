@@ -1404,10 +1404,16 @@ if sys.platform.startswith("linux"):
             str(linux_acl_publish_root), "settings.json", str(linux_acl_publish_snapshot)
         ):
             raise SystemExit("could not snapshot mode-only settings before the Linux ACL publish test")
-        module.publish_file(
-            str(linux_acl_publish_root), "settings.json",
-            str(linux_acl_publish_snapshot), str(linux_acl_publish_stage),
-        )
+        linux_acl_publish_argv = module.sys.argv
+        module.sys.argv = [
+            "atomic-publish-file.py", "publish", str(linux_acl_publish_root),
+            "settings.json", str(linux_acl_publish_snapshot), str(linux_acl_publish_stage),
+        ]
+        try:
+            if module.main() != 0:
+                raise SystemExit("Linux ACL publish CLI did not publish the snapshotted mode")
+        finally:
+            module.sys.argv = linux_acl_publish_argv
         try:
             os.getxattr(linux_acl_publish_target, "system.posix_acl_access")
         except OSError as error:
@@ -1420,6 +1426,71 @@ if sys.platform.startswith("linux"):
 
 # A command migration uses the commands directory as the recovery boundary so
 # a normal home directory remains writable as the private recovery location.
+special_mode_root = scratch / "special-mode-publish"
+special_mode_root.mkdir()
+special_mode_target = special_mode_root / "settings.json"
+special_mode_target.write_text('{"setting":"original"}\n')
+special_mode_target.chmod(0o2640)
+special_mode_snapshot = scratch / "special-mode-snapshot.json"
+special_mode_snapshot.write_text("")
+special_mode_stage = scratch / "special-mode-stage.json"
+special_mode_stage.write_text('{"setting":"updated"}\n')
+if not module.snapshot_file(
+    str(special_mode_root), "settings.json", str(special_mode_snapshot)
+):
+    raise SystemExit("could not snapshot a settings file with valid special permission bits")
+if not module.snapshot_is_current(
+    str(special_mode_root), "settings.json", str(special_mode_snapshot)
+):
+    raise SystemExit("special-mode settings snapshot did not match its live file")
+special_mode_argv = module.sys.argv
+module.sys.argv = [
+    "atomic-publish-file.py", "publish", str(special_mode_root),
+    "settings.json", str(special_mode_snapshot), str(special_mode_stage),
+]
+try:
+    if module.main() != 0:
+        raise SystemExit("publisher rejected a valid mode with special permission bits")
+finally:
+    module.sys.argv = special_mode_argv
+if stat.S_IMODE(special_mode_target.stat().st_mode) != 0o2640:
+    raise SystemExit("publisher did not preserve valid special permission bits")
+
+# Replacing the settings parent after its first path check must not let a
+# no-op report success based on the now-detached directory descriptor.
+snapshot_current_root = scratch / "snapshot-current-parent-race"
+snapshot_current_root.mkdir()
+snapshot_current_target = snapshot_current_root / "settings.json"
+snapshot_current_target.write_text('{"setting":"snapshot"}\n')
+snapshot_current_snapshot = scratch / "snapshot-current-parent-race.json"
+snapshot_current_snapshot.write_text("")
+if not module.snapshot_file(
+    str(snapshot_current_root), "settings.json", str(snapshot_current_snapshot)
+):
+    raise SystemExit("could not create the settings snapshot for the parent race test")
+real_parent_verification = module._verify_parent_path
+parent_race_injected = []
+
+def replace_snapshot_parent_after_check(root_fd, root_path, relative_target, parent_fd):
+    result = real_parent_verification(root_fd, root_path, relative_target, parent_fd)
+    if not parent_race_injected:
+        moved_parent = snapshot_current_root.with_name("snapshot-current-parent-moved")
+        snapshot_current_root.rename(moved_parent)
+        snapshot_current_root.mkdir()
+        (snapshot_current_root / "settings.json").write_text('{"setting":"concurrent"}\n')
+        parent_race_injected.append(True)
+    return result
+
+module._verify_parent_path = replace_snapshot_parent_after_check
+try:
+    snapshot_current_result = module.snapshot_is_current(
+        str(snapshot_current_root), "settings.json", str(snapshot_current_snapshot)
+    )
+finally:
+    module._verify_parent_path = real_parent_verification
+if not parent_race_injected or snapshot_current_result:
+    raise SystemExit("snapshot-current reported stale settings after their parent was replaced")
+
 command_boundary_home = scratch / "command-recovery-boundary-home"
 command_boundary_home_real = command_boundary_home.resolve()
 command_boundary_dir = command_boundary_home / ".claude/commands"

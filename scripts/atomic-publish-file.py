@@ -242,7 +242,7 @@ def _read_snapshot_metadata(snapshot_path: str) -> dict[str, object]:
             not isinstance(source_mode, int)
             or isinstance(source_mode, bool)
             or source_mode < 0
-            or source_mode > 0o777
+            or source_mode > 0o7777
         ))
         or (source_uid is not None and (
             not isinstance(source_uid, int) or isinstance(source_uid, bool) or source_uid < 0
@@ -1727,6 +1727,9 @@ def snapshot_is_current(root: str, relative_target: str, snapshot_path: str) -> 
             return False
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
         identity, signature = _entry_state_at(parent_fd, target_name)
+        # The pathname may have been replaced after the first parent check.
+        # Confirm the descriptor still names the live parent after reading it.
+        _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
         expected_identity = (int(metadata["device"]), int(metadata["inode"]))
         source_mode = metadata.get("source_mode")
         source_uid = metadata.get("source_uid")
@@ -1739,7 +1742,7 @@ def snapshot_is_current(root: str, relative_target: str, snapshot_path: str) -> 
             and identity[5:7] == (int(source_uid), int(source_gid))
             and signature == (snapshot_content, int(source_mode))
         )
-    except FileNotFoundError:
+    except (FileNotFoundError, ConcurrentUpdate):
         return False
     finally:
         if parent_fd is not None:

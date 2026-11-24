@@ -1,7 +1,7 @@
 # Installing Codex Skills
 
 **Created:** 2026-02-09-00-00
-**Last Updated:** 2026-11-23-15-54
+**Last Updated:** 2026-11-23-23-00
 
 This directory contains legacy flat Markdown command sources. Codex-native
 skills live under `codex/skills/` and install as
@@ -17,10 +17,10 @@ Use the Codex-native skills for Codex and the Claude mirror for Claude Code.
 # 1. Clone the CrossCheck repo to ~/.crosscheck
 git clone https://github.com/sburl/CrossCheck.git ~/.crosscheck
 
-# 2. Install Codex-native skills and Claude commands
+# 2. Install Codex-native skills and sync Claude commands safely
 mkdir -p ~/.codex/skills ~/.claude/commands
 cp -R ~/.crosscheck/codex/skills/* ~/.codex/skills/
-cp ~/.crosscheck/claude/skill-sources/*.md ~/.claude/commands/
+bash ~/.crosscheck/claude/scripts/sync-managed-claude-skills.sh ~/.crosscheck "$HOME"
 
 # 3. Verify installation
 find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
@@ -29,10 +29,10 @@ find ~/.codex/skills -mindepth 2 -maxdepth 2 -name SKILL.md | wc -l
 ### Quick install script:
 
 ```bash
-# Run this one-liner (native Codex skills plus Claude commands):
+# Run this one-liner (native Codex skills plus managed Claude commands):
 mkdir -p ~/.codex/skills ~/.claude/commands && \
   cp -R ~/.crosscheck/codex/skills/* ~/.codex/skills/ && \
-  cp ~/.crosscheck/claude/skill-sources/*.md ~/.claude/commands/
+  bash ~/.crosscheck/claude/scripts/sync-managed-claude-skills.sh ~/.crosscheck "$HOME"
 ```
 
 ## Available Skills (34 total)

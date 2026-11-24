@@ -234,7 +234,7 @@ augment_dependabot_yaml() {
 }
 
 WORK=$(mktemp -d)
-trap "rm -rf $WORK" EXIT
+trap 'rm -rf "$WORK"' EXIT
 
 # ---------------------------------------------------------------------------
 # Process each repo

@@ -98,6 +98,46 @@ if [ ! -L "$LINKED_SETTINGS" ] || [ "$(python3 -c 'import os,stat,sys; print(oct
   exit 1
 fi
 
+# Intermediate settings must remain private even when the caller's umask is
+# permissive and the installed settings contain private values.
+PRIVATE_SETTINGS="$TEMP_DIR/private-settings.json"
+PRIVATE_JQ_BIN="$TEMP_DIR/private-jq-bin"
+PRIVATE_MODE_MARKER="$TEMP_DIR/private-settings-temp-mode"
+mkdir -p "$PRIVATE_JQ_BIN"
+printf '{"privateValue":"fixture"}\n' > "$PRIVATE_SETTINGS"
+chmod 0600 "$PRIVATE_SETTINGS"
+REAL_JQ="$(command -v jq)"
+cat > "$PRIVATE_JQ_BIN/jq" <<'SH'
+#!/usr/bin/env bash
+set -e
+python3 - "${@: -1}" "$TEMP_MODE_MARKER" <<'PY'
+import glob
+import os
+import stat
+import sys
+from pathlib import Path
+
+settings = os.path.realpath(sys.argv[1])
+marker = Path(sys.argv[2])
+temps = glob.glob(settings + ".tmp.*")
+if temps and not marker.exists():
+    mode = stat.S_IMODE(os.stat(temps[0]).st_mode)
+    marker.write_text(oct(mode))
+    if mode != 0o600:
+        raise SystemExit(f"installer exposed its temporary settings file with mode {oct(mode)}")
+PY
+exec "$REAL_JQ" "$@"
+SH
+chmod +x "$PRIVATE_JQ_BIN/jq"
+(
+  umask 022
+  PATH="$PRIVATE_JQ_BIN:$PATH" REAL_JQ="$REAL_JQ" TEMP_MODE_MARKER="$PRIVATE_MODE_MARKER" "$INSTALLER" "$PRIVATE_SETTINGS" "$HOOK"
+)
+if [ "$(cat "$PRIVATE_MODE_MARKER")" != "0o600" ] || [ "$(python3 -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "$PRIVATE_SETTINGS")" != "0o600" ]; then
+  echo "installer did not keep private settings and its intermediate file at mode 0600" >&2
+  exit 1
+fi
+
 run_bootstrap_with_declines() {
   local home="$1"
   local script="$2"
@@ -249,12 +289,13 @@ PY
   fi
 done
 
-# Simulate another process creating settings immediately after the staged
-# settings pass validation. The no-clobber publish must preserve that file and
-# route it through the existing-settings installer path for both entry points.
-for bootstrap in root claude; do
-  RACE_REPO="$TEMP_DIR/workspace/race-$bootstrap/CrossCheck"
-  RACE_HOME="$TEMP_DIR/home-race-$bootstrap"
+# Simulate another process creating a file or directory at the settings path
+# after staged validation. Files must be preserved and updated; directories
+# must fail safely without receiving the staged file.
+for race_kind in regular directory; do
+  for bootstrap in root claude; do
+  RACE_REPO="$TEMP_DIR/workspace/race-$race_kind-$bootstrap/CrossCheck"
+  RACE_HOME="$TEMP_DIR/home-race-$race_kind-$bootstrap"
   mkdir -p "$(dirname "$RACE_REPO")" "$RACE_HOME/.claude"
   python3 - "$REPO_ROOT" "$RACE_REPO" <<'PY'
 import shutil
@@ -274,33 +315,75 @@ set -e
 "$(dirname "$0")/install-supply-chain-hook.sh.real" "$@"
 case "$1" in
   "$HOME"/.claude/settings.json.bootstrap.*)
-    printf '{"concurrentWriter":"preserve me"}\n' > "$HOME/.claude/settings.json"
+    if [ "$RACE_TARGET_KIND" = directory ]; then
+      mkdir "$HOME/.claude/settings.json"
+    else
+      printf '{"concurrentWriter":"preserve me"}\n' > "$HOME/.claude/settings.json"
+    fi
     ;;
 esac
 SH
   chmod +x "$RACE_INSTALLER"
-  run_bootstrap_with_declines "$RACE_HOME" "$RACE_SCRIPT" "concurrent settings creation"
+  export RACE_TARGET_KIND="$race_kind"
   RACE_SETTINGS="$RACE_HOME/.claude/settings.json"
-  if ! jq -e '.concurrentWriter == "preserve me"' "$RACE_SETTINGS" >/dev/null; then
-    echo "$bootstrap bootstrap overwrote settings created during first-time setup" >&2
-    cat "$RACE_SETTINGS" >&2
-    exit 1
+  if [ "$race_kind" = regular ]; then
+    run_bootstrap_with_declines "$RACE_HOME" "$RACE_SCRIPT" "concurrent settings creation"
+    if ! jq -e '.concurrentWriter == "preserve me"' "$RACE_SETTINGS" >/dev/null; then
+      echo "$bootstrap bootstrap overwrote settings created during first-time setup" >&2
+      cat "$RACE_SETTINGS" >&2
+      exit 1
+    fi
+    jq -e '.hooks.PreToolUse | type == "array"' "$RACE_SETTINGS" >/dev/null
+  else
+    if HOME="$RACE_HOME" RACE_TARGET_KIND="$race_kind" bash "$RACE_SCRIPT" > "$TEMP_DIR/bootstrap-directory-race-$bootstrap.log" 2>&1; then
+      echo "$bootstrap bootstrap unexpectedly accepted a directory at the settings path" >&2
+      exit 1
+    fi
+    if ! grep -Fq "Could not safely publish prepared settings at $RACE_SETTINGS" "$TEMP_DIR/bootstrap-directory-race-$bootstrap.log"; then
+      echo "$bootstrap bootstrap failed without the safe-publish diagnostic for a directory collision" >&2
+      cat "$TEMP_DIR/bootstrap-directory-race-$bootstrap.log" >&2
+      exit 1
+    fi
+    if [ ! -d "$RACE_SETTINGS" ] || find "$RACE_SETTINGS" -mindepth 1 -print -quit | grep -q .; then
+      echo "$bootstrap bootstrap wrote staged settings inside a concurrently created directory" >&2
+      exit 1
+    fi
   fi
-  jq -e '.hooks.PreToolUse | type == "array"' "$RACE_SETTINGS" >/dev/null
   if find "$RACE_HOME/.claude" -name 'settings.json.bootstrap.*' -print -quit | grep -q .; then
     echo "$bootstrap bootstrap left a staged settings file after resolving a publish collision" >&2
     exit 1
   fi
+  done
 done
 
 # The updater must pass the checkout explicitly; this caller runs in a fresh
 # process and cannot rely on a shell-local CROSSCHECK_DIR.
 grep -Fq 'sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"' "$REPO_ROOT/claude/skill-sources/update-crosscheck.md"
 grep -Fq 'sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"' "$REPO_ROOT/codex/skills/update-crosscheck/SKILL.md"
+for updater in "$REPO_ROOT/skill-sources/update-crosscheck.md" "$REPO_ROOT/codex/skill-sources/update-crosscheck.md"; do
+  if ! grep -Fq 'sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"' "$updater"; then
+    echo "legacy updater does not refresh Claude commands through the managed mirror: $updater" >&2
+    exit 1
+  fi
+  if grep -Fq 'for TARGET_DIR in "$HOME/.claude/commands"' "$updater"; then
+    echo "legacy updater still installs root skill sources into Claude commands: $updater" >&2
+    exit 1
+  fi
+done
 if grep -Fq 'for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands"' "$REPO_ROOT/codex/skills/update-crosscheck/SKILL.md"; then
   echo "Codex updater still installs Claude commands from root skill sources" >&2
   exit 1
 fi
+for install_guide in "$REPO_ROOT/skill-sources/INSTALL.md" "$REPO_ROOT/claude/skill-sources/INSTALL.md"; do
+  if ! grep -Fq 'sync-managed-claude-skills.sh ~/.crosscheck "$HOME"' "$install_guide"; then
+    echo "install guide does not use the managed Claude command sync: $install_guide" >&2
+    exit 1
+  fi
+  if grep -Fq 'cp ~/.crosscheck/claude/skill-sources/*.md ~/.claude/commands/' "$install_guide"; then
+    echo "install guide still copies Claude commands through existing destination symlinks: $install_guide" >&2
+    exit 1
+  fi
+done
 
 SYNC_ROOT="$TEMP_DIR/crosscheck"
 HOME_FIXTURE="$TEMP_DIR/home-sync"

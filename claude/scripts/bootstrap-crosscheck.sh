@@ -133,16 +133,16 @@ if ! "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_TO_INSTALL" "$SUPPLY_CHAIN_HOOK"; then
     exit 1
 fi
 if [ -n "$PENDING_SETTINGS_FILE" ]; then
-    # A same-directory hard link is an atomic no-clobber publish. If another
-    # process created settings after our initial check, ln fails with EEXIST
-    # and that file receives the validated update below.
-    if ln "$PENDING_SETTINGS_FILE" "$SETTINGS_FILE" 2>/dev/null; then
+    # A same-directory hard link is an atomic no-clobber publish. Python's
+    # link call treats a raced-in directory as an existing path, not a target
+    # directory, so collisions cannot leave staged files inside it.
+    if python3 -c 'import os,sys; os.link(sys.argv[1],sys.argv[2])' "$PENDING_SETTINGS_FILE" "$SETTINGS_FILE" 2>/dev/null; then
         rm -f "$PENDING_SETTINGS_FILE"
-    elif [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
+    elif [ -f "$SETTINGS_FILE" ]; then
         rm -f "$PENDING_SETTINGS_FILE"
         "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_FILE" "$SUPPLY_CHAIN_HOOK"
     else
-        echo "Could not publish prepared settings without replacing an existing file: $SETTINGS_FILE" >&2
+        echo "Could not safely publish prepared settings at $SETTINGS_FILE" >&2
         rm -f "$PENDING_SETTINGS_FILE"
         exit 1
     fi

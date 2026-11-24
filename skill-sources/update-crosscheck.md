@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version — pulls from main. Skills
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-11-23-17-07
+**Last Updated:** 2026-11-23-23-00
 
 # Update CrossCheck
 
@@ -170,7 +170,7 @@ for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
     if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
         continue
     fi
-    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands" "$HOME/.gemini/agents"; do
+    for TARGET_DIR in "$HOME/.codex/commands" "$HOME/.gemini/agents"; do
         [ -d "$(dirname "$TARGET_DIR")" ] || mkdir -p "$(dirname "$TARGET_DIR")" 2>/dev/null
         [ -d "$TARGET_DIR" ] || mkdir -p "$TARGET_DIR" 2>/dev/null
         target="$TARGET_DIR/$skill_name.md"
@@ -181,6 +181,12 @@ for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
         fi
     done
 done
+
+# Claude commands use the Claude mirror and preserve user-owned files.
+CLAUDE_SYNC_RESULT="$("$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME")"
+echo "   $CLAUDE_SYNC_RESULT"
+CLAUDE_SYNC_COUNT="${CLAUDE_SYNC_RESULT##*: }"
+NEW_LINKED=$((NEW_LINKED + CLAUDE_SYNC_COUNT))
 
 # New agents
 for agent_path in "$CROSSCHECK_DIR/agents/"*; do

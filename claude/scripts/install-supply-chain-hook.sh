@@ -38,7 +38,7 @@ fi
 
 HOOK_RUNNER='CROSSCHECK_SUPPLY_CHAIN_GATE_V1=1; hook=$1; if [[ ! -x "$hook" ]]; then printf "Claude supply-chain gate unavailable or non-executable: %s\\n" "$hook" >&2; exit 2; fi; if bash "$hook"; then status=0; else status=$?; fi; if [[ "$status" -ne 0 && "$status" -ne 2 ]]; then printf "Claude supply-chain gate failed (%d): %s\\n" "$status" "$hook" >&2; exit 2; fi; exit "$status"'
 printf -v HOOK_COMMAND 'bash -c %q -- %q' "$HOOK_RUNNER" "$HOOK_FILE"
-TEMP_FILE="${SETTINGS_TARGET}.tmp.$$"
+TEMP_FILE="$(mktemp "${SETTINGS_TARGET}.tmp.XXXXXX")"
 trap 'rm -f "$TEMP_FILE"' EXIT
 
 if ! jq --arg hook "$HOOK_COMMAND" --argjson rules '[

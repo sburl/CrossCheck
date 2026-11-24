@@ -141,6 +141,10 @@ if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
   exit 1
 fi
 if cmp -s <(jq -S -c . "$SETTINGS_SNAPSHOT") <(jq -S -c . "$TEMP_FILE"); then
+  if ! python3 "$PUBLISH_HELPER" snapshot-current "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SETTINGS_SNAPSHOT"; then
+    echo "Claude settings changed during hook update; refusing to report current: $SETTINGS_FILE" >&2
+    exit 1
+  fi
   echo "Claude supply-chain hook is already current in $SETTINGS_FILE"
   exit 0
 fi

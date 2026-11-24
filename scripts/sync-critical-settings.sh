@@ -120,6 +120,10 @@ if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
   exit 1
 fi
 if cmp -s <(jq -S -c . "$SNAPSHOT") <(jq -S -c . "$STAGED"); then
+  if ! python3 "$PUBLISH_HELPER" snapshot-current "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SNAPSHOT"; then
+    echo "Settings changed during CrossCheck update; refusing to report current: $SETTINGS_FILE" >&2
+    exit 1
+  fi
   echo "CrossCheck critical deny rules are already current in $SETTINGS_FILE"
   exit 0
 fi

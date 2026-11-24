@@ -45,7 +45,29 @@ done
 
 SETTINGS="$SETTINGS_DIR/settings.json"
 cp "$REPO_ROOT/settings.template.json" "$SETTINGS"
+chmod 0640 "$SETTINGS"
+EXPECTED_SETTINGS_GID="$(python3 - "$SETTINGS" <<'PY'
+import grp
+import os
+import sys
+
+settings = sys.argv[1]
+current_gid = os.stat(settings).st_gid
+try:
+    admin_gid = grp.getgrnam("admin").gr_gid
+except KeyError:
+    admin_gid = current_gid
+if admin_gid == os.getegid() or admin_gid in os.getgroups():
+    os.chown(settings, -1, admin_gid)
+    current_gid = admin_gid
+print(current_gid)
+PY
+)"
 "$INSTALLER" "$SETTINGS" "$HOOK"
+if [ "$(python3 -c 'import os,stat,sys; info=os.stat(sys.argv[1]); print(f"{info.st_gid}:{stat.S_IMODE(info.st_mode):o}")' "$SETTINGS")" != "$EXPECTED_SETTINGS_GID:640" ]; then
+  echo "Claude settings publisher changed the existing settings owner group or mode" >&2
+  exit 1
+fi
 COMMAND_COUNT="$(jq -r --arg hook "$HOOK" '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[] | select(.type == "command" and (.command | contains($hook)))] | length' "$SETTINGS")"
 if [ "$COMMAND_COUNT" -ne 1 ]; then
   echo "expected exactly one installed supply-chain hook, found $COMMAND_COUNT" >&2
@@ -88,6 +110,56 @@ if [ "$HOOK_SETTINGS_INODE" != "$(python3 -c 'import os,sys; s=os.stat(sys.argv[
   echo "unchanged installer replaced the settings inode or added a recovery backup" >&2
   exit 1
 fi
+
+# If a second writer replaces live settings after the snapshot but before the
+# semantic no-op decision, the updater must not report success from stale data.
+STALE_NOOP_BIN="$TEMP_DIR/stale-noop-jq-bin"
+STALE_NOOP_TARGET="$TEMP_DIR/stale-noop-settings.json"
+STALE_NOOP_MARKER="$TEMP_DIR/stale-noop-mutated"
+STALE_NOOP_REAL_JQ="$(command -v jq)"
+mkdir -p "$STALE_NOOP_BIN"
+cat > "$STALE_NOOP_BIN/jq" <<'SH'
+#!/usr/bin/env bash
+set -e
+case " $* " in
+  *" --arg hook "*|*" --argjson rules "*)
+    "$STALE_NOOP_REAL_JQ" "$@"
+    if [ -n "${STALE_NOOP_TARGET:-}" ] && [ ! -e "$STALE_NOOP_MARKER" ]; then
+      printf '{"permissions":{"deny":[],"ask":[]}}\n' > "$STALE_NOOP_TARGET"
+      : > "$STALE_NOOP_MARKER"
+    fi
+    exit 0
+    ;;
+esac
+exec "$STALE_NOOP_REAL_JQ" "$@"
+SH
+chmod +x "$STALE_NOOP_BIN/jq"
+cp "$SETTINGS" "$STALE_NOOP_TARGET"
+STALE_NOOP_ORIGINAL_PATH="$PATH"
+export PATH="$STALE_NOOP_BIN:$PATH"
+export STALE_NOOP_REAL_JQ STALE_NOOP_TARGET STALE_NOOP_MARKER
+if "$INSTALLER" "$STALE_NOOP_TARGET" "$HOOK" > "$TEMP_DIR/stale-hook-noop.log" 2>&1; then
+  echo "installer reported a stale-snapshot no-op as current" >&2
+  exit 1
+fi
+if ! grep -Fq "refusing to report current" "$TEMP_DIR/stale-hook-noop.log"; then
+  echo "installer did not identify the concurrent settings change before its no-op" >&2
+  cat "$TEMP_DIR/stale-hook-noop.log" >&2
+  exit 1
+fi
+cp "$SETTINGS" "$STALE_NOOP_TARGET"
+rm -f "$STALE_NOOP_MARKER"
+if "$REPO_ROOT/scripts/sync-critical-settings.sh" "$STALE_NOOP_TARGET" > "$TEMP_DIR/stale-critical-noop.log" 2>&1; then
+  echo "critical settings updater reported a stale-snapshot no-op as current" >&2
+  exit 1
+fi
+if ! grep -Fq "refusing to report current" "$TEMP_DIR/stale-critical-noop.log"; then
+  echo "critical settings updater did not identify the concurrent settings change before its no-op" >&2
+  cat "$TEMP_DIR/stale-critical-noop.log" >&2
+  exit 1
+fi
+export PATH="$STALE_NOOP_ORIGINAL_PATH"
+unset STALE_NOOP_REAL_JQ STALE_NOOP_TARGET STALE_NOOP_MARKER
 
 INSTALLED_COMMAND="$(jq -r --arg hook "$HOOK" '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[] | select(.type == "command" and (.command | contains($hook))) | .command' "$SETTINGS")"
 if printf '%s' '{"tool_name":"Bash","tool_input":{"command":"npm install"}}' | GATE_MARKER="$TEMP_DIR/invoked" bash -c "$INSTALLED_COMMAND" 2> "$TEMP_DIR/hook.stderr"; then
@@ -883,6 +955,12 @@ NATIVE_HOME="$TEMP_DIR/home-codex-native"
 mkdir -p "$NATIVE_HOME/.codex/skills/drain-repo" "$NATIVE_HOME/.codex/skills/update-crosscheck" "$NATIVE_HOME/.crosscheck"
 printf 'user customization\n' > "$NATIVE_HOME/.codex/skills/drain-repo/SKILL.md"
 printf 'old shipped skill\n' > "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md"
+chmod 0600 "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md"
+if stat -c '%a' "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md" >/dev/null 2>&1; then
+  NATIVE_SKILL_MODE="$(stat -c '%a' "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md")"
+else
+  NATIVE_SKILL_MODE="$(stat -f '%Lp' "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md")"
+fi
 HOME="$NATIVE_HOME" bash "$NATIVE_REPO/codex/scripts/sync-managed-codex-skills.sh" "$NATIVE_REPO" "$NATIVE_HOME" > "$TEMP_DIR/codex-native-update.log" 2>&1
 NATIVE_RECOVERY_DIR="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$NATIVE_HOME/.crosscheck-recovery")"
 if ! grep -Eq "$NATIVE_RECOVERY_DIR/(settings|snapshot)-" "$TEMP_DIR/codex-native-update.log"; then
@@ -896,6 +974,15 @@ if [ "$(cat "$NATIVE_HOME/.codex/skills/drain-repo/SKILL.md")" != "user customiz
 fi
 if ! cmp -s "$NATIVE_REPO/codex/skills/update-crosscheck/SKILL.md" "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md"; then
   echo "Codex native updater did not refresh a previously shipped skill file" >&2
+  exit 1
+fi
+if stat -c '%a' "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md" >/dev/null 2>&1; then
+  NATIVE_SKILL_MODE_AFTER="$(stat -c '%a' "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md")"
+else
+  NATIVE_SKILL_MODE_AFTER="$(stat -f '%Lp' "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md")"
+fi
+if [ "$NATIVE_SKILL_MODE_AFTER" != "$NATIVE_SKILL_MODE" ]; then
+  echo "Codex native updater changed the mode of a previously shipped skill file" >&2
   exit 1
 fi
 if ! cmp -s "$NATIVE_REPO/codex/skills/new-skill/SKILL.md" "$NATIVE_HOME/.codex/skills/new-skill/SKILL.md"; then
@@ -1311,6 +1398,7 @@ if sys.platform.startswith("linux"):
             os.close(linux_acl_parent_fd)
         linux_acl_publish_snapshot = scratch / "linux-acl-publish-snapshot.json"
         linux_acl_publish_stage = scratch / "linux-acl-publish-stage.json"
+        linux_acl_publish_snapshot.write_text("")
         linux_acl_publish_stage.write_text('{"setting":"updated"}\n')
         if not module.snapshot_file(
             str(linux_acl_publish_root), "settings.json", str(linux_acl_publish_snapshot)
@@ -2554,16 +2642,22 @@ if not module.snapshot_file(
 symlink_rollback_source.write_text("new command\n")
 real_verify = module._verify_parent_path
 real_fsync = module.os.fsync
-verify_calls = [0]
 rollback_exchange_done = []
 real_exchange = module._rename_exchange
 exchange_calls = [0]
+post_publish_injected = []
 
 def fail_after_install(root_fd, root_path, relative_target, parent_fd):
-    verify_calls[0] += 1
-    if verify_calls[0] == 1:
+    result = real_verify(root_fd, root_path, relative_target, parent_fd)
+    if (
+        exchange_calls[0] == 1
+        and symlink_rollback_target.is_symlink()
+        and os.readlink(symlink_rollback_target) == str(symlink_rollback_source)
+        and not post_publish_injected
+    ):
+        post_publish_injected.append(True)
         raise module.ConcurrentUpdate("injected post-link verification failure")
-    return real_verify(root_fd, root_path, relative_target, parent_fd)
+    return result
 
 def mark_rollback_exchange(first_fd, first, second_fd, second):
     if not os.path.lexists(symlink_rollback_target):
@@ -2601,6 +2695,10 @@ finally:
     module.os.fsync = real_fsync
 if not symlink_rollback_target.exists() or symlink_rollback_target.is_symlink() or symlink_rollback_target.read_text() != "old command\n":
     raise SystemExit("Claude symlink rollback left the live command missing or changed")
+if not post_publish_injected or exchange_calls[0] != 2 or not rollback_exchange_done:
+    raise SystemExit("Claude symlink rollback test did not publish and exchange the original link back")
+if not getattr(fail_rollback_sync, "failed", False):
+    raise SystemExit("Claude symlink rollback test did not inject the rollback fsync failure")
 
 # A concurrent symlink replacement plus parent move must not be restored only
 # into the detached directory and reported as a harmless no-op.
@@ -3180,11 +3278,11 @@ link_stage = scratch / "skill-stage"
 link_stage.write_text("managed skill\n")
 real_copy = module._copy_into_directory
 
-def swap_skill_directory(source_path, directory_fd, mode_override=None):
+def swap_skill_directory(source_path, directory_fd, mode_override=None, owner_override=None):
     moved_dir = skill_dir.with_name("example-moved")
     skill_dir.rename(moved_dir)
     skill_dir.symlink_to(outside, target_is_directory=True)
-    return real_copy(source_path, directory_fd, mode_override)
+    return real_copy(source_path, directory_fd, mode_override, owner_override)
 
 module._copy_into_directory = swap_skill_directory
 try:

@@ -165,13 +165,19 @@ def _read_signature_at(directory_fd: int, name: str) -> tuple[bytes, int]:
 
 def _entry_state_at(
     directory_fd: int, name: str
-) -> tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None]:
+) -> tuple[tuple[int, int, int, int, int, int, int], tuple[bytes, int] | None]:
     """Capture an entry identity and, for regular files, its stable contents."""
     before = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
     signature = _read_signature_at(directory_fd, name) if stat.S_ISREG(before.st_mode) else None
     after = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-    before_identity = (before.st_dev, before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns)
-    after_identity = (after.st_dev, after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns)
+    before_identity = (
+        before.st_dev, before.st_ino, before.st_mode, before.st_size,
+        before.st_mtime_ns, before.st_uid, before.st_gid,
+    )
+    after_identity = (
+        after.st_dev, after.st_ino, after.st_mode, after.st_size,
+        after.st_mtime_ns, after.st_uid, after.st_gid,
+    )
     if before_identity != after_identity:
         raise OSError(f"directory entry changed while being inspected: {name}")
     return after_identity, signature
@@ -214,6 +220,8 @@ def _read_snapshot_metadata(snapshot_path: str) -> dict[str, object]:
         recovery_boundary = metadata["recovery_boundary"]
         strict_root = metadata["strict_root"]
         source_mode = metadata.get("source_mode")
+        source_uid = metadata.get("source_uid")
+        source_gid = metadata.get("source_gid")
     except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise OSError(f"invalid snapshot identity: {identity_path}") from error
     if (
@@ -236,6 +244,13 @@ def _read_snapshot_metadata(snapshot_path: str) -> dict[str, object]:
             or source_mode < 0
             or source_mode > 0o777
         ))
+        or (source_uid is not None and (
+            not isinstance(source_uid, int) or isinstance(source_uid, bool) or source_uid < 0
+        ))
+        or (source_gid is not None and (
+            not isinstance(source_gid, int) or isinstance(source_gid, bool) or source_gid < 0
+        ))
+        or ((source_uid is None) != (source_gid is None))
     ):
         raise OSError(f"invalid snapshot identity: {identity_path}")
     if (
@@ -532,7 +547,12 @@ def _rename_exchange(
         raise OSError(error, os.strerror(error), first, second)
 
 
-def _copy_into_directory(source_path: str, directory_fd: int, mode_override: int | None = None) -> str:
+def _copy_into_directory(
+    source_path: str,
+    directory_fd: int,
+    mode_override: int | None = None,
+    owner_override: tuple[int, int] | None = None,
+) -> str:
     """Copy a trusted staged file into the already-open private directory."""
     source_fd = os.open(os.path.abspath(source_path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     try:
@@ -562,6 +582,15 @@ def _copy_into_directory(source_path: str, directory_fd: int, mode_override: int
                     view = view[written:]
             destination_mode = stat.S_IMODE(source_info.st_mode) if mode_override is None else mode_override
             _clear_inherited_file_acl(destination_fd)
+            if owner_override is not None:
+                destination_info = os.fstat(destination_fd)
+                if (destination_info.st_uid, destination_info.st_gid) != owner_override:
+                    try:
+                        os.fchown(destination_fd, *owner_override)
+                    except OSError as error:
+                        raise PermissionError(
+                            f"could not preserve target ownership on staged file: {error}"
+                        ) from error
             os.fchmod(destination_fd, destination_mode)
             os.fsync(destination_fd)
         except BaseException:
@@ -980,11 +1009,11 @@ def _rollback_failed_publish(
     stage_fd: int,
     staged_name: str,
     stage_path: str,
-    published_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None],
-    known_states: set[tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None]],
-    observed_states: set[tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None]],
+    published_state: tuple[tuple[int, int, int, int, int, int, int], tuple[bytes, int] | None],
+    known_states: set[tuple[tuple[int, int, int, int, int, int, int], tuple[bytes, int] | None]],
+    observed_states: set[tuple[tuple[int, int, int, int, int, int, int], tuple[bytes, int] | None]],
     recovered_entries: dict[tuple[int, int], tuple[str, str]],
-    desired_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None],
+    desired_state: tuple[tuple[int, int, int, int, int, int, int], tuple[bytes, int] | None],
     stable_base_fd: int,
     stable_base_path: str,
     stable_recovery_fd: int,
@@ -993,7 +1022,7 @@ def _rollback_failed_publish(
 ) -> str | None:
     """Restore the newest observed concurrent entry and keep every displaced edit."""
 
-    def preserve_stage_state() -> tuple[bool, str | None, tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None]:
+    def preserve_stage_state() -> tuple[bool, str | None, tuple[tuple[int, int, int, int, int, int, int], tuple[bytes, int] | None] | None]:
         try:
             state = _entry_state_at(stage_fd, staged_name)
         except OSError:
@@ -1175,6 +1204,7 @@ def publish_file(
     expected_recovery_path: str | None = None,
     recovery_boundary: str | None = None,
     expected_snapshot_mode: int | None = None,
+    expected_owner: tuple[int, int] | None = None,
 ) -> str | None:
     root_fd, root_path = _open_root(root, reject_leaf_symlink=strict_root)
     parent_fd, parent_path, target_name = _open_relative_parent(
@@ -1190,8 +1220,8 @@ def publish_file(
     recovered_entries: dict[tuple[int, int], tuple[str, str]] = {}
     swapped = False
     exchange_attempted = False
-    published_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
-    original_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
+    published_state: tuple[tuple[int, int, int, int, int, int, int], tuple[bytes, int] | None] | None = None
+    original_state: tuple[tuple[int, int, int, int, int, int, int], tuple[bytes, int] | None] | None = None
     original_acl: tuple[tuple[str, ...], int] | None = None
 
     stage_fd: int | None = None
@@ -1233,7 +1263,8 @@ def publish_file(
         stage_fd, stage_dir_name, stage_dir_path = _new_private_stage_directory(
             parent_fd, parent_path, target_info.st_dev
         )
-        staged_name = _copy_into_directory(staged_file, stage_fd, expected_mode)
+        stage_mode = expected_mode if expected_mode is not None else expected_snapshot_mode
+        staged_name = _copy_into_directory(staged_file, stage_fd, stage_mode, expected_owner)
         _fsync_directory(stage_fd)
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
@@ -1290,6 +1321,10 @@ def publish_file(
         if expected_identity is not None and original_state[0][:2] != expected_identity:
             raise ConcurrentUpdate(
                 f"file identity changed since snapshot, refusing to overwrite: {target}", recovery_path
+            )
+        if expected_owner is not None and original_state[0][5:7] != expected_owner:
+            raise ConcurrentUpdate(
+                f"file ownership changed since snapshot, refusing to overwrite: {target}", recovery_path
             )
         if original_state[1] != expected_signature:
             raise ConcurrentUpdate(
@@ -1650,6 +1685,8 @@ def snapshot_file(
                 "target_root": root_path,
                 "target_relative": relative_target,
                 "source_mode": mode,
+                "source_uid": pinned_state[0][5],
+                "source_gid": pinned_state[0][6],
                 "recovery_boundary": effective_recovery_boundary,
                 "strict_root": strict_root,
             }
@@ -1667,6 +1704,44 @@ def snapshot_file(
             os.close(stable_recovery_fd)
         if stable_base_fd is not None:
             os.close(stable_base_fd)
+        if parent_fd is not None:
+            os.close(parent_fd)
+        os.close(root_fd)
+
+
+def snapshot_is_current(root: str, relative_target: str, snapshot_path: str) -> bool:
+    """Return whether the live regular file still matches its pinned snapshot."""
+    metadata = _read_snapshot_metadata(snapshot_path)
+    if metadata["target_relative"] != relative_target:
+        return False
+    root_fd, root_path = _open_root(root, reject_leaf_symlink=bool(metadata["strict_root"]))
+    parent_fd: int | None = None
+    try:
+        if root_path != metadata["target_root"]:
+            return False
+        try:
+            parent_fd, _, target_name = _open_relative_parent(
+                root_fd, root_path, relative_target, create=False
+            )
+        except FileNotFoundError:
+            return False
+        _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+        identity, signature = _entry_state_at(parent_fd, target_name)
+        expected_identity = (int(metadata["device"]), int(metadata["inode"]))
+        source_mode = metadata.get("source_mode")
+        source_uid = metadata.get("source_uid")
+        source_gid = metadata.get("source_gid")
+        if source_mode is None or source_uid is None or source_gid is None or signature is None:
+            return False
+        snapshot_content, _ = _read_signature(snapshot_path)
+        return (
+            identity[:2] == expected_identity
+            and identity[5:7] == (int(source_uid), int(source_gid))
+            and signature == (snapshot_content, int(source_mode))
+        )
+    except FileNotFoundError:
+        return False
+    finally:
         if parent_fd is not None:
             os.close(parent_fd)
         os.close(root_fd)
@@ -1700,7 +1775,7 @@ def sync_symlink(
     stable_backup_path: str | None = None
     initial_stable_recovery_name: str | None = None
     initial_stable_backup_path: str | None = None
-    stable_original_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
+    stable_original_state: tuple[tuple[int, int, int, int, int, int, int], tuple[bytes, int] | None] | None = None
     moved = False
     created_link = False
     created_link_identity: tuple[int, int] | None = None
@@ -2408,6 +2483,14 @@ def main() -> int:
         if recovery_path:
             sys.stderr.write(f"snapshot-time file retained at {recovery_path}\n")
         return 0
+    if len(sys.argv) == 5 and sys.argv[1] == "snapshot-current":
+        _, _, root, relative_target, snapshot_path = sys.argv
+        try:
+            current = snapshot_is_current(root, relative_target, snapshot_path)
+        except (OSError, ValueError, KeyError) as error:
+            sys.stderr.write(f"could not verify live file against snapshot: {error}\n")
+            return 2
+        return 0 if current else 3
     if len(sys.argv) == 3 and sys.argv[1] == "private-file":
         try:
             file_fd = os.open(
@@ -2560,6 +2643,7 @@ def main() -> int:
     expected_recovery_path: str | None = None
     recovery_boundary: str | None = None
     expected_snapshot_mode: int | None = None
+    expected_owner: tuple[int, int] | None = None
     try:
         if expected != "--absent":
             expected_metadata = _read_snapshot_metadata(expected)
@@ -2571,6 +2655,10 @@ def main() -> int:
                 expected_snapshot_mode = expected_mode
             else:
                 expected_snapshot_mode = None if snapshot_mode is None else int(snapshot_mode)
+            snapshot_uid = expected_metadata.get("source_uid")
+            snapshot_gid = expected_metadata.get("source_gid")
+            if snapshot_uid is not None and snapshot_gid is not None:
+                expected_owner = (int(snapshot_uid), int(snapshot_gid))
         recovery_path = publish_file(
             root,
             relative_target,
@@ -2582,6 +2670,7 @@ def main() -> int:
             expected_recovery_path,
             recovery_boundary,
             expected_snapshot_mode,
+            expected_owner,
         )
     except RestorationFailed as error:
         sys.stderr.write(f"{error}\n")

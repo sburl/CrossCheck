@@ -325,17 +325,6 @@ def _new_recovery_directory(parent_fd: int, parent_path: str) -> tuple[int, str,
     return recovery_fd, name, os.path.join(parent_path, name)
 
 
-def _remove_recovery(parent_fd: int, recovery_fd: int, recovery_name: str) -> None:
-    try:
-        os.unlink("original", dir_fd=recovery_fd)
-    except FileNotFoundError:
-        pass
-    _fsync_directory(recovery_fd)
-    os.close(recovery_fd)
-    os.rmdir(recovery_name, dir_fd=parent_fd)
-    _fsync_directory(parent_fd)
-
-
 def _discard_recovery(parent_fd: int, recovery_fd: int, recovery_name: str) -> None:
     """Best-effort cleanup after the durable recovery hard link is secured."""
     try:
@@ -492,6 +481,8 @@ def _rollback_failed_publish(
     staged_name: str,
     published_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None],
     known_states: set[tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None]],
+    observed_states: set[tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None]],
+    desired_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None],
     stable_base_fd: int,
     stable_base_path: str,
     stable_recovery_fd: int,
@@ -538,34 +529,45 @@ def _rollback_failed_publish(
                 stage_path,
             ) from error
 
+        if displaced_state not in observed_states:
+            observed_states.add(displaced_state)
+            if displaced_state != published_state:
+                desired_state = displaced_state
+
         if displaced_state not in known_states:
             preserved, new_recovery_path, _ = preserve_stage_state()
             if preserved:
                 recovery_path = new_recovery_path or recovery_path
+                if live_state == desired_state and live_state != published_state:
+                    return recovery_path
                 continue
             else:
-                # The newest edit is now in the staging slot. Put it back at the
-                # live name even when the recovery volume cannot accept a link.
-                try:
-                    _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
-                    _fsync_directory(parent_fd)
-                    live_state = _entry_state_at(parent_fd, target_name)
-                except OSError as error:
+                if live_state == desired_state and live_state != published_state:
                     raise RestorationFailed(
-                        f"could not restore the latest concurrent settings at {os.path.join(parent_path, target_name)}",
-                        stage_path,
-                    ) from error
-                if live_state == published_state:
-                    raise RestorationFailed(
-                        f"could not prove the previous settings were restored at {os.path.join(parent_path, target_name)}",
+                        f"settings are live but an older concurrent edit remains in recovery data: {os.path.join(parent_path, target_name)}",
                         stage_path,
                     )
+                if displaced_state == desired_state:
+                    try:
+                        _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
+                        _fsync_directory(parent_fd)
+                        live_state = _entry_state_at(parent_fd, target_name)
+                    except OSError as error:
+                        raise RestorationFailed(
+                            f"could not restore the latest concurrent settings at {os.path.join(parent_path, target_name)}",
+                            stage_path,
+                        ) from error
+                    if live_state == desired_state and live_state != published_state:
+                        raise RestorationFailed(
+                            f"settings are live but concurrent edits remain in recovery data: {os.path.join(parent_path, target_name)}",
+                            stage_path,
+                        )
                 raise RestorationFailed(
-                    f"settings were restored live, but concurrent edits could not be durably preserved: {os.path.join(parent_path, target_name)}",
+                    f"could not durably preserve concurrent settings while restoring {os.path.join(parent_path, target_name)}",
                     stage_path,
                 )
 
-        if displaced_state in known_states and live_state != published_state:
+        if displaced_state in known_states and live_state == desired_state and live_state != published_state:
             return recovery_path
 
 
@@ -651,8 +653,8 @@ def publish_file(
             current_state = _entry_state_at(parent_fd, staged_name)
         except OSError as error:
             raise ConcurrentUpdate(f"target changed during CrossCheck update: {target}") from error
-        if current_state[1] != expected_signature:
-            raise ConcurrentUpdate(f"file changed during CrossCheck update, refusing to overwrite: {target}")
+        if current_state != original_state:
+            raise ConcurrentUpdate(f"file identity changed during CrossCheck update, refusing to overwrite: {target}")
 
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
@@ -683,13 +685,15 @@ def publish_file(
     except BaseException as error:
         if swapped and staged_name is not None and published_state is not None and original_state is not None:
             known_states = {published_state, original_state}
+            observed_states = {published_state, original_state}
             failure_recovery_path: str | None = None
             try:
                 current_state = _entry_state_at(parent_fd, staged_name)
             except OSError:
                 current_state = None
+            desired_state = current_state or original_state
             if current_state is not None:
-                known_states.add(current_state)
+                observed_states.add(current_state)
                 # A recovery link failure must not prevent an attempted rollback.
                 try:
                     backup_name, backup_path = _new_stable_recovery_link(
@@ -704,6 +708,7 @@ def publish_file(
                         backup_name,
                     )
                     failure_recovery_path = backup_path
+                    known_states.add(current_state)
                 except OSError:
                     pass
             failure_recovery_path = _rollback_failed_publish(
@@ -713,6 +718,8 @@ def publish_file(
                 staged_name,
                 published_state,
                 known_states,
+                observed_states,
+                desired_state,
                 stable_base_fd,
                 stable_base_path,
                 stable_recovery_fd,
@@ -810,6 +817,8 @@ def sync_symlink(
             if expected_kind != "absent":
                 return None
             os.symlink(new_link, target_name, dir_fd=parent_fd)
+            created_link = True
+            _fsync_directory(parent_fd)
             _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
             return ""
 
@@ -843,7 +852,7 @@ def sync_symlink(
                     _fsync_directory(recovery_fd)
                     _fsync_directory(parent_fd)
                     moved = False
-                    _remove_recovery(parent_fd, recovery_fd, recovery_name)
+                    _discard_recovery(parent_fd, recovery_fd, recovery_name)
                     recovery_fd = None
                     recovery_name = None
                     return None
@@ -857,7 +866,7 @@ def sync_symlink(
                 _fsync_directory(recovery_fd)
                 _fsync_directory(parent_fd)
                 moved = False
-                _remove_recovery(parent_fd, recovery_fd, recovery_name)
+                _discard_recovery(parent_fd, recovery_fd, recovery_name)
                 recovery_fd = None
                 recovery_name = None
                 return None
@@ -866,25 +875,9 @@ def sync_symlink(
                     f"managed command changed during CrossCheck update: {target}", recovery_path
                 ) from error
 
-        try:
-            os.symlink(new_link, target_name, dir_fd=parent_fd)
-            created_link = True
-            _fsync_directory(parent_fd)
-        except OSError as error:
-            try:
-                _rename_noreplace(recovery_fd, "original", parent_fd, target_name)
-                _fsync_directory(recovery_fd)
-                _fsync_directory(parent_fd)
-                moved = False
-                _remove_recovery(parent_fd, recovery_fd, recovery_name)
-                recovery_fd = None
-                recovery_name = None
-            except OSError:
-                raise ConcurrentUpdate(
-                    f"could not publish managed command without replacing a concurrent path: {target}",
-                    recovery_path,
-                ) from error
-            raise
+        os.symlink(new_link, target_name, dir_fd=parent_fd)
+        created_link = True
+        _fsync_directory(parent_fd)
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
         if expected_kind == "snapshot":
@@ -904,31 +897,42 @@ def sync_symlink(
                     recovery_path,
                 )
             return recovery_path
-        _remove_recovery(parent_fd, recovery_fd, recovery_name)
+        _discard_recovery(parent_fd, recovery_fd, recovery_name)
         recovery_fd = None
         recovery_name = None
         moved = False
         return ""
     except BaseException as error:
+        rollback_sync_error: OSError | None = None
         if created_link:
             try:
                 current_info = os.stat(target_name, dir_fd=parent_fd, follow_symlinks=False)
                 if stat.S_ISLNK(current_info.st_mode) and os.readlink(target_name, dir_fd=parent_fd) == new_link:
                     os.unlink(target_name, dir_fd=parent_fd)
-                    _fsync_directory(parent_fd)
+                    created_link = False
                 elif moved:
                     raise RestorationFailed(
                         f"a concurrent path replaced the managed command during rollback: {target}", recovery_path
                     ) from error
             except FileNotFoundError:
                 pass
+            except OSError as rollback_error:
+                raise RestorationFailed(
+                    f"could not remove the failed managed command link: {target}", recovery_path
+                ) from rollback_error
+            if not created_link:
+                try:
+                    _fsync_directory(parent_fd)
+                except OSError as rollback_error:
+                    rollback_sync_error = rollback_error
         if moved and recovery_fd is not None and recovery_name is not None:
             try:
                 _rename_noreplace(recovery_fd, "original", parent_fd, target_name)
+                moved = False
+                recovery_path = target
                 _fsync_directory(recovery_fd)
                 _fsync_directory(parent_fd)
-                moved = False
-                _remove_recovery(parent_fd, recovery_fd, recovery_name)
+                _discard_recovery(parent_fd, recovery_fd, recovery_name)
                 recovery_fd = None
                 recovery_name = None
                 recovery_path = None
@@ -936,6 +940,10 @@ def sync_symlink(
                 raise RestorationFailed(
                     f"could not restore managed command safely: {target}", recovery_path
                 ) from restore_error
+        if rollback_sync_error is not None:
+            raise RestorationFailed(
+                f"managed command was restored but its directory could not be synced: {target}", recovery_path
+            ) from rollback_sync_error
         raise
     finally:
         if recovery_fd is not None:

@@ -838,6 +838,98 @@ finally:
 if link_failure_target.read_text() != '{"setting":"original"}\n':
     raise SystemExit("atomic publisher left staged settings live after recovery-link failure")
 
+# A failed first backup must not mark that edit safe to discard if a second
+# writer appears during rollback.
+edit_race_dir = scratch / "failed-first-backup-race"
+edit_race_dir.mkdir()
+edit_race_target = edit_race_dir / "settings.json"
+edit_race_snapshot = scratch / "failed-first-backup-snapshot.json"
+edit_race_stage = scratch / "failed-first-backup-stage.json"
+edit_race_target.write_text('{"setting":"original"}\n')
+edit_race_snapshot.write_text('{"setting":"original"}\n')
+edit_race_stage.write_text('{"setting":"updated"}\n')
+real_exchange = module._rename_exchange
+exchange_calls = [0]
+
+def inject_two_edits(first_fd, first, second_fd, second):
+    exchange_calls[0] += 1
+    if exchange_calls[0] in (1, 2):
+        edit_number = exchange_calls[0]
+        competitor = edit_race_dir / f"edit-{edit_number}.json"
+        competitor.write_text(f'{{"setting":"concurrent edit {edit_number}"}}\n')
+        competitor.replace(edit_race_target)
+    return real_exchange(first_fd, first, second_fd, second)
+
+real_recovery_link = module._new_stable_recovery_link
+link_calls = [0]
+
+def fail_first_concurrent_backup(source_fd, source_name, recovery_fd, recovery_dir):
+    link_calls[0] += 1
+    if link_calls[0] == 2:
+        raise OSError(28, "injected first concurrent backup failure")
+    return real_recovery_link(source_fd, source_name, recovery_fd, recovery_dir)
+
+module._rename_exchange = inject_two_edits
+module._new_stable_recovery_link = fail_first_concurrent_backup
+try:
+    module.publish_file(str(edit_race_dir), "settings.json", str(edit_race_snapshot), str(edit_race_stage))
+except module.ConcurrentUpdate as error:
+    backup_contents = {
+        path.read_text()
+        for path in Path(error.recovery_path).parent.glob("settings-*.bak")
+    } if error.recovery_path else set()
+    if '{"setting":"concurrent edit 1"}\n' not in backup_contents or '{"setting":"concurrent edit 2"}\n' not in backup_contents:
+        raise SystemExit("atomic publisher discarded an edit whose first recovery link failed")
+else:
+    raise SystemExit("atomic publisher accepted two concurrent edits after a recovery-link failure")
+finally:
+    module._rename_exchange = real_exchange
+    module._new_stable_recovery_link = real_recovery_link
+if edit_race_target.read_text() != '{"setting":"concurrent edit 2"}\n':
+    raise SystemExit("atomic publisher did not keep the latest concurrent edit live")
+
+# A byte-identical replacement is still a different displaced inode. Its
+# held descriptor must remain visible through the returned recovery link.
+inode_race_dir = scratch / "same-content-inode-race"
+inode_race_dir.mkdir()
+inode_race_target = inode_race_dir / "settings.json"
+inode_race_snapshot = scratch / "same-content-inode-snapshot.json"
+inode_race_stage = scratch / "same-content-inode-stage.json"
+inode_race_target.write_text('{"setting":"original"}\n')
+inode_race_snapshot.write_text('{"setting":"original"}\n')
+inode_race_stage.write_text('{"setting":"updated"}\n')
+held_replacement = []
+real_exchange = module._rename_exchange
+exchange_calls = [0]
+
+def replace_with_identical_inode(first_fd, first, second_fd, second):
+    exchange_calls[0] += 1
+    if exchange_calls[0] == 1:
+        replacement = inode_race_dir / "replacement.json"
+        replacement.write_text('{"setting":"original"}\n')
+        held_replacement.append(replacement.open("r+"))
+        replacement.replace(inode_race_target)
+    return real_exchange(first_fd, first, second_fd, second)
+
+module._rename_exchange = replace_with_identical_inode
+try:
+    module.publish_file(str(inode_race_dir), "settings.json", str(inode_race_snapshot), str(inode_race_stage))
+except module.ConcurrentUpdate as error:
+    if not error.recovery_path:
+        raise SystemExit("atomic publisher did not preserve the replaced inode")
+    held_replacement[0].seek(0)
+    held_replacement[0].truncate()
+    held_replacement[0].write('{"setting":"late edit"}\n')
+    held_replacement[0].flush()
+    if Path(error.recovery_path).read_text() != '{"setting":"late edit"}\n':
+        raise SystemExit("atomic publisher reported a backup of the wrong inode")
+else:
+    raise SystemExit("atomic publisher accepted a byte-identical replacement inode")
+finally:
+    module._rename_exchange = real_exchange
+    for replacement_file in held_replacement:
+        replacement_file.close()
+
 # Failed rollback is surfaced with a distinct fatal status so callers do not
 # mistake it for an ordinary preserved concurrent edit.
 rollback_failure_dir = scratch / "rollback-failure"
@@ -949,6 +1041,47 @@ if "Claude command links added or refreshed: 0; preserved 1" not in sync_result.
     )
 if os.path.realpath(noop_sync_target) != str(noop_sync_claude.resolve()):
     raise SystemExit("Claude sync race fixture did not leave the user's current symlink live")
+
+# If syncing the removal of a failed new symlink errors, still attempt to
+# restore the displaced command before returning a fatal status.
+symlink_rollback_home = scratch / "symlink-rollback-home"
+symlink_rollback_home.joinpath(".claude/commands").mkdir(parents=True)
+symlink_rollback_target = symlink_rollback_home / ".claude/commands/managed.md"
+symlink_rollback_snapshot = scratch / "symlink-rollback-snapshot.md"
+symlink_rollback_source = scratch / "symlink-rollback-source.md"
+symlink_rollback_target.write_text("old command\n")
+symlink_rollback_snapshot.write_text("old command\n")
+symlink_rollback_source.write_text("new command\n")
+real_verify = module._verify_parent_path
+real_fsync = module.os.fsync
+fsync_calls = [0]
+
+def fail_after_install(root_fd, root_path, relative_target, parent_fd):
+    raise module.ConcurrentUpdate("injected post-link verification failure")
+
+def fail_unlink_sync(directory_fd):
+    fsync_calls[0] += 1
+    if fsync_calls[0] == 6:
+        raise OSError(5, "injected rollback directory fsync failure")
+    return real_fsync(directory_fd)
+
+module._verify_parent_path = fail_after_install
+module.os.fsync = fail_unlink_sync
+original_argv = module.sys.argv
+module.sys.argv = [
+    "atomic-publish-file.py", "symlink", str(symlink_rollback_home),
+    ".claude/commands/managed.md", "snapshot", str(symlink_rollback_snapshot),
+    str(symlink_rollback_source),
+]
+try:
+    if module.main() != 5:
+        raise SystemExit("Claude symlink rollback failure did not return fatal status 5")
+finally:
+    module.sys.argv = original_argv
+    module._verify_parent_path = real_verify
+    module.os.fsync = real_fsync
+if symlink_rollback_target.is_symlink() or symlink_rollback_target.read_text() != "old command\n":
+    raise SystemExit("Claude symlink rollback left the live command missing")
 
 # Recovery reports must not succeed after their opened directory is renamed.
 recovery_rename_home = scratch / "recovery-rename-home"

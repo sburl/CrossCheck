@@ -196,7 +196,7 @@ if PATH="$MODE_RACE_BIN:$PATH" REAL_PYTHON="$REAL_PYTHON" MODE_RACE_HELPER="$MOD
 fi
 if [ ! -e "$MODE_RACE_MARKER" ] \
   || ! cmp -s "$MODE_RACE_CRITICAL_TARGET" "$MODE_RACE_CRITICAL_TARGET.expected" \
-  || [ "$(stat -f '%Lp' "$MODE_RACE_CRITICAL_TARGET" 2>/dev/null || stat -c '%a' "$MODE_RACE_CRITICAL_TARGET")" != 644 ]; then
+  || [ "$(python3 -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "$MODE_RACE_CRITICAL_TARGET")" != 0o644 ]; then
   echo "critical settings updater did not preserve the mode-raced target" >&2
   cat "$TEMP_DIR/mode-race-critical.log" >&2
   exit 1
@@ -214,7 +214,7 @@ if PATH="$MODE_RACE_BIN:$PATH" REAL_PYTHON="$REAL_PYTHON" MODE_RACE_HELPER="$MOD
 fi
 if [ ! -e "$MODE_RACE_MARKER" ] \
   || ! cmp -s "$MODE_RACE_HOOK_TARGET" "$MODE_RACE_HOOK_TARGET.expected" \
-  || [ "$(stat -f '%Lp' "$MODE_RACE_HOOK_TARGET" 2>/dev/null || stat -c '%a' "$MODE_RACE_HOOK_TARGET")" != 644 ]; then
+  || [ "$(python3 -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "$MODE_RACE_HOOK_TARGET")" != 0o644 ]; then
   echo "Claude hook installer did not preserve the mode-raced target" >&2
   cat "$TEMP_DIR/mode-race-hook.log" >&2
   exit 1
@@ -3688,7 +3688,7 @@ CRITICAL_HOME="$TEMP_DIR/critical-settings-home"
 mkdir -p "$CRITICAL_HOME/.claude"
 printf '{"permissions":{"deny":[],"ask":[]},"custom":"keep"}\n' > "$CRITICAL_HOME/.claude/actual.json"
 ln -s "$CRITICAL_HOME/.claude/actual.json" "$CRITICAL_HOME/.claude/settings.json"
-TMPDIR="$TEMP_DIR" "$REPO_ROOT/scripts/sync-critical-settings.sh" "$CRITICAL_HOME/.claude/settings.json" --include-ask
+TMPDIR="$TEMP_DIR" /bin/bash "$REPO_ROOT/scripts/sync-critical-settings.sh" "$CRITICAL_HOME/.claude/settings.json" --include-ask
 if [ ! -L "$CRITICAL_HOME/.claude/settings.json" ] || ! jq -e '.custom == "keep" and (.permissions.deny | length == 6) and (.permissions.ask | index("Bash(gh api *)") != null)' "$CRITICAL_HOME/.claude/settings.json" >/dev/null; then
   echo "critical settings sync replaced its symlink or missed a security rule" >&2
   exit 1

@@ -89,27 +89,43 @@ if [ "$INSTALL_MODE" = "multi-project" ]; then
 fi
 
 # 3. Copy settings template if needed
-echo "📝 Step 3: Configure settings..."
-if [ ! -f "$HOME/.claude/settings.json" ]; then
-    echo "   Creating ~/.claude/settings.json from template..."
-    mkdir -p "$HOME/.claude"  # Ensure directory exists
-    cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.claude/settings.json"
-    echo "   ⚠️  TODO: Edit ~/.claude/settings.json to customize for your stack"
-    echo "      Remove Spencer's commands (codex*, dailybrief*) and add yours"
-else
-    echo "   ✅ Settings already exist at ~/.claude/settings.json"
-fi
-echo ""
-
-# Atomically synchronize critical deny rules and install the native Claude Bash
-# gate. The installer validates first and preserves symlinks and file mode.
 SUPPLY_CHAIN_INSTALLER="$CROSSCHECK_DIR/claude/scripts/install-supply-chain-hook.sh"
 SUPPLY_CHAIN_HOOK="$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh"
 if [ ! -x "$SUPPLY_CHAIN_INSTALLER" ] || [ ! -x "$SUPPLY_CHAIN_HOOK" ]; then
     echo "❌ Claude supply-chain hook installer or gate is missing under $CROSSCHECK_DIR/claude/scripts" >&2
     exit 1
 fi
-"$SUPPLY_CHAIN_INSTALLER" "$HOME/.claude/settings.json" "$SUPPLY_CHAIN_HOOK"
+
+echo "📝 Step 3: Configure settings..."
+SETTINGS_FILE="$HOME/.claude/settings.json"
+PENDING_SETTINGS_FILE=""
+if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
+    echo "   ✅ Settings already exist at ~/.claude/settings.json"
+    SETTINGS_TO_INSTALL="$SETTINGS_FILE"
+else
+    echo "   Preparing settings.json from the template..."
+    mkdir -p "$HOME/.claude"
+    PENDING_SETTINGS_FILE="${SETTINGS_FILE}.bootstrap.$$"
+    cp "$CROSSCHECK_DIR/settings.template.json" "$PENDING_SETTINGS_FILE"
+    SETTINGS_TO_INSTALL="$PENDING_SETTINGS_FILE"
+fi
+echo ""
+
+# Atomically synchronize critical deny rules and install the native Claude Bash
+# gate. A missing settings file is created only after its temporary copy has
+# passed validation and received the complete update.
+if ! "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_TO_INSTALL" "$SUPPLY_CHAIN_HOOK"; then
+    [ -z "$PENDING_SETTINGS_FILE" ] || rm -f "$PENDING_SETTINGS_FILE"
+    exit 1
+fi
+if [ -n "$PENDING_SETTINGS_FILE" ]; then
+    if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
+        rm -f "$PENDING_SETTINGS_FILE"
+        "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_FILE" "$SUPPLY_CHAIN_HOOK"
+    else
+        mv "$PENDING_SETTINGS_FILE" "$SETTINGS_FILE"
+    fi
+fi
 echo "   ✅ Claude supply-chain hook points to $SUPPLY_CHAIN_HOOK"
 echo ""
 

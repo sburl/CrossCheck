@@ -94,32 +94,53 @@ if [ "$INSTALL_MODE" = "multi-project" ]; then
     echo ""
 fi
 
-# 3. Copy settings template if needed
-echo "📝 Step 3: Configure settings..."
-if [ ! -f "$HOME/.claude/settings.json" ]; then
-    echo "   Creating ~/.claude/settings.json from template..."
-    mkdir -p "$HOME/.claude"  # Ensure directory exists
-    cp "$CROSSCHECK_DIR/settings.template.json" "$HOME/.claude/settings.json"
-    echo "   ⚠️  TODO: Edit ~/.claude/settings.json to customize for your stack"
-    echo "      Remove Spencer's commands (claude*, dailybrief*) and add yours"
-else
-    echo "   ✅ Settings already exist at ~/.claude/settings.json"
-fi
-echo ""
-
-# Keep the native Bash PreToolUse gate pointed at the Claude-maintained mirror.
+# This entry point is stored under the Claude mirror in multi-project mode,
+# but the traditional installation places CrossCheck at the repository root.
 CLAUDE_INSTALL_DIR="$CROSSCHECK_ROOT_DIR/claude"
 if [ ! -d "$CLAUDE_INSTALL_DIR/scripts" ] && [ -d "$CROSSCHECK_DIR/scripts" ]; then
     CLAUDE_INSTALL_DIR="$CROSSCHECK_DIR"
 fi
-if [ ! -x "$CLAUDE_INSTALL_DIR/scripts/install-supply-chain-hook.sh" ]; then
-    echo "   ❌ Claude supply-chain hook installer not found under $CLAUDE_INSTALL_DIR/scripts" >&2
+SUPPLY_CHAIN_INSTALLER="$CLAUDE_INSTALL_DIR/scripts/install-supply-chain-hook.sh"
+SUPPLY_CHAIN_HOOK="$CLAUDE_INSTALL_DIR/scripts/preuse-supply-chain-gate.sh"
+if [ ! -x "$SUPPLY_CHAIN_INSTALLER" ] || [ ! -x "$SUPPLY_CHAIN_HOOK" ]; then
+    echo "   ❌ Claude supply-chain hook installer or gate is missing under $CLAUDE_INSTALL_DIR/scripts" >&2
     exit 1
 fi
-"$CLAUDE_INSTALL_DIR/scripts/install-supply-chain-hook.sh" \
-    "$HOME/.claude/settings.json" \
-    "$CLAUDE_INSTALL_DIR/scripts/preuse-supply-chain-gate.sh"
-echo "   ✅ Claude supply-chain hook points to $CLAUDE_INSTALL_DIR/scripts/preuse-supply-chain-gate.sh"
+
+# 3. Copy settings template if needed
+echo "📝 Step 3: Configure settings..."
+SETTINGS_FILE="$HOME/.claude/settings.json"
+PENDING_SETTINGS_FILE=""
+if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
+    echo "   ✅ Settings already exist at ~/.claude/settings.json"
+    SETTINGS_TO_INSTALL="$SETTINGS_FILE"
+else
+    echo "   Preparing settings.json from the template..."
+    mkdir -p "$HOME/.claude"
+    PENDING_SETTINGS_FILE="${SETTINGS_FILE}.bootstrap.$$"
+    SETTINGS_TEMPLATE="$CROSSCHECK_DIR/settings.template.json"
+    if [ ! -f "$SETTINGS_TEMPLATE" ]; then
+        SETTINGS_TEMPLATE="$CROSSCHECK_ROOT_DIR/settings.template.json"
+    fi
+    cp "$SETTINGS_TEMPLATE" "$PENDING_SETTINGS_FILE"
+    SETTINGS_TO_INSTALL="$PENDING_SETTINGS_FILE"
+fi
+echo ""
+
+# Keep the native Bash PreToolUse gate pointed at the Claude-maintained mirror.
+if ! "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_TO_INSTALL" "$SUPPLY_CHAIN_HOOK"; then
+    [ -z "$PENDING_SETTINGS_FILE" ] || rm -f "$PENDING_SETTINGS_FILE"
+    exit 1
+fi
+if [ -n "$PENDING_SETTINGS_FILE" ]; then
+    if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
+        rm -f "$PENDING_SETTINGS_FILE"
+        "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_FILE" "$SUPPLY_CHAIN_HOOK"
+    else
+        mv "$PENDING_SETTINGS_FILE" "$SETTINGS_FILE"
+    fi
+fi
+echo "   ✅ Claude supply-chain hook points to $SUPPLY_CHAIN_HOOK"
 echo ""
 
 # 4. Install all hooks

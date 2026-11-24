@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version, including copied Codex-nat
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-11-23-17-07
+**Last Updated:** 2026-11-23-18-25
 
 # Update CrossCheck
 
@@ -181,22 +181,27 @@ for skill_dir in "$NATIVE_SKILLS_DIR"/*; do
 done
 echo "   ✅ Refreshed $NATIVE_UPDATED Codex-native skill(s)"
 
-# New legacy skills
+# Claude commands use the Claude mirror and preserve user-owned files.
+CLAUDE_SYNC_RESULT="$("$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME")"
+echo "   $CLAUDE_SYNC_RESULT"
+CLAUDE_SYNC_COUNT="${CLAUDE_SYNC_RESULT##*: }"
+NEW_LINKED=$((NEW_LINKED + CLAUDE_SYNC_COUNT))
+
+# New Codex compatibility commands use the root sources.
 for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
     skill_name="$(basename "$skill_file" .md)"
     [ "$skill_name" = "INSTALL" ] && continue
     if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
         continue
     fi
-    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands"; do
-        [ -d "$TARGET_DIR" ] || continue
-        target="$TARGET_DIR/$skill_name.md"
-        if [ ! -e "$target" ] && [ ! -L "$target" ]; then
-            ln -sf "$skill_file" "$target"
-            echo "   + New skill linked: $skill_name"
-            NEW_LINKED=$((NEW_LINKED + 1))
-        fi
-    done
+    TARGET_DIR="$HOME/.codex/commands"
+    [ -d "$TARGET_DIR" ] || continue
+    target="$TARGET_DIR/$skill_name.md"
+    if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+        ln -sf "$skill_file" "$target"
+        echo "   + New Codex command linked: $skill_name"
+        NEW_LINKED=$((NEW_LINKED + 1))
+    fi
 done
 
 # New agents

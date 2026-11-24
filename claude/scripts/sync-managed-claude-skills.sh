@@ -16,13 +16,9 @@ fi
 is_known_shipped_copy() {
   local target="$1" skill_name="$2" source_path revision
 
-  if cmp -s "$target" "$CLAUDE_SKILL_DIR/$skill_name.md" || cmp -s "$target" "$ROOT_SKILL_DIR/$skill_name.md"; then
-    return 0
-  fi
-
-  # Copies made by older bootstrap versions can be migrated only when their
-  # exact bytes match a version tracked in this checkout's Git history.
-  if ! git -C "$CROSSCHECK_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  # Only versions published on main count as CrossCheck-owned. Local branches
+  # can contain an unpublished file that happens to match a user command.
+  if ! git -C "$CROSSCHECK_DIR" rev-parse --verify refs/remotes/origin/main >/dev/null 2>&1; then
     return 1
   fi
   for source_path in "claude/skill-sources/$skill_name.md" "skill-sources/$skill_name.md"; do
@@ -30,7 +26,7 @@ is_known_shipped_copy() {
       if git -C "$CROSSCHECK_DIR" show "$revision:$source_path" 2>/dev/null | cmp -s - "$target"; then
         return 0
       fi
-    done < <(git -C "$CROSSCHECK_DIR" rev-list --all -- "$source_path" 2>/dev/null)
+    done < <(git -C "$CROSSCHECK_DIR" rev-list refs/remotes/origin/main -- "$source_path" 2>/dev/null)
   done
   return 1
 }

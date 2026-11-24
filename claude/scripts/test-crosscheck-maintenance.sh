@@ -110,13 +110,8 @@ PY
   mkdir -p "$BOOTSTRAP_HOME/.claude"
 
   if [ "$bootstrap" = root ]; then
-    TARGET_SETTINGS="$BOOTSTRAP_HOME/settings-target.json"
-    printf '{"permissions":{"deny":[]}}\n' > "$TARGET_SETTINGS"
-    chmod 0640 "$TARGET_SETTINGS"
-    ln -s "$TARGET_SETTINGS" "$BOOTSTRAP_HOME/.claude/settings.json"
     SCRIPT="$BOOTSTRAP_REPO/scripts/bootstrap-crosscheck.sh"
   else
-    printf '{"PreToolUse":[]}\n' > "$BOOTSTRAP_HOME/.claude/settings.json"
     SCRIPT="$BOOTSTRAP_REPO/claude/scripts/bootstrap-crosscheck.sh"
   fi
 
@@ -140,10 +135,10 @@ if pid == 0:
 output = bytearray()
 sent_prompts = set()
 prompt_fragments = [
-    b"Install git hooks globally",
-    b"Install Codex review hooks globally",
-    b"Install Claude review hooks globally",
-    b"Install TokenPrint",
+    b"Install git hooks globally (all repos)? (Y/n)",
+    b"Install Codex review hooks globally? (Y/n)",
+    b"Install Claude review hooks globally? (Y/n)",
+    b"Install TokenPrint (AI usage dashboard)? (Y/n)",
 ]
 deadline = time.monotonic() + 90
 status = None
@@ -158,7 +153,7 @@ while time.monotonic() < deadline:
             output.extend(chunk)
             for index, prompt in enumerate(prompt_fragments):
                 if index not in sent_prompts and prompt in output:
-                    os.write(fd, b"n")
+                    os.write(fd, b"n\n")
                     sent_prompts.add(index)
     try:
         waited, wait_status = os.waitpid(pid, os.WNOHANG)
@@ -187,12 +182,9 @@ PY
       "Bash(*graphql*Ruleset*)"
     ] | all(.[]; . as $rule | $deny | index($rule) != null))
   ' "$SETTINGS" >/dev/null
-  if [ "$bootstrap" = root ]; then
-    [ -L "$SETTINGS" ]
-    [ "$(python3 -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "$TARGET_SETTINGS")" = "0o640" ]
-  else
-    jq -e 'has("PreToolUse") | not' "$SETTINGS" >/dev/null
-  fi
+  [ -f "$SETTINGS" ]
+  [ ! -L "$SETTINGS" ]
+  jq -e 'has("PreToolUse") | not' "$SETTINGS" >/dev/null
   COMMAND_LINK="$BOOTSTRAP_HOME/.claude/commands/update-crosscheck.md"
   EXPECTED_COMMAND="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$BOOTSTRAP_REPO/claude/skill-sources/update-crosscheck.md")"
   ACTUAL_COMMAND="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$COMMAND_LINK")"
@@ -202,9 +194,43 @@ PY
   fi
 done
 
+# A malformed template must fail before either bootstrap publishes a settings
+# file at the live path.
+for bootstrap in root claude; do
+  FAIL_REPO="$TEMP_DIR/workspace/fail-$bootstrap/CrossCheck"
+  FAIL_HOME="$TEMP_DIR/home-fail-$bootstrap"
+  mkdir -p "$(dirname "$FAIL_REPO")" "$FAIL_HOME"
+  python3 - "$REPO_ROOT" "$FAIL_REPO" <<'PY'
+import shutil
+import sys
+shutil.copytree(sys.argv[1], sys.argv[2], ignore=shutil.ignore_patterns(".git"))
+PY
+  if [ "$bootstrap" = root ]; then
+    FAIL_TEMPLATE="$FAIL_REPO/settings.template.json"
+    FAIL_SCRIPT="$FAIL_REPO/scripts/bootstrap-crosscheck.sh"
+  else
+    FAIL_TEMPLATE="$FAIL_REPO/claude/settings.template.json"
+    FAIL_SCRIPT="$FAIL_REPO/claude/scripts/bootstrap-crosscheck.sh"
+  fi
+  printf '{not valid json\n' > "$FAIL_TEMPLATE"
+  if HOME="$FAIL_HOME" bash "$FAIL_SCRIPT" > "$TEMP_DIR/bootstrap-failure-$bootstrap.log" 2>&1; then
+    echo "$bootstrap bootstrap unexpectedly accepted an invalid settings template" >&2
+    exit 1
+  fi
+  if [ -e "$FAIL_HOME/.claude/settings.json" ] || [ -L "$FAIL_HOME/.claude/settings.json" ] || find "$FAIL_HOME/.claude" -name 'settings.json.bootstrap.*' -print -quit | grep -q .; then
+    echo "$bootstrap bootstrap left a partially published settings file" >&2
+    exit 1
+  fi
+done
+
 # The updater must pass the checkout explicitly; this caller runs in a fresh
 # process and cannot rely on a shell-local CROSSCHECK_DIR.
 grep -Fq 'sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"' "$REPO_ROOT/claude/skill-sources/update-crosscheck.md"
+grep -Fq 'sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"' "$REPO_ROOT/codex/skills/update-crosscheck/SKILL.md"
+if grep -Fq 'for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands"' "$REPO_ROOT/codex/skills/update-crosscheck/SKILL.md"; then
+  echo "Codex updater still installs Claude commands from root skill sources" >&2
+  exit 1
+fi
 
 SYNC_ROOT="$TEMP_DIR/crosscheck"
 HOME_FIXTURE="$TEMP_DIR/home-sync"
@@ -225,7 +251,12 @@ printf 'Claude-only new command\n' > "$SYNC_ROOT/claude/skill-sources/new-comman
 printf 'skip-me\n' > "$SYNC_ROOT/claude/skill-sources/skipped.md"
 git -C "$SYNC_ROOT" add claude/skill-sources/managed.md skill-sources/managed.md claude/skill-sources/linked.md skill-sources/linked.md claude/skill-sources/wrong-name.md claude/skill-sources/new-command.md claude/skill-sources/skipped.md
 GIT_CONFIG_GLOBAL="$EMPTY_GIT_CONFIG" GIT_CONFIG_NOSYSTEM=1 git -C "$SYNC_ROOT" -c user.name='CrossCheck test' -c user.email='crosscheck-test@example.invalid' commit -qm 'current shipped commands'
+git -C "$SYNC_ROOT" update-ref refs/remotes/origin/main "$(git -C "$SYNC_ROOT" rev-parse HEAD)"
+printf 'Unpublished skill command\n' > "$SYNC_ROOT/claude/skill-sources/unpublished.md"
+git -C "$SYNC_ROOT" add claude/skill-sources/unpublished.md
+GIT_CONFIG_GLOBAL="$EMPTY_GIT_CONFIG" GIT_CONFIG_NOSYSTEM=1 git -C "$SYNC_ROOT" -c user.name='CrossCheck test' -c user.email='crosscheck-test@example.invalid' commit -qm 'unpublished local skill'
 printf 'Old root shipped command\n' > "$HOME_FIXTURE/.claude/commands/managed.md"
+printf 'Unpublished skill command\n' > "$HOME_FIXTURE/.claude/commands/unpublished.md"
 ln -s "$SYNC_ROOT/skill-sources/linked.md" "$HOME_FIXTURE/.claude/commands/linked.md"
 ln -s "$SYNC_ROOT/claude/skill-sources/linked.md" "$HOME_FIXTURE/.claude/commands/wrong-name.md"
 printf 'user-owned command\n' > "$HOME_FIXTURE/.claude/commands/custom.md"
@@ -243,6 +274,10 @@ if [ "$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$HOME_
 fi
 if [ "$(readlink "$HOME_FIXTURE/.claude/commands/wrong-name.md")" != "$SYNC_ROOT/claude/skill-sources/linked.md" ]; then
   echo "custom same-tree alias pointing to a different skill name was rewritten" >&2
+  exit 1
+fi
+if [ -L "$HOME_FIXTURE/.claude/commands/unpublished.md" ] || [ "$(cat "$HOME_FIXTURE/.claude/commands/unpublished.md")" != "Unpublished skill command" ]; then
+  echo "a local-only skill version was treated as a published command" >&2
   exit 1
 fi
 if [ ! -L "$HOME_FIXTURE/.claude/commands/new-command.md" ] || [ -e "$HOME_FIXTURE/.claude/commands/skipped.md" ]; then

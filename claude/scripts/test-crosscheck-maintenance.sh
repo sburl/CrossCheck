@@ -161,6 +161,65 @@ fi
 export PATH="$STALE_NOOP_ORIGINAL_PATH"
 unset STALE_NOOP_REAL_JQ STALE_NOOP_TARGET STALE_NOOP_MARKER
 
+# The target mode must be pinned by the snapshot, not sampled before it.
+# Inject a mode change while each caller takes its snapshot, then restore the
+# original live mode before publication. Both callers must reject that race.
+MODE_RACE_BIN="$TEMP_DIR/mode-race-bin"
+MODE_RACE_MARKER="$TEMP_DIR/mode-race-snapshot-taken"
+MODE_RACE_HELPER="$REPO_ROOT/scripts/atomic-publish-file.py"
+REAL_PYTHON="$(command -v python3)"
+mkdir -p "$MODE_RACE_BIN"
+cat > "$MODE_RACE_BIN/python3" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = "$MODE_RACE_HELPER" ] && [ "$2" = snapshot ] \
+  && [ ! -e "$MODE_RACE_MARKER" ]; then
+  chmod 0600 "$MODE_RACE_TARGET"
+  "$REAL_PYTHON" "$@"
+  status=$?
+  chmod 0644 "$MODE_RACE_TARGET"
+  : > "$MODE_RACE_MARKER"
+  exit "$status"
+fi
+exec "$REAL_PYTHON" "$@"
+SH
+chmod +x "$MODE_RACE_BIN/python3"
+
+MODE_RACE_CRITICAL_TARGET="$TEMP_DIR/mode-race-critical-settings.json"
+printf '{"permissions":{"deny":[]}}\n' > "$MODE_RACE_CRITICAL_TARGET"
+cp "$MODE_RACE_CRITICAL_TARGET" "$MODE_RACE_CRITICAL_TARGET.expected"
+if PATH="$MODE_RACE_BIN:$PATH" REAL_PYTHON="$REAL_PYTHON" MODE_RACE_HELPER="$MODE_RACE_HELPER" \
+  MODE_RACE_MARKER="$MODE_RACE_MARKER" MODE_RACE_TARGET="$MODE_RACE_CRITICAL_TARGET" \
+  "$REPO_ROOT/scripts/sync-critical-settings.sh" "$MODE_RACE_CRITICAL_TARGET" --include-ask \
+  > "$TEMP_DIR/mode-race-critical.log" 2>&1; then
+  echo "critical settings updater accepted a mode change after its snapshot" >&2
+  exit 1
+fi
+if [ ! -e "$MODE_RACE_MARKER" ] \
+  || ! cmp -s "$MODE_RACE_CRITICAL_TARGET" "$MODE_RACE_CRITICAL_TARGET.expected" \
+  || [ "$(stat -f '%Lp' "$MODE_RACE_CRITICAL_TARGET" 2>/dev/null || stat -c '%a' "$MODE_RACE_CRITICAL_TARGET")" != 644 ]; then
+  echo "critical settings updater did not preserve the mode-raced target" >&2
+  cat "$TEMP_DIR/mode-race-critical.log" >&2
+  exit 1
+fi
+
+rm -f "$MODE_RACE_MARKER"
+MODE_RACE_HOOK_TARGET="$TEMP_DIR/mode-race-hook-settings.json"
+printf '{"permissions":{"deny":[]}}\n' > "$MODE_RACE_HOOK_TARGET"
+cp "$MODE_RACE_HOOK_TARGET" "$MODE_RACE_HOOK_TARGET.expected"
+if PATH="$MODE_RACE_BIN:$PATH" REAL_PYTHON="$REAL_PYTHON" MODE_RACE_HELPER="$MODE_RACE_HELPER" \
+  MODE_RACE_MARKER="$MODE_RACE_MARKER" MODE_RACE_TARGET="$MODE_RACE_HOOK_TARGET" \
+  "$INSTALLER" "$MODE_RACE_HOOK_TARGET" "$HOOK" > "$TEMP_DIR/mode-race-hook.log" 2>&1; then
+  echo "Claude hook installer accepted a mode change after its snapshot" >&2
+  exit 1
+fi
+if [ ! -e "$MODE_RACE_MARKER" ] \
+  || ! cmp -s "$MODE_RACE_HOOK_TARGET" "$MODE_RACE_HOOK_TARGET.expected" \
+  || [ "$(stat -f '%Lp' "$MODE_RACE_HOOK_TARGET" 2>/dev/null || stat -c '%a' "$MODE_RACE_HOOK_TARGET")" != 644 ]; then
+  echo "Claude hook installer did not preserve the mode-raced target" >&2
+  cat "$TEMP_DIR/mode-race-hook.log" >&2
+  exit 1
+fi
+
 INSTALLED_COMMAND="$(jq -r --arg hook "$HOOK" '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[] | select(.type == "command" and (.command | contains($hook))) | .command' "$SETTINGS")"
 if printf '%s' '{"tool_name":"Bash","tool_input":{"command":"npm install"}}' | GATE_MARKER="$TEMP_DIR/invoked" bash -c "$INSTALLED_COMMAND" 2> "$TEMP_DIR/hook.stderr"; then
   echo "installed gate unexpectedly allowed a blocked payload" >&2
@@ -498,6 +557,14 @@ if actual.count(expected_block) != 1:
 if stat.S_IMODE(os.stat(sys.argv[1]).st_mode) != 0o640:
     raise SystemExit("Codex bootstrap changed the existing AGENTS.md mode")
 PY
+
+# Re-running Codex bootstrap with an identical managed block is a true no-op.
+CODEX_BYTE_AGENT_ID="$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_dev}:{s.st_ino}")' "$CODEX_BYTE_HOME/.codex/AGENTS.md")"
+run_bootstrap_with_declines "$CODEX_BYTE_HOME" "$CODEX_BYTE_SCRIPT" "Codex unchanged instruction no-op"
+if [ "$CODEX_BYTE_AGENT_ID" != "$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_dev}:{s.st_ino}")' "$CODEX_BYTE_HOME/.codex/AGENTS.md")" ]; then
+  echo "Codex bootstrap replaced an already-current AGENTS.md" >&2
+  exit 1
+fi
 
 # Codex bootstrap must reject a replacement .codex symlink at the settings
 # sync boundary, including when settings existed during the shell preflight.
@@ -3624,6 +3691,13 @@ ln -s "$CRITICAL_HOME/.claude/actual.json" "$CRITICAL_HOME/.claude/settings.json
 TMPDIR="$TEMP_DIR" "$REPO_ROOT/scripts/sync-critical-settings.sh" "$CRITICAL_HOME/.claude/settings.json" --include-ask
 if [ ! -L "$CRITICAL_HOME/.claude/settings.json" ] || ! jq -e '.custom == "keep" and (.permissions.deny | length == 6) and (.permissions.ask | index("Bash(gh api *)") != null)' "$CRITICAL_HOME/.claude/settings.json" >/dev/null; then
   echo "critical settings sync replaced its symlink or missed a security rule" >&2
+  exit 1
+fi
+# macOS ships Bash 3.2 at /bin/bash. Keep this invocation explicit so empty
+# optional publish arguments stay safe under its set -u array semantics.
+if ! /bin/bash "$REPO_ROOT/scripts/sync-critical-settings.sh" \
+  "$CRITICAL_HOME/.claude/settings.json" --include-ask | grep -Fq 'already current'; then
+  echo "critical settings updater failed under the system Bash" >&2
   exit 1
 fi
 CRITICAL_SETTINGS_INODE="$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_dev}:{s.st_ino}")' "$CRITICAL_HOME/.claude/actual.json")"

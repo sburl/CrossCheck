@@ -45,12 +45,6 @@ else
 fi
 SETTINGS_ROOT="$(dirname "$SETTINGS_TARGET")"
 SETTINGS_RELATIVE="$(basename "$SETTINGS_TARGET")"
-if stat -c '%a' "$SETTINGS_TARGET" >/dev/null 2>&1; then
-  SETTINGS_MODE="$(stat -c '%a' "$SETTINGS_TARGET")"
-else
-  SETTINGS_MODE="$(stat -f '%Lp' "$SETTINGS_TARGET")"
-fi
-
 SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-settings-snapshot.XXXXXX")"
 STAGED="$(mktemp "${TMPDIR:-/tmp}/crosscheck-settings-stage.XXXXXX")"
 python3 "$PUBLISH_HELPER" private-file "$STAGED"
@@ -66,10 +60,8 @@ cleanup_settings_stages() {
 }
 trap cleanup_settings_stages EXIT
 SNAPSHOT_OPTIONS=(--private)
-PUBLISH_OPTIONS=()
 if [ "$STRICT_ROOT" -eq 1 ]; then
   SNAPSHOT_OPTIONS+=(--strict-root)
-  PUBLISH_OPTIONS+=(--strict-root)
 fi
 if ! python3 "$PUBLISH_HELPER" snapshot "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SNAPSHOT" "${SNAPSHOT_OPTIONS[@]}"; then
   echo "Settings changed or became unsafe while it was being read: $SETTINGS_FILE" >&2
@@ -128,7 +120,11 @@ if cmp -s <(jq -S -c . "$SNAPSHOT") <(jq -S -c . "$STAGED"); then
   exit 0
 fi
 PUBLISH_STARTED=1
-python3 "$PUBLISH_HELPER" publish "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SNAPSHOT" "$STAGED" "$SETTINGS_MODE" "${PUBLISH_OPTIONS[@]}"
+if [ "$STRICT_ROOT" -eq 1 ]; then
+  python3 "$PUBLISH_HELPER" publish "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SNAPSHOT" "$STAGED" --strict-root
+else
+  python3 "$PUBLISH_HELPER" publish "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SNAPSHOT" "$STAGED"
+fi
 CURRENT_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
 if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
   echo "Settings path changed during CrossCheck update: $SETTINGS_FILE" >&2

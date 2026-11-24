@@ -16,12 +16,6 @@ fi
 SETTINGS_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
 SETTINGS_ROOT="$(dirname "$SETTINGS_TARGET")"
 SETTINGS_RELATIVE="$(basename "$SETTINGS_TARGET")"
-if stat -c '%a' "$SETTINGS_TARGET" >/dev/null 2>&1; then
-  SETTINGS_MODE="$(stat -c '%a' "$SETTINGS_TARGET")"
-else
-  SETTINGS_MODE="$(stat -f '%Lp' "$SETTINGS_TARGET")"
-fi
-
 HOOK_RUNNER='CROSSCHECK_SUPPLY_CHAIN_GATE_V1=1; hook=$1; if [[ ! -x "$hook" ]]; then printf "Claude supply-chain gate unavailable or non-executable: %s\\n" "$hook" >&2; exit 2; fi; if bash "$hook"; then status=0; else status=$?; fi; if [[ "$status" -ne 0 && "$status" -ne 2 ]]; then printf "Claude supply-chain gate failed (%d): %s\\n" "$status" "$hook" >&2; exit 2; fi; exit "$status"'
 printf -v HOOK_COMMAND 'bash -c %q -- %q' "$HOOK_RUNNER" "$HOOK_FILE"
 PUBLISH_HELPER="$(cd "$(dirname "$0")/../.." && pwd)/scripts/atomic-publish-file.py"
@@ -149,7 +143,7 @@ if cmp -s <(jq -S -c . "$SETTINGS_SNAPSHOT") <(jq -S -c . "$TEMP_FILE"); then
   exit 0
 fi
 PUBLISH_STARTED=1
-if ! python3 "$PUBLISH_HELPER" publish "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SETTINGS_SNAPSHOT" "$TEMP_FILE" "$SETTINGS_MODE"; then
+if ! python3 "$PUBLISH_HELPER" publish "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SETTINGS_SNAPSHOT" "$TEMP_FILE"; then
   exit 1
 fi
 CURRENT_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"

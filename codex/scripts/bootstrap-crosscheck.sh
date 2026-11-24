@@ -186,13 +186,23 @@ if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" ensure-direct
     echo "❌ Could not safely create $HOME/.codex" >&2
     exit 1
 fi
-CODEX_AGENTS_PUBLISH_STARTED=1
-if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
-    "$HOME/.codex" "AGENTS.md" "$CODEX_AGENTS_EXPECTED" "$CODEX_AGENTS_STAGE" --strict-root; then
-    echo "❌ Could not safely register workflow in $CODEX_AGENTS_FILE" >&2
-    exit 1
+if [ "$CODEX_AGENTS_EXPECTED" != "--absent" ] \
+    && cmp -s "$CODEX_AGENTS_SNAPSHOT" "$CODEX_AGENTS_STAGE"; then
+    if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" snapshot-current \
+        "$HOME/.codex" "AGENTS.md" "$CODEX_AGENTS_SNAPSHOT"; then
+        echo "❌ Codex instructions changed during CrossCheck update; refusing to report current: $CODEX_AGENTS_FILE" >&2
+        exit 1
+    fi
+    echo "   ✅ CrossCheck workflow is already current in $CODEX_AGENTS_FILE"
+else
+    CODEX_AGENTS_PUBLISH_STARTED=1
+    if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
+        "$HOME/.codex" "AGENTS.md" "$CODEX_AGENTS_EXPECTED" "$CODEX_AGENTS_STAGE" --strict-root; then
+        echo "❌ Could not safely register workflow in $CODEX_AGENTS_FILE" >&2
+        exit 1
+    fi
+    echo "   ✅ Registered workflow in $CODEX_AGENTS_FILE"
 fi
-echo "   ✅ Registered workflow in $CODEX_AGENTS_FILE"
 echo "   📖 Workflow source: $CODEX_SOURCE_DIR/CODEX.md"
 echo ""
 

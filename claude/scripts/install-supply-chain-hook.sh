@@ -13,22 +13,6 @@ if [ ! -x "$HOOK_FILE" ]; then
   exit 1
 fi
 
-# Validate before writing anything. Both bootstrap entry points and this
-# installer use one atomic update so malformed settings cannot partially lose
-# deny rules, symlink identity, or the file's mode.
-if ! jq -s -e '
-  length == 1 and
-  (.[0] | type == "object" and
-    ((has("permissions") | not) or (.permissions | type == "object")) and
-    ((.permissions | has("deny") | not) or (.permissions.deny | type == "array")) and
-    ((has("hooks") | not) or (.hooks | type == "object")) and
-    ((.hooks | has("PreToolUse") | not) or (.hooks.PreToolUse | type == "array")) and
-    ((has("PreToolUse") | not) or (.PreToolUse | type == "array")))
-' "$SETTINGS_FILE" >/dev/null; then
-  echo "Claude settings file must contain exactly one valid JSON object: $SETTINGS_FILE" >&2
-  exit 1
-fi
-
 SETTINGS_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
 if stat -c '%a' "$SETTINGS_TARGET" >/dev/null 2>&1; then
   SETTINGS_MODE="$(stat -c '%a' "$SETTINGS_TARGET")"
@@ -38,8 +22,27 @@ fi
 
 HOOK_RUNNER='CROSSCHECK_SUPPLY_CHAIN_GATE_V1=1; hook=$1; if [[ ! -x "$hook" ]]; then printf "Claude supply-chain gate unavailable or non-executable: %s\\n" "$hook" >&2; exit 2; fi; if bash "$hook"; then status=0; else status=$?; fi; if [[ "$status" -ne 0 && "$status" -ne 2 ]]; then printf "Claude supply-chain gate failed (%d): %s\\n" "$status" "$hook" >&2; exit 2; fi; exit "$status"'
 printf -v HOOK_COMMAND 'bash -c %q -- %q' "$HOOK_RUNNER" "$HOOK_FILE"
+SETTINGS_SNAPSHOT="$(mktemp "${SETTINGS_TARGET}.source.XXXXXX")"
+TEMP_FILE=""
+trap 'rm -f "$TEMP_FILE" "$SETTINGS_SNAPSHOT"' EXIT
+cp "$SETTINGS_TARGET" "$SETTINGS_SNAPSHOT"
+
+# Work from one private snapshot and refuse to publish if another process
+# changes the live settings while validation is running.
+if ! jq -s -e '
+  length == 1 and
+  (.[0] | type == "object" and
+    ((has("permissions") | not) or (.permissions | type == "object")) and
+    ((.permissions | has("deny") | not) or (.permissions.deny | type == "array")) and
+    ((has("hooks") | not) or (.hooks | type == "object")) and
+    ((.hooks | has("PreToolUse") | not) or (.hooks.PreToolUse | type == "array")) and
+    ((has("PreToolUse") | not) or (.PreToolUse | type == "array")))
+' "$SETTINGS_SNAPSHOT" >/dev/null; then
+  echo "Claude settings file must contain exactly one valid JSON object: $SETTINGS_FILE" >&2
+  exit 1
+fi
+
 TEMP_FILE="$(mktemp "${SETTINGS_TARGET}.tmp.XXXXXX")"
-trap 'rm -f "$TEMP_FILE"' EXIT
 
 if ! jq --arg hook "$HOOK_COMMAND" --argjson rules '[
   "Bash(gh*--admin*)",
@@ -91,7 +94,7 @@ if ! jq --arg hook "$HOOK_COMMAND" --argjson rules '[
   | .permissions = ((.permissions // {}) + {"deny":$deny})
   | .hooks = ($hooks + {"PreToolUse":($pre_tool_use | install_hook($hook))})
   | del(.PreToolUse)
-' "$SETTINGS_FILE" > "$TEMP_FILE"; then
+' "$SETTINGS_SNAPSHOT" > "$TEMP_FILE"; then
   echo "Could not update Claude settings in $SETTINGS_FILE" >&2
   exit 1
 fi
@@ -116,5 +119,18 @@ if ! jq -s -e --arg hook "$HOOK_COMMAND" --argjson rules '[
 fi
 
 chmod "$SETTINGS_MODE" "$TEMP_FILE"
+CURRENT_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
+if [ -f "$SETTINGS_TARGET" ]; then
+  if stat -c '%a' "$SETTINGS_TARGET" >/dev/null 2>&1; then
+    CURRENT_MODE="$(stat -c '%a' "$SETTINGS_TARGET")"
+  else
+    CURRENT_MODE="$(stat -f '%Lp' "$SETTINGS_TARGET")"
+  fi
+else
+  CURRENT_MODE=""
+fi
+if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ] || [ "$CURRENT_MODE" != "$SETTINGS_MODE" ] || ! cmp -s "$SETTINGS_SNAPSHOT" "$SETTINGS_TARGET"; then
+  echo "Claude settings changed while the supply-chain hook was being installed; refusing to overwrite: $SETTINGS_FILE" >&2
+  exit 1
+fi
 mv "$TEMP_FILE" "$SETTINGS_TARGET"
-trap - EXIT

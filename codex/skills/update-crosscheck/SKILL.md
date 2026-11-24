@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version, including copied Codex-nat
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-11-23-18-25
+**Last Updated:** 2026-11-23-23-15
 
 # Update CrossCheck
 
@@ -166,8 +166,37 @@ if [ -d "$CROSSCHECK_DIR/codex/skills" ]; then
 else
     NATIVE_SKILLS_DIR="$CROSSCHECK_DIR/skills"
 fi
-mkdir -p "$HOME/.codex/skills"
 NATIVE_UPDATED=0
+NATIVE_PRESERVED=0
+NATIVE_SKILLS_ROOT="$HOME/.codex/skills"
+NATIVE_SOURCE_ROOT="${NATIVE_SKILLS_DIR#"$CROSSCHECK_DIR/"}"
+
+is_known_shipped_codex_file() {
+    local target_file="$1" source_path="$2" revision
+    if ! git -C "$CROSSCHECK_DIR" rev-parse --verify refs/remotes/origin/main >/dev/null 2>&1; then
+        return 1
+    fi
+    while IFS= read -r revision; do
+        if git -C "$CROSSCHECK_DIR" show "$revision:$source_path" 2>/dev/null | cmp -s - "$target_file"; then
+            return 0
+        fi
+    done < <(git -C "$CROSSCHECK_DIR" rev-list refs/remotes/origin/main -- "$source_path" 2>/dev/null)
+    return 1
+}
+
+has_symlink_ancestor() {
+    local current="$1" root="$2"
+    while [ "$current" != "$root" ]; do
+        [ ! -L "$current" ] || return 0
+        current="$(dirname "$current")"
+    done
+    return 1
+}
+
+if [ -L "$HOME/.codex" ] || [ -L "$NATIVE_SKILLS_ROOT" ]; then
+    echo "   Preserving linked Codex skills directory; managed skill refresh skipped"
+else
+    mkdir -p "$NATIVE_SKILLS_ROOT"
 for skill_dir in "$NATIVE_SKILLS_DIR"/*; do
     [ -d "$skill_dir" ] || continue
     [ -f "$skill_dir/SKILL.md" ] || continue
@@ -175,11 +204,44 @@ for skill_dir in "$NATIVE_SKILLS_DIR"/*; do
     if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
         continue
     fi
-    mkdir -p "$HOME/.codex/skills/$skill_name"
-    cp -R "$skill_dir/." "$HOME/.codex/skills/$skill_name/"
-    NATIVE_UPDATED=$((NATIVE_UPDATED + 1))
+    target_dir="$NATIVE_SKILLS_ROOT/$skill_name"
+    if [ -L "$target_dir" ] || { [ -e "$target_dir" ] && [ ! -d "$target_dir" ]; }; then
+        echo "   Preserving linked or non-directory Codex skill: $skill_name"
+        NATIVE_PRESERVED=$((NATIVE_PRESERVED + 1))
+        continue
+    fi
+    mkdir -p "$target_dir"
+    skill_changed=0
+    while IFS= read -r -d '' source_file; do
+        relative_path="${source_file#"$skill_dir"/}"
+        target_file="$target_dir/$relative_path"
+        target_parent="$(dirname "$target_file")"
+        if has_symlink_ancestor "$target_parent" "$target_dir" || [ -L "$target_file" ] || { [ -e "$target_file" ] && [ ! -f "$target_file" ]; }; then
+            echo "   Preserving linked or non-regular Codex skill path: $skill_name/$relative_path"
+            NATIVE_PRESERVED=$((NATIVE_PRESERVED + 1))
+            continue
+        fi
+        if [ -f "$target_file" ]; then
+            if cmp -s "$source_file" "$target_file"; then
+                continue
+            fi
+            source_path="$NATIVE_SOURCE_ROOT/$skill_name/$relative_path"
+            if ! is_known_shipped_codex_file "$target_file" "$source_path"; then
+                echo "   Preserving customized Codex skill file: $skill_name/$relative_path"
+                NATIVE_PRESERVED=$((NATIVE_PRESERVED + 1))
+                continue
+            fi
+        fi
+        mkdir -p "$target_parent"
+        cp "$source_file" "$target_file"
+        skill_changed=1
+    done < <(find "$skill_dir" -type f -print0)
+    if [ "$skill_changed" -eq 1 ]; then
+        NATIVE_UPDATED=$((NATIVE_UPDATED + 1))
+    fi
 done
-echo "   ✅ Refreshed $NATIVE_UPDATED Codex-native skill(s)"
+fi
+echo "   ✅ Refreshed $NATIVE_UPDATED Codex-native skill(s); preserved $NATIVE_PRESERVED customized or linked path(s)"
 
 # Claude commands use the Claude mirror and preserve user-owned files.
 CLAUDE_SYNC_RESULT="$("$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME")"

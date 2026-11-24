@@ -5,6 +5,14 @@
 
 set -e
 
+CODEX_AGENTS_TEMP_DIR=""
+SETTINGS_STAGE=""
+cleanup_bootstrap_stages() {
+    [ -z "$CODEX_AGENTS_TEMP_DIR" ] || rm -rf "$CODEX_AGENTS_TEMP_DIR"
+    [ -z "$SETTINGS_STAGE" ] || rm -f "$SETTINGS_STAGE"
+}
+trap cleanup_bootstrap_stages EXIT
+
 echo "🚀 CrossCheck Bootstrap"
 echo "=================="
 echo ""
@@ -101,29 +109,62 @@ fi
 # 2. Install a managed pointer in Codex's discovered global instruction file.
 echo "📝 Step 2: Register the global Codex workflow..."
 CODEX_AGENTS_FILE="$HOME/.codex/AGENTS.md"
-mkdir -p "$HOME/.codex"
-python3 - "$CODEX_AGENTS_FILE" "$CODEX_SOURCE_DIR/CODEX.md" <<'PY'
+CODEX_AGENTS_DIR="$HOME/.codex"
+mkdir -p "$CODEX_AGENTS_DIR"
+CODEX_AGENTS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/crosscheck-codex-agents.XXXXXX")"
+CODEX_AGENTS_SNAPSHOT="$CODEX_AGENTS_TEMP_DIR/snapshot"
+CODEX_AGENTS_STAGE="$CODEX_AGENTS_TEMP_DIR/stage"
+: > "$CODEX_AGENTS_SNAPSHOT"
+: > "$CODEX_AGENTS_STAGE"
+if python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" snapshot \
+    "$CODEX_AGENTS_DIR" "AGENTS.md" "$CODEX_AGENTS_SNAPSHOT"; then
+    CODEX_AGENTS_EXPECTED="$CODEX_AGENTS_SNAPSHOT"
+else
+    SNAPSHOT_STATUS=$?
+    if [ "$SNAPSHOT_STATUS" -ne 4 ]; then
+        echo "❌ Could not safely read $CODEX_AGENTS_FILE" >&2
+        exit 1
+    fi
+    CODEX_AGENTS_EXPECTED="--absent"
+fi
+python3 - "$CODEX_AGENTS_EXPECTED" "$CODEX_AGENTS_SNAPSHOT" "$CODEX_AGENTS_STAGE" "$CODEX_SOURCE_DIR/CODEX.md" <<'PY'
 from pathlib import Path
+import os
+import stat
 import sys
 
-agents_file = Path(sys.argv[1])
-workflow = Path(sys.argv[2]).expanduser().resolve()
+expected_snapshot = sys.argv[1]
+snapshot_file = Path(sys.argv[2])
+stage_file = Path(sys.argv[3])
+workflow = Path(sys.argv[4]).expanduser().resolve()
 start = "<!-- BEGIN CrossCheck managed workflow -->"
 end = "<!-- END CrossCheck managed workflow -->"
 block = f"{start}\nRead and follow the CrossCheck Codex workflow at {workflow}.\n{end}"
-text = agents_file.read_text() if agents_file.exists() else ""
+text = snapshot_file.read_text() if expected_snapshot != "--absent" else ""
 has_start = start in text
 has_end = end in text
 if has_start != has_end or text.count(start) > 1 or text.count(end) > 1:
-    raise SystemExit(f"Malformed CrossCheck workflow markers in {agents_file}")
+    raise SystemExit(f"Malformed CrossCheck workflow markers in {Path.home() / '.codex/AGENTS.md'}")
 if has_start:
     before, remainder = text.split(start, 1)
     _, after = remainder.split(end, 1)
     updated = before.rstrip() + "\n\n" + block + after
 else:
     updated = text.rstrip() + ("\n\n" if text.strip() else "") + block + "\n"
-agents_file.write_text(updated)
+stage_file.write_text(updated)
+if expected_snapshot != "--absent":
+    mode = stat.S_IMODE(snapshot_file.stat().st_mode)
+else:
+    current_umask = os.umask(0)
+    os.umask(current_umask)
+    mode = 0o666 & ~current_umask
+os.chmod(stage_file, mode)
 PY
+if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
+    "$CODEX_AGENTS_DIR" "AGENTS.md" "$CODEX_AGENTS_EXPECTED" "$CODEX_AGENTS_STAGE"; then
+    echo "❌ Could not safely register workflow in $CODEX_AGENTS_FILE" >&2
+    exit 1
+fi
 echo "   ✅ Registered workflow in $CODEX_AGENTS_FILE"
 echo "   📖 Workflow source: $CODEX_SOURCE_DIR/CODEX.md"
 echo ""
@@ -137,7 +178,6 @@ if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
 else
     echo "   Creating ~/.codex/settings.json from template..."
     SETTINGS_STAGE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-codex-settings.XXXXXX")"
-    trap 'rm -f "$SETTINGS_STAGE"' EXIT
     cp "$CROSSCHECK_ROOT_DIR/settings.template.json" "$SETTINGS_STAGE"
     if python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
         "$HOME" ".codex/settings.json" --absent "$SETTINGS_STAGE"; then

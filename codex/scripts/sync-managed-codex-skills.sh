@@ -11,7 +11,8 @@ else
   SOURCE_PREFIX="skills"
 fi
 
-SKILLS_ROOT="$TARGET_HOME/.codex/skills"
+CODEX_ROOT="$TARGET_HOME/.codex"
+SKILLS_ROOT="$CODEX_ROOT/skills"
 SKIP_FILE="$TARGET_HOME/.crosscheck/skip-skills"
 PUBLISH_HELPER="$CROSSCHECK_ROOT/scripts/atomic-publish-file.py"
 UPDATED=0
@@ -45,6 +46,8 @@ if [ -L "$TARGET_HOME/.codex" ] || [ -L "$SKILLS_ROOT" ]; then
   exit 0
 fi
 
+mkdir -p "$CODEX_ROOT"
+
 for skill_dir in "$SOURCE_ROOT"/*; do
   [ -d "$skill_dir" ] && [ ! -L "$skill_dir" ] || continue
   [ -f "$skill_dir/SKILL.md" ] || continue
@@ -62,7 +65,7 @@ for skill_dir in "$SOURCE_ROOT"/*; do
   while IFS= read -r -d '' source_file; do
     relative_path="${source_file#"$skill_dir"/}"
     target_file="$target_dir/$relative_path"
-    target_relative=".codex/skills/$skill_name/$relative_path"
+    target_relative="skills/$skill_name/$relative_path"
     target_parent="$(dirname "$target_file")"
     if has_symlink_ancestor "$target_parent" "$target_dir" || [ -L "$target_file" ] || { [ -e "$target_file" ] && [ ! -f "$target_file" ]; }; then
       echo "Preserving linked or non-regular Codex skill path: $skill_name/$relative_path"
@@ -72,7 +75,7 @@ for skill_dir in "$SOURCE_ROOT"/*; do
 
     expected_snapshot="--absent"
     CURRENT_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-snapshot.XXXXXX")"
-    if python3 "$PUBLISH_HELPER" snapshot "$TARGET_HOME" "$target_relative" "$CURRENT_SNAPSHOT"; then
+    if python3 "$PUBLISH_HELPER" snapshot "$CODEX_ROOT" "$target_relative" "$CURRENT_SNAPSHOT"; then
       if cmp -s "$source_file" "$CURRENT_SNAPSHOT"; then
         rm -f "$CURRENT_SNAPSHOT"
         CURRENT_SNAPSHOT=""
@@ -91,19 +94,26 @@ for skill_dir in "$SOURCE_ROOT"/*; do
       snapshot_status=$?
       rm -f "$CURRENT_SNAPSHOT"
       CURRENT_SNAPSHOT=""
-      if [ "$snapshot_status" -ne 4 ]; then
-        echo "Preserving linked, unsafe, or changed Codex skill path: $skill_name/$relative_path"
-        PRESERVED=$((PRESERVED + 1))
-        continue
+      if [ "$snapshot_status" -eq 4 ]; then
+        : # A missing target file is an expected first-install case.
+      else
+        echo "Could not safely snapshot Codex skill file: $skill_name/$relative_path" >&2
+        exit "$snapshot_status"
       fi
     fi
 
     CURRENT_STAGE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-stage.XXXXXX")"
     cp -p "$source_file" "$CURRENT_STAGE"
-    if python3 "$PUBLISH_HELPER" publish "$TARGET_HOME" "$target_relative" "$expected_snapshot" "$CURRENT_STAGE"; then
+    if python3 "$PUBLISH_HELPER" publish "$CODEX_ROOT" "$target_relative" "$expected_snapshot" "$CURRENT_STAGE"; then
       skill_changed=1
     else
-      PRESERVED=$((PRESERVED + 1))
+      publish_status=$?
+      if [ "$publish_status" -eq 3 ]; then
+        PRESERVED=$((PRESERVED + 1))
+      else
+        echo "Could not safely publish Codex skill file: $skill_name/$relative_path" >&2
+        exit "$publish_status"
+      fi
     fi
     rm -f "$CURRENT_SNAPSHOT" "$CURRENT_STAGE"
     CURRENT_SNAPSHOT=""

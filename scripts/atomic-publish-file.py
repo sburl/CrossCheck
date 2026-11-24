@@ -361,6 +361,12 @@ def _open_stable_recovery_directory(
                 or os.path.commonpath((root_path, candidate)) == root_path
             ):
                 continue
+            recovery_candidate = os.path.join(candidate, ".crosscheck-recovery")
+            if (
+                os.path.commonpath((parent_path, recovery_candidate)) == parent_path
+                or os.path.commonpath((root_path, recovery_candidate)) == root_path
+            ):
+                continue
         except ValueError:
             continue
         try:
@@ -369,6 +375,18 @@ def _open_stable_recovery_directory(
             failures.append(error)
             continue
         if opened is not None:
+            recovery_path = opened[2]
+            try:
+                in_target_tree = (
+                    os.path.commonpath((parent_path, recovery_path)) == parent_path
+                    or os.path.commonpath((root_path, recovery_path)) == root_path
+                )
+            except ValueError:
+                in_target_tree = False
+            if in_target_tree:
+                os.close(opened[1])
+                os.close(opened[0])
+                continue
             return opened
     error = OSError(
         errno.EXDEV,
@@ -491,8 +509,7 @@ def publish_file(
             known_states = {published_state, original_state}
             if current_state is not None:
                 known_states.add(current_state)
-            restored = False
-            for _attempt in range(8):
+            while True:
                 try:
                     _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
                 except OSError as error:
@@ -508,7 +525,6 @@ def publish_file(
                         f"could not verify concurrent settings after rollback at {target}", recovery_path
                     ) from error
                 if displaced_state in known_states:
-                    restored = True
                     swapped = False
                     break
                 try:
@@ -522,11 +538,6 @@ def publish_file(
                     ) from error
                 known_states.add(displaced_state)
 
-            if not restored:
-                recovery_path = os.path.join(parent_path, staged_name)
-                raise ConcurrentUpdate(
-                    f"settings kept changing during rollback; recovery remains at {target}", recovery_path
-                )
             _unlink_stable_recovery(stable_recovery_fd, stable_recovery_name)
             stable_recovery_name = None
             if read_error is not None:

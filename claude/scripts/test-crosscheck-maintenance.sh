@@ -262,6 +262,58 @@ PY
   fi
 done
 
+# Codex bootstrap must detect an atomic edit to global instructions between
+# reading the source snapshot and publishing the managed block.
+AGENT_RACE_REPO="$TEMP_DIR/workspace/codex-agent-race/CrossCheck"
+AGENT_RACE_HOME="$TEMP_DIR/home-codex-agent-race"
+AGENT_RACE_SCRIPT="$AGENT_RACE_REPO/codex/scripts/bootstrap-crosscheck.sh"
+AGENT_RACE_SETTINGS_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$AGENT_RACE_HOME/.codex/AGENTS.md")"
+mkdir -p "$(dirname "$AGENT_RACE_REPO")" "$AGENT_RACE_HOME/.codex"
+python3 - "$REPO_ROOT" "$AGENT_RACE_REPO" <<'PY'
+import shutil
+import sys
+shutil.copytree(sys.argv[1], sys.argv[2], ignore=shutil.ignore_patterns(".git"))
+PY
+printf 'original global instructions\n' > "$AGENT_RACE_HOME/.codex/AGENTS.md"
+AGENT_RACE_BIN="$TEMP_DIR/codex-agent-race-bin"
+mkdir -p "$AGENT_RACE_BIN"
+AGENT_RACE_REAL_PYTHON="$(command -v python3)"
+cat > "$AGENT_RACE_BIN/python3" <<'SH'
+#!/usr/bin/env bash
+set -e
+if [ "$1" = "$AGENT_RACE_REPO/scripts/atomic-publish-file.py" ] \
+  && [ "$2" = publish ] \
+  && [ "$3" = "$HOME/.codex" ] \
+  && [ "$4" = AGENTS.md ] \
+  && [ ! -e "$AGENT_RACE_MARKER" ]; then
+  printf 'concurrent global instruction edit\n' > "$HOME/.codex/AGENTS.md"
+  : > "$AGENT_RACE_MARKER"
+fi
+exec "$AGENT_RACE_REAL_PYTHON" "$@"
+SH
+chmod +x "$AGENT_RACE_BIN/python3"
+if env HOME="$AGENT_RACE_HOME" PATH="$AGENT_RACE_BIN:$PATH" \
+  AGENT_RACE_REPO="$AGENT_RACE_REPO" AGENT_RACE_REAL_PYTHON="$AGENT_RACE_REAL_PYTHON" \
+  AGENT_RACE_MARKER="$TEMP_DIR/codex-agent-race-injected" TMPDIR="$TEMP_DIR" \
+  bash "$AGENT_RACE_SCRIPT" \
+  > "$TEMP_DIR/codex-agent-race.log" 2>&1; then
+  echo "Codex bootstrap overwrote a concurrent global instruction edit" >&2
+  exit 1
+fi
+if ! grep -Fq "file changed during CrossCheck update, refusing to overwrite: $AGENT_RACE_SETTINGS_TARGET" "$TEMP_DIR/codex-agent-race.log"; then
+  echo "Codex bootstrap failed without the concurrent-instruction diagnostic" >&2
+  cat "$TEMP_DIR/codex-agent-race.log" >&2
+  exit 1
+fi
+if [ "$(cat "$AGENT_RACE_HOME/.codex/AGENTS.md")" != "concurrent global instruction edit" ]; then
+  echo "Codex bootstrap lost the concurrent global instruction edit" >&2
+  exit 1
+fi
+if find "$TEMP_DIR" -maxdepth 1 -name 'crosscheck-codex-agents.*' -print -quit | grep -q .; then
+  echo "Codex bootstrap left its private instruction snapshot or stage" >&2
+  exit 1
+fi
+
 # A malformed template must fail before either bootstrap publishes a settings
 # file at the live path.
 for bootstrap in root claude; do
@@ -477,7 +529,13 @@ NATIVE_HOME="$TEMP_DIR/home-codex-native"
 mkdir -p "$NATIVE_HOME/.codex/skills/drain-repo" "$NATIVE_HOME/.codex/skills/update-crosscheck" "$NATIVE_HOME/.crosscheck"
 printf 'user customization\n' > "$NATIVE_HOME/.codex/skills/drain-repo/SKILL.md"
 printf 'old shipped skill\n' > "$NATIVE_HOME/.codex/skills/update-crosscheck/SKILL.md"
-bash "$NATIVE_REPO/codex/scripts/sync-managed-codex-skills.sh" "$NATIVE_REPO" "$NATIVE_HOME" > "$TEMP_DIR/codex-native-update.log"
+HOME="$NATIVE_HOME" bash "$NATIVE_REPO/codex/scripts/sync-managed-codex-skills.sh" "$NATIVE_REPO" "$NATIVE_HOME" > "$TEMP_DIR/codex-native-update.log" 2>&1
+NATIVE_RECOVERY_DIR="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$NATIVE_HOME/.crosscheck-recovery")"
+if ! grep -Fq "$NATIVE_RECOVERY_DIR/settings-" "$TEMP_DIR/codex-native-update.log"; then
+  echo "Codex native updater did not keep recovery outside its narrowed publisher root" >&2
+  cat "$TEMP_DIR/codex-native-update.log" >&2
+  exit 1
+fi
 if [ "$(cat "$NATIVE_HOME/.codex/skills/drain-repo/SKILL.md")" != "user customization" ]; then
   echo "Codex native updater overwrote a customized skill file" >&2
   exit 1
@@ -492,6 +550,21 @@ if ! cmp -s "$NATIVE_REPO/codex/skills/new-skill/SKILL.md" "$NATIVE_HOME/.codex/
 fi
 if ! cmp -s "$NATIVE_REPO/codex/skills/new-skill/REFERENCE.md" "$NATIVE_HOME/.codex/skills/new-skill/REFERENCE.md"; then
   echo "Codex native updater skipped a missing file inside a newly created skill directory" >&2
+  exit 1
+fi
+
+# A non-directory skills root is an operational failure, not a successful
+# refresh that silently preserves every managed skill.
+BROKEN_NATIVE_HOME="$TEMP_DIR/home-codex-native-broken"
+mkdir -p "$BROKEN_NATIVE_HOME/.codex"
+printf 'not a directory\n' > "$BROKEN_NATIVE_HOME/.codex/skills"
+if HOME="$BROKEN_NATIVE_HOME" bash "$NATIVE_REPO/codex/scripts/sync-managed-codex-skills.sh" "$NATIVE_REPO" "$BROKEN_NATIVE_HOME" > "$TEMP_DIR/codex-native-broken.log" 2>&1; then
+  echo "Codex native updater reported success with a non-directory skills root" >&2
+  exit 1
+fi
+if ! grep -Fq "Could not safely snapshot Codex skill file" "$TEMP_DIR/codex-native-broken.log"; then
+  echo "Codex native updater failed without reporting its invalid skills root" >&2
+  cat "$TEMP_DIR/codex-native-broken.log" >&2
   exit 1
 fi
 
@@ -560,9 +633,10 @@ if (scratch / "settings-dir-moved-during-publish/settings.json").read_text() != 
 # Settings callers use the target directory as the publisher root. Moving that
 # root after publication must be detected, with recovery outside the root.
 root_case = scratch / "settings-root-case"
-root_case.mkdir()
-root_home = root_case / "home"
+root_home = scratch / "settings-root-home"
 root_home.mkdir()
+root_case = root_home / ".crosscheck-recovery"
+root_case.mkdir()
 root_target = root_case / "settings.json"
 root_snapshot = scratch / "root-case-snapshot.json"
 root_stage = scratch / "root-case-stage.json"
@@ -585,7 +659,7 @@ try:
     module.publish_file(str(root_case), "settings.json", str(root_snapshot), str(root_stage))
 except module.ConcurrentUpdate as error:
     recovery = Path(error.recovery_path) if error.recovery_path else None
-    moved_root = scratch / "settings-root-case-moved"
+    moved_root = root_home / "settings-root-case-moved"
     if (
         not recovery
         or not recovery.is_file()
@@ -599,11 +673,11 @@ else:
 finally:
     os.environ["HOME"] = previous_home
     module._verify_parent_path = real_verify
-if (scratch / "settings-root-case-moved/settings.json").read_text() != '{"rootCase":"updated"}\n':
+if (root_home / "settings-root-case-moved/settings.json").read_text() != '{"rootCase":"updated"}\n':
     raise SystemExit("publisher lost staged settings when the publisher root moved")
 
-# If there is no private same-volume recovery location outside the target
-# parent, publication must fail before moving live settings.
+# If there is no private same-volume recovery location outside both the
+# publisher root and target parent, publication must fail before moving live settings.
 cross_volume_target = scratch / "cross-volume-preflight/settings.json"
 cross_volume_target.parent.mkdir()
 cross_volume_target.write_text('{"crossVolume":"original"}\n')
@@ -686,7 +760,7 @@ def replace_user_settings_then_exchange(first_fd, first, second_fd, second):
     target = race_target_dir / "settings.json"
     if not target.exists():
         raise SystemExit("live settings disappeared before atomic exchange")
-    if exchange_calls[0] in (1, 2):
+    if exchange_calls[0] <= 9:
         save_number = exchange_calls[0]
         competitor = race_target_dir / f"concurrent-settings-{save_number}.json"
         competitor.write_text(f'{{"setting":"concurrent user edit {save_number}"}}\n')
@@ -700,16 +774,20 @@ module._rename_exchange = replace_user_settings_then_exchange
 try:
     module.publish_file(str(race_target_dir), "settings.json", str(race_snapshot), str(race_stage))
 except module.ConcurrentUpdate as error:
-    if not error.recovery_path or Path(error.recovery_path).read_text() != '{"setting":"concurrent user edit 2"}\n':
+    if not error.recovery_path or Path(error.recovery_path).read_text() != '{"setting":"concurrent user edit 9"}\n':
         raise SystemExit("latest concurrent settings were not preserved in a durable recovery file")
     backups = {path.read_text() for path in Path(error.recovery_path).parent.glob("settings-*.bak")}
-    if '{"setting":"concurrent user edit 1"}\n' not in backups:
-        raise SystemExit("the first concurrent settings version was not preserved")
+    expected_backups = {
+        f'{{"setting":"concurrent user edit {save_number}"}}\n'
+        for save_number in range(1, 9)
+    }
+    if not expected_backups.issubset(backups):
+        raise SystemExit("rollback did not retain all earlier concurrent settings versions")
 else:
     raise SystemExit("atomic publisher overwrote settings replaced by a concurrent writer")
 finally:
     module._rename_exchange = real_exchange
-if race_target.read_text() != '{"setting":"concurrent user edit 2"}\n':
+if race_target.read_text() != '{"setting":"concurrent user edit 9"}\n':
     raise SystemExit("atomic publisher did not restore the latest concurrent settings to the live path")
 if list(race_target_dir.glob(".crosscheck-stage-*")):
     raise SystemExit("atomic publisher left a staged file after a concurrent update")

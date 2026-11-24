@@ -21,8 +21,24 @@ class RestorationFailed(ConcurrentUpdate):
     """The publisher could not prove that the previous live state was restored."""
 
 
-def _open_root(path: str) -> tuple[int, str]:
+def _open_root(path: str, *, reject_leaf_symlink: bool = False) -> tuple[int, str]:
     """Open a canonical root one component at a time, rejecting symlinks."""
+    if reject_leaf_symlink:
+        absolute = os.path.abspath(path)
+        leaf = os.path.basename(absolute)
+        if not leaf:
+            raise ValueError("a strict root must name a directory below its parent")
+        parent_fd, parent_path = _open_root(os.path.dirname(absolute))
+        try:
+            root_fd = os.open(
+                leaf,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=parent_fd,
+            )
+            root_path = os.path.join(parent_path, leaf)
+            return root_fd, root_path
+        finally:
+            os.close(parent_fd)
     canonical = os.path.realpath(os.path.abspath(path))
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     current_fd = os.open(os.path.sep, flags)
@@ -65,6 +81,22 @@ def _open_relative_parent(
     except BaseException:
         os.close(current_fd)
         raise
+
+
+def ensure_directory(root: str, relative_directory: str) -> None:
+    """Durably create a directory path beneath root without following symlinks."""
+    if not relative_directory or relative_directory.endswith("/"):
+        raise ValueError(f"directory must be a normalized relative path: {relative_directory}")
+    probe = f"{relative_directory}/.crosscheck-placeholder"
+    root_fd, root_path = _open_root(root)
+    parent_fd: int | None = None
+    try:
+        parent_fd, _, _ = _open_relative_parent(root_fd, root_path, probe, create=True)
+        _verify_parent_path(root_fd, root_path, probe, parent_fd)
+    finally:
+        if parent_fd is not None:
+            os.close(parent_fd)
+        os.close(root_fd)
 
 
 def _verify_parent_path(
@@ -580,12 +612,18 @@ def _rollback_failed_publish(
             inode_key,
         )
 
-    def recoverable_backup_path() -> str | None:
+    def recoverable_backup_path(*, prefer_stage: bool = False) -> str | None:
+        if prefer_stage:
+            try:
+                return verified_backup(published_state[0][:2])
+            except OSError:
+                return None
         try:
             stage_inode = _entry_state_at(parent_fd, staged_name)[0][:2]
         except OSError:
             stage_inode = None
-        for inode_key in (desired_state[0][:2], stage_inode):
+        candidates = (desired_state[0][:2], stage_inode)
+        for inode_key in candidates:
             if inode_key is None:
                 continue
             try:
@@ -633,7 +671,7 @@ def _rollback_failed_publish(
                 except OSError as error:
                     raise RestorationFailed(
                         f"settings recovery link changed before cleanup: {stage_path}",
-                        recoverable_backup_path() or stage_path,
+                        recoverable_backup_path(prefer_stage=True) or stage_path,
                     ) from error
                 return desired_backup_path or stage_backup_path
             preserved, _, _ = preserve_stage_state()
@@ -703,8 +741,9 @@ def publish_file(
     expected_snapshot: str | None,
     staged_file: str,
     expected_mode: int | None = None,
+    strict_root: bool = False,
 ) -> str | None:
-    root_fd, root_path = _open_root(root)
+    root_fd, root_path = _open_root(root, reject_leaf_symlink=strict_root)
     parent_fd, parent_path, target_name = _open_relative_parent(
         root_fd, root_path, relative_target, create=True
     )
@@ -720,6 +759,32 @@ def publish_file(
     exchange_attempted = False
     published_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
     original_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
+
+    def staged_recovery_path() -> str:
+        stage_path = os.path.join(parent_path, staged_name) if staged_name is not None else target
+        if published_state is None or stable_base_fd is None or stable_recovery_fd is None or recovery_path is None:
+            return stage_path
+        backup = recovered_entries.get(published_state[0][:2])
+        if backup is None:
+            return stage_path
+        backup_name, backup_path = backup
+        recovery_directory = os.path.dirname(backup_path)
+        recovery_base = os.path.dirname(recovery_directory)
+        try:
+            verified = _verify_stable_recovery_link(
+                stable_base_fd,
+                recovery_base,
+                stable_recovery_fd,
+                os.path.basename(recovery_directory),
+                recovery_directory,
+                backup_name,
+                backup_path,
+                published_state[0][:2],
+            )
+        except OSError:
+            return stage_path
+        return verified or stage_path
+
     try:
         staged_name = _copy_into_directory(staged_file, parent_fd, expected_mode)
         _fsync_directory(parent_fd)
@@ -925,7 +990,7 @@ def publish_file(
                     except (ConcurrentUpdate, OSError) as rollback_error:
                         raise RestorationFailed(
                             f"settings parent changed before recovery cleanup: {target}",
-                            failure_recovery_path or recovery_path or os.path.join(parent_path, staged_name),
+                            staged_recovery_path(),
                         ) from rollback_error
                     try:
                         for recovered_inode, (backup_name, backup_path) in recovered_entries.items():
@@ -942,7 +1007,7 @@ def publish_file(
                     except OSError as recovery_error:
                         raise RestorationFailed(
                             f"settings recovery link changed before cleanup: {target}",
-                            failure_recovery_path or recovery_path or os.path.join(parent_path, staged_name),
+                            staged_recovery_path(),
                         ) from recovery_error
                 try:
                     os.unlink(staged_name, dir_fd=parent_fd)
@@ -1365,6 +1430,14 @@ def sync_symlink(
 
 
 def main() -> int:
+    if len(sys.argv) == 4 and sys.argv[1] == "ensure-directory":
+        _, _, root, relative_directory = sys.argv
+        try:
+            ensure_directory(root, relative_directory)
+        except (OSError, ValueError) as error:
+            sys.stderr.write(f"could not safely create directory {relative_directory}: {error}\n")
+            return 2
+        return 0
     if len(sys.argv) in (5, 6) and sys.argv[1] == "snapshot":
         if len(sys.argv) == 6 and sys.argv[5] != "--private":
             sys.stderr.write("snapshot's optional mode must be --private\n")
@@ -1399,18 +1472,33 @@ def main() -> int:
         else:
             return 4
         return 0
-    if len(sys.argv) not in (6, 7) or sys.argv[1] != "publish":
+    if not 6 <= len(sys.argv) <= 8 or sys.argv[1] != "publish":
         sys.stderr.write(
-            "usage: atomic-publish-file.py publish ROOT RELATIVE_TARGET EXPECTED_SNAPSHOT|--absent STAGED_FILE [EXPECTED_MODE]\n"
+            "usage: atomic-publish-file.py publish ROOT RELATIVE_TARGET EXPECTED_SNAPSHOT|--absent STAGED_FILE [EXPECTED_MODE] [--strict-root]\n"
             "       atomic-publish-file.py snapshot ROOT RELATIVE_TARGET OUTPUT_SNAPSHOT [--private]\n"
+            "       atomic-publish-file.py ensure-directory ROOT RELATIVE_DIRECTORY\n"
             "       atomic-publish-file.py symlink ROOT RELATIVE_TARGET absent|snapshot|link EXPECTED_VALUE NEW_LINK\n",
         )
         return 2
-    _, _, root, relative_target, expected, staged, *mode_arg = sys.argv
-    expected_mode = int(mode_arg[0], 8) if mode_arg else None
+    _, _, root, relative_target, expected, staged, *publish_options = sys.argv
+    strict_root = "--strict-root" in publish_options
+    mode_args = [option for option in publish_options if option != "--strict-root"]
+    if len(mode_args) > 1:
+        sys.stderr.write("publish accepts at most one expected mode\n")
+        return 2
+    try:
+        expected_mode = int(mode_args[0], 8) if mode_args else None
+    except ValueError:
+        sys.stderr.write("publish expected mode must be octal\n")
+        return 2
     try:
         recovery_path = publish_file(
-            root, relative_target, None if expected == "--absent" else expected, staged, expected_mode
+            root,
+            relative_target,
+            None if expected == "--absent" else expected,
+            staged,
+            expected_mode,
+            strict_root,
         )
     except RestorationFailed as error:
         sys.stderr.write(f"{error}\n")

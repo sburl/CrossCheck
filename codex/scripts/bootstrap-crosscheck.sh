@@ -158,8 +158,13 @@ else:
     mode = 0o666 & ~current_umask
 os.chmod(stage_file, mode)
 PY
+if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" ensure-directory \
+    "$HOME" ".codex"; then
+    echo "❌ Could not safely create $HOME/.codex" >&2
+    exit 1
+fi
 if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
-    "$HOME" ".codex/AGENTS.md" "$CODEX_AGENTS_EXPECTED" "$CODEX_AGENTS_STAGE"; then
+    "$HOME/.codex" "AGENTS.md" "$CODEX_AGENTS_EXPECTED" "$CODEX_AGENTS_STAGE" --strict-root; then
     echo "❌ Could not safely register workflow in $CODEX_AGENTS_FILE" >&2
     exit 1
 fi

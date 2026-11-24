@@ -173,6 +173,31 @@ if find "$PRIVATE_SHARED_TMP" -mindepth 1 -print -quit | grep -q .; then
   exit 1
 fi
 
+for SETTINGS_SYNC in "$REPO_ROOT/scripts/sync-critical-settings.sh" \
+  "$REPO_ROOT/claude/scripts/sync-critical-settings.sh" \
+  "$REPO_ROOT/codex/scripts/sync-critical-settings.sh"; do
+  printf '{"privateValue":"fixture"}\n' > "$PRIVATE_SETTINGS"
+  chmod 0644 "$PRIVATE_SETTINGS"
+  rm -f "$PRIVATE_MODE_MARKER" "$PRIVATE_SNAPSHOT_MODE_MARKER"
+  (
+    umask 022
+    PATH="$PRIVATE_JQ_BIN:$PATH" TMPDIR="$PRIVATE_SHARED_TMP" REAL_JQ="$REAL_JQ" \
+      REAL_PYTHON="$REAL_PYTHON" PRIVATE_PUBLISH_HELPER="$REPO_ROOT/scripts/atomic-publish-file.py" \
+      PRIVATE_SNAPSHOT_MODE_MARKER="$PRIVATE_SNAPSHOT_MODE_MARKER" TEMP_MODE_MARKER="$PRIVATE_MODE_MARKER" \
+      TEMP_MODE_TARGET="$PRIVATE_SETTINGS" "$SETTINGS_SYNC" "$PRIVATE_SETTINGS"
+  )
+  if [ "$(cat "$PRIVATE_MODE_MARKER")" != "0o600" ] \
+    || [ "$(cat "$PRIVATE_SNAPSHOT_MODE_MARKER")" != "0o600" ] \
+    || [ "$(python3 -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "$PRIVATE_SETTINGS")" != "0o644" ]; then
+    echo "$SETTINGS_SYNC did not keep settings snapshots and staged files private" >&2
+    exit 1
+  fi
+  if find "$PRIVATE_SHARED_TMP" -mindepth 1 -print -quit | grep -q .; then
+    echo "$SETTINGS_SYNC left private intermediate files in TMPDIR" >&2
+    exit 1
+  fi
+done
+
 run_bootstrap_with_declines() {
   local home="$1"
   local script="$2"
@@ -335,8 +360,8 @@ cat > "$AGENT_RACE_BIN/python3" <<'SH'
 set -e
 if [ "$1" = "$AGENT_RACE_REPO/scripts/atomic-publish-file.py" ] \
   && [ "$2" = publish ] \
-  && [ "$3" = "$HOME" ] \
-  && [ "$4" = .codex/AGENTS.md ] \
+  && [ "$3" = "$HOME/.codex" ] \
+  && [ "$4" = AGENTS.md ] \
   && [ ! -e "$AGENT_RACE_MARKER" ]; then
   printf 'concurrent global instruction edit\n' > "$HOME/.codex/AGENTS.md"
   : > "$AGENT_RACE_MARKER"
@@ -702,8 +727,10 @@ if ! grep -Fq "Could not safely snapshot Codex skill file" "$TEMP_DIR/codex-nati
 fi
 
 python3 - "$REPO_ROOT/scripts/atomic-publish-file.py" "$TEMP_DIR" <<'PY'
+import contextlib
 import errno
 import importlib.util
+import io
 import os
 import stat
 import subprocess
@@ -715,6 +742,31 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 scratch = Path(sys.argv[2]) / "atomic-publish-race"
 scratch.mkdir()
+ensure_root = scratch / "ensure-directory-root"
+ensure_root.mkdir()
+module.ensure_directory(str(ensure_root), ".codex")
+if not (ensure_root / ".codex").is_dir():
+    raise SystemExit("atomic publisher did not create the requested directory")
+strict_real_root = scratch / "strict-root-real"
+strict_real_root.mkdir()
+strict_link_root = scratch / "strict-root-link"
+strict_link_root.symlink_to(strict_real_root, target_is_directory=True)
+strict_target = strict_real_root / "AGENTS.md"
+strict_snapshot = scratch / "strict-root-snapshot"
+strict_stage = scratch / "strict-root-stage"
+strict_target.write_text("original global instructions\n")
+strict_snapshot.write_text("original global instructions\n")
+strict_stage.write_text("updated global instructions\n")
+try:
+    module.publish_file(
+        str(strict_link_root), "AGENTS.md", str(strict_snapshot), str(strict_stage), strict_root=True
+    )
+except OSError:
+    pass
+else:
+    raise SystemExit("atomic publisher followed a symlink used as a strict root")
+if strict_target.read_text() != "original global instructions\n":
+    raise SystemExit("atomic publisher modified a target through a strict-root symlink")
 settings_dir = scratch / ".claude"
 settings_dir.mkdir()
 target = settings_dir / "settings.json"
@@ -2031,7 +2083,10 @@ module.sys.argv = [
     str(backup_rollback_snapshot), str(backup_rollback_stage),
 ]
 try:
-    if module.main() != 5:
+    diagnostic = io.StringIO()
+    with contextlib.redirect_stderr(diagnostic):
+        result = module.main()
+    if result != 5:
         raise SystemExit("rollback accepted a replaced published-inode recovery link")
 finally:
     module.sys.argv = original_argv
@@ -2041,6 +2096,15 @@ if backup_rollback_target.read_text() != backup_rollback_original:
     raise SystemExit("rollback changed the live original settings after recovery-link replacement")
 if not any(path.read_text() == backup_rollback_updated for path in backup_rollback_root.glob(".crosscheck-stage-*")):
     raise SystemExit("rollback removed the only staged published inode after recovery-link replacement")
+recovery_line = next(
+    (line for line in diagnostic.getvalue().splitlines() if line.startswith("recovery data remains at ")),
+    None,
+)
+if recovery_line is None:
+    raise SystemExit("rollback did not report where staged published settings remain")
+reported_recovery = Path(recovery_line.removeprefix("recovery data remains at "))
+if reported_recovery.read_text() != backup_rollback_updated:
+    raise SystemExit(f"rollback reported the wrong recovery data path: {reported_recovery}")
 
 # Managed link no-ops have an explicit status instead of looking like updates.
 noop_root = scratch / "managed-link-noop"

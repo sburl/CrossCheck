@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version, including copied Codex-nat
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-11-24-03-19
+**Last Updated:** 2026-11-24-03-44
 
 # Update CrossCheck
 
@@ -105,14 +105,20 @@ symlink and refuse to replace concurrent edits.
 ```bash
 for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
     if [ -f "$SETTINGS_FILE" ]; then
-        "$CROSSCHECK_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --include-ask
+        if ! "$CROSSCHECK_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --include-ask; then
+            echo "❌ Failed to sync critical settings in $SETTINGS_FILE." >&2
+            exit 1
+        fi
     fi
 done
 
 if [ -f "$HOME/.claude/settings.json" ]; then
-    "$CROSSCHECK_DIR/claude/scripts/install-supply-chain-hook.sh" \
+    if ! "$CROSSCHECK_DIR/claude/scripts/install-supply-chain-hook.sh" \
         "$HOME/.claude/settings.json" \
-        "$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh"
+        "$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh"; then
+        echo "❌ Failed to install the Claude supply-chain hook." >&2
+        exit 1
+    fi
 fi
 ```
 
@@ -150,7 +156,10 @@ SKIP_FILE="$HOME/.crosscheck/skip-skills"
 NEW_LINKED=0
 
 # Codex-native skills use the same managed, race-safe sync as bootstrap.
-bash "$CROSSCHECK_DIR/codex/scripts/sync-managed-codex-skills.sh" "$CROSSCHECK_DIR" "$HOME"
+if ! bash "$CROSSCHECK_DIR/codex/scripts/sync-managed-codex-skills.sh" "$CROSSCHECK_DIR" "$HOME"; then
+    echo "❌ Codex-native skill sync failed." >&2
+    exit 1
+fi
 
 # Claude commands use the Claude mirror and preserve user-owned files.
 CLAUDE_SYNC_COUNT="$("$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME" --count-only)"

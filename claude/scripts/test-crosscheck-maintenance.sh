@@ -498,6 +498,7 @@ fi
 python3 - "$REPO_ROOT/scripts/atomic-publish-file.py" "$TEMP_DIR" <<'PY'
 import errno
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -560,6 +561,8 @@ if (scratch / "settings-dir-moved-during-publish/settings.json").read_text() != 
 # root after publication must be detected, with recovery outside the root.
 root_case = scratch / "settings-root-case"
 root_case.mkdir()
+root_home = root_case / "home"
+root_home.mkdir()
 root_target = root_case / "settings.json"
 root_snapshot = scratch / "root-case-snapshot.json"
 root_stage = scratch / "root-case-stage.json"
@@ -576,14 +579,25 @@ def rename_root_after_publish(root_fd, root_path, relative_target, parent_fd):
     return real_verify(root_fd, root_path, relative_target, parent_fd)
 
 module._verify_parent_path = rename_root_after_publish
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(root_home)
 try:
     module.publish_file(str(root_case), "settings.json", str(root_snapshot), str(root_stage))
 except module.ConcurrentUpdate as error:
-    if not error.recovery_path or Path(error.recovery_path).read_text() != '{"rootCase":"original"}\n':
+    recovery = Path(error.recovery_path) if error.recovery_path else None
+    moved_root = scratch / "settings-root-case-moved"
+    if (
+        not recovery
+        or not recovery.is_file()
+        or recovery.read_text() != '{"rootCase":"original"}\n'
+        or recovery == moved_root
+        or moved_root in recovery.parents
+    ):
         raise SystemExit("publisher did not report durable recovery after its root path moved")
 else:
     raise SystemExit("publisher accepted a moved root used by the settings installer")
 finally:
+    os.environ["HOME"] = previous_home
     module._verify_parent_path = real_verify
 if (scratch / "settings-root-case-moved/settings.json").read_text() != '{"rootCase":"updated"}\n':
     raise SystemExit("publisher lost staged settings when the publisher root moved")
@@ -599,8 +613,8 @@ cross_volume_snapshot.write_text('{"crossVolume":"original"}\n')
 cross_volume_stage.write_text('{"crossVolume":"updated"}\n')
 real_open_recovery = module._open_stable_recovery_directory
 
-def force_cross_volume(parent_path, target_device):
-    return real_open_recovery(parent_path, -1)
+def force_cross_volume(root_path, parent_path, target_device):
+    return real_open_recovery(root_path, parent_path, -1)
 
 module._open_stable_recovery_directory = force_cross_volume
 try:
@@ -654,8 +668,8 @@ if error_target.read_text() != '{"setting":"original"}\n':
 if list((error_dir / ".claude").glob(".crosscheck-publish-*")):
     raise SystemExit("atomic publisher left recovery data after successful restoration")
 
-# If a writer atomically replaces settings immediately before the exchange,
-# the new file must be detected and restored with a durable recovery copy.
+# Replacements both before publication and during rollback must remain live
+# and get durable recovery copies.
 race_target_dir = scratch / "atomic-exchange-race"
 race_target_dir.mkdir()
 race_target = race_target_dir / "settings.json"
@@ -672,9 +686,10 @@ def replace_user_settings_then_exchange(first_fd, first, second_fd, second):
     target = race_target_dir / "settings.json"
     if not target.exists():
         raise SystemExit("live settings disappeared before atomic exchange")
-    if exchange_calls[0] == 1:
-        competitor = race_target_dir / "concurrent-settings.json"
-        competitor.write_text('{"setting":"concurrent user edit"}\n')
+    if exchange_calls[0] in (1, 2):
+        save_number = exchange_calls[0]
+        competitor = race_target_dir / f"concurrent-settings-{save_number}.json"
+        competitor.write_text(f'{{"setting":"concurrent user edit {save_number}"}}\n')
         competitor.replace(target)
     result = real_exchange(first_fd, first, second_fd, second)
     if not target.exists():
@@ -685,14 +700,17 @@ module._rename_exchange = replace_user_settings_then_exchange
 try:
     module.publish_file(str(race_target_dir), "settings.json", str(race_snapshot), str(race_stage))
 except module.ConcurrentUpdate as error:
-    if not error.recovery_path or Path(error.recovery_path).read_text() != '{"setting":"concurrent user edit"}\n':
-        raise SystemExit("concurrent settings were not preserved in a durable recovery file")
+    if not error.recovery_path or Path(error.recovery_path).read_text() != '{"setting":"concurrent user edit 2"}\n':
+        raise SystemExit("latest concurrent settings were not preserved in a durable recovery file")
+    backups = {path.read_text() for path in Path(error.recovery_path).parent.glob("settings-*.bak")}
+    if '{"setting":"concurrent user edit 1"}\n' not in backups:
+        raise SystemExit("the first concurrent settings version was not preserved")
 else:
     raise SystemExit("atomic publisher overwrote settings replaced by a concurrent writer")
 finally:
     module._rename_exchange = real_exchange
-if race_target.read_text() != '{"setting":"concurrent user edit"}\n':
-    raise SystemExit("atomic publisher did not restore concurrent settings to the live path")
+if race_target.read_text() != '{"setting":"concurrent user edit 2"}\n':
+    raise SystemExit("atomic publisher did not restore the latest concurrent settings to the live path")
 if list(race_target_dir.glob(".crosscheck-stage-*")):
     raise SystemExit("atomic publisher left a staged file after a concurrent update")
 

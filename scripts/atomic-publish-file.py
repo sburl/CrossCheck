@@ -122,6 +122,20 @@ def _read_signature_at(directory_fd: int, name: str) -> tuple[bytes, int]:
         os.close(file_fd)
 
 
+def _entry_state_at(
+    directory_fd: int, name: str
+) -> tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None]:
+    """Capture an entry identity and, for regular files, its stable contents."""
+    before = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    signature = _read_signature_at(directory_fd, name) if stat.S_ISREG(before.st_mode) else None
+    after = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    before_identity = (before.st_dev, before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns)
+    after_identity = (after.st_dev, after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns)
+    if before_identity != after_identity:
+        raise OSError(f"directory entry changed while being inspected: {name}")
+    return after_identity, signature
+
+
 def _read_signature(path: str) -> tuple[bytes, int]:
     path = os.path.abspath(path)
     directory_fd, _ = _open_root(os.path.dirname(path))
@@ -323,8 +337,10 @@ def _open_private_recovery_directory(base_path: str, target_device: int) -> tupl
         raise
 
 
-def _open_stable_recovery_directory(parent_path: str, target_device: int) -> tuple[int, int, str]:
-    """Find a private same-volume recovery directory outside the target tree."""
+def _open_stable_recovery_directory(
+    root_path: str, parent_path: str, target_device: int
+) -> tuple[int, int, str]:
+    """Find a private same-volume recovery directory outside the root and target trees."""
     candidates: list[str] = []
     home_path = os.path.realpath(os.path.expanduser("~"))
     candidates.append(home_path)
@@ -340,7 +356,10 @@ def _open_stable_recovery_directory(parent_path: str, target_device: int) -> tup
     failures: list[OSError] = []
     for candidate in candidates:
         try:
-            if os.path.commonpath((parent_path, candidate)) == parent_path:
+            if (
+                os.path.commonpath((parent_path, candidate)) == parent_path
+                or os.path.commonpath((root_path, candidate)) == root_path
+            ):
                 continue
         except ValueError:
             continue
@@ -353,7 +372,7 @@ def _open_stable_recovery_directory(parent_path: str, target_device: int) -> tup
             return opened
     error = OSError(
         errno.EXDEV,
-        "no private same-filesystem recovery directory exists outside the target parent; refusing to replace settings",
+        "no private same-filesystem recovery directory exists outside the publisher root; refusing to replace settings",
         parent_path,
     )
     if failures:
@@ -425,12 +444,13 @@ def publish_file(
             snapshot_signature[1] if expected_mode is None else expected_mode,
         )
         stable_base_fd, stable_recovery_fd, stable_recovery_dir = _open_stable_recovery_directory(
-            parent_path, os.fstat(parent_fd).st_dev
+            root_path, parent_path, os.fstat(parent_fd).st_dev
         )
         stable_recovery_name, recovery_path = _new_stable_recovery_link(
             parent_fd, target_name, stable_recovery_fd, stable_recovery_dir
         )
-        if _read_signature_at(stable_recovery_fd, stable_recovery_name) != expected_signature:
+        original_state = _entry_state_at(stable_recovery_fd, stable_recovery_name)
+        if original_state[1] != expected_signature:
             raise ConcurrentUpdate(
                 f"file changed during CrossCheck update, refusing to overwrite: {target}"
             )
@@ -444,47 +464,78 @@ def publish_file(
         if current_signature != expected_signature:
             raise ConcurrentUpdate(f"file changed during CrossCheck update, refusing to overwrite: {target}")
 
+        published_state = _entry_state_at(parent_fd, staged_name)
         # RENAME_SWAP leaves the live name populated and moves the old inode
         # to our staged name, where a racing writer can still be detected.
         _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
         swapped = True
+        read_error: OSError | None = None
         try:
-            current_signature = _read_signature_at(parent_fd, staged_name)
+            current_state = _entry_state_at(parent_fd, staged_name)
+            current_signature = current_state[1]
         except OSError as error:
+            read_error = error
+            current_state = None
+
+        if read_error is not None or current_signature != expected_signature:
             try:
                 _, recovery_path = _new_stable_recovery_link(
                     parent_fd, staged_name, stable_recovery_fd, stable_recovery_dir
                 )
-            except OSError:
-                pass
-            try:
-                _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
-                swapped = False
-            except OSError as restore_error:
-                raise ConcurrentUpdate(
-                    f"settings exchange could not be restored at {target}", recovery_path
-                ) from restore_error
-            raise ConcurrentUpdate(
-                f"target changed type during CrossCheck update: {target}", recovery_path
-            ) from error
-
-        if current_signature != expected_signature:
-            _, conflict_recovery_path = _new_stable_recovery_link(
-                parent_fd, staged_name, stable_recovery_fd, stable_recovery_dir
-            )
-            try:
-                _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
-                swapped = False
             except OSError as error:
+                recovery_path = os.path.join(parent_path, staged_name)
                 raise ConcurrentUpdate(
-                    f"concurrent settings update could not be restored at {target}",
-                    conflict_recovery_path,
+                    f"could not preserve concurrent settings at {target}", recovery_path
                 ) from error
+
+            known_states = {published_state, original_state}
+            if current_state is not None:
+                known_states.add(current_state)
+            restored = False
+            for _attempt in range(8):
+                try:
+                    _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
+                except OSError as error:
+                    recovery_path = os.path.join(parent_path, staged_name)
+                    raise ConcurrentUpdate(
+                        f"settings exchange could not be restored at {target}", recovery_path
+                    ) from error
+                try:
+                    displaced_state = _entry_state_at(parent_fd, staged_name)
+                except OSError as error:
+                    recovery_path = os.path.join(parent_path, staged_name)
+                    raise ConcurrentUpdate(
+                        f"could not verify concurrent settings after rollback at {target}", recovery_path
+                    ) from error
+                if displaced_state in known_states:
+                    restored = True
+                    swapped = False
+                    break
+                try:
+                    _, recovery_path = _new_stable_recovery_link(
+                        parent_fd, staged_name, stable_recovery_fd, stable_recovery_dir
+                    )
+                except OSError as error:
+                    recovery_path = os.path.join(parent_path, staged_name)
+                    raise ConcurrentUpdate(
+                        f"repeated concurrent settings updates need recovery at {target}", recovery_path
+                    ) from error
+                known_states.add(displaced_state)
+
+            if not restored:
+                recovery_path = os.path.join(parent_path, staged_name)
+                raise ConcurrentUpdate(
+                    f"settings kept changing during rollback; recovery remains at {target}", recovery_path
+                )
             _unlink_stable_recovery(stable_recovery_fd, stable_recovery_name)
             stable_recovery_name = None
+            if read_error is not None:
+                raise ConcurrentUpdate(
+                    f"target changed type during CrossCheck update: {target}", recovery_path
+                ) from read_error
             raise ConcurrentUpdate(
                 f"file changed during CrossCheck update, refusing to overwrite: {target}",
-                conflict_recovery_path,
+                recovery_path,
             )
 
         swapped = False
@@ -492,9 +543,9 @@ def publish_file(
 
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
-        # Keep a private hard link outside the target's parent tree. A writer
-        # with an already-open descriptor can still save to the old inode, and
-        # the reported path remains valid if the target directory is renamed.
+        # Keep a private hard link outside both the publisher root and target
+        # tree. Late writes through open descriptors remain recoverable, and
+        # the path remains valid if the publisher root is renamed.
         try:
             if _read_signature_at(stable_recovery_fd, stable_recovery_name) != expected_signature:
                 raise ConcurrentUpdate(

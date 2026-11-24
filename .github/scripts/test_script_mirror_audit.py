@@ -113,7 +113,82 @@ esac
         for relative in UPDATE_RECIPES:
             with self.subTest(recipe=relative):
                 content = (ROOT / relative).read_text(encoding="utf-8")
-                self.assertIn("codex/scripts/sync-managed-codex-skills.sh", content)
+                self.assertIn(
+                    'if ! bash "$CROSSCHECK_DIR/codex/scripts/sync-managed-codex-skills.sh"',
+                    content,
+                )
+
+    def test_update_recipes_abort_when_settings_or_hook_sync_fails(self) -> None:
+        for relative in UPDATE_RECIPES:
+            markdown = (ROOT / relative).read_text(encoding="utf-8")
+            step = markdown.split("## Step 4: Sync Critical Deny Rules and the Claude Hook", maxsplit=1)[1]
+            script_match = re.search(r"```bash\n(.*?)\n```", step, re.DOTALL)
+            self.assertIsNotNone(script_match, relative)
+            script = script_match.group(1)
+            for failing_helper in ("settings", "hook"):
+                with self.subTest(recipe=relative, failing_helper=failing_helper):
+                    fixture = self.fixture / f"step4-{relative.replace('/', '-')}-{failing_helper}"
+                    root = fixture / "repo"
+                    home = fixture / "home"
+                    (root / "scripts").mkdir(parents=True)
+                    (root / "claude/scripts").mkdir(parents=True)
+                    (home / ".claude").mkdir(parents=True)
+                    (home / ".claude/settings.json").write_text("{}", encoding="utf-8")
+                    call_log = fixture / "calls.txt"
+                    settings_helper = root / "scripts/sync-critical-settings.sh"
+                    settings_helper.write_text(
+                        "#!/usr/bin/env bash\nprintf 'settings\\n' >> \"$SYNC_CALL_LOG\"\n"
+                        "[ \"${FAIL_SYNC_HELPER:-}\" != settings ] || exit 42\n",
+                        encoding="utf-8",
+                    )
+                    hook_helper = root / "claude/scripts/install-supply-chain-hook.sh"
+                    hook_helper.write_text(
+                        "#!/usr/bin/env bash\nprintf 'hook\\n' >> \"$SYNC_CALL_LOG\"\n"
+                        "[ \"${FAIL_SYNC_HELPER:-}\" != hook ] || exit 42\n",
+                        encoding="utf-8",
+                    )
+                    settings_helper.chmod(0o755)
+                    hook_helper.chmod(0o755)
+                    result = subprocess.run(
+                        ["bash", "-c", script],
+                        capture_output=True,
+                        check=False,
+                        env={
+                            **os.environ,
+                            "CROSSCHECK_DIR": str(root),
+                            "HOME": str(home),
+                            "FAIL_SYNC_HELPER": failing_helper,
+                            "SYNC_CALL_LOG": str(call_log),
+                        },
+                        text=True,
+                    )
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    expected_calls = ["settings"] if failing_helper == "settings" else ["settings", "hook"]
+                    self.assertEqual(call_log.read_text(encoding="utf-8").splitlines(), expected_calls)
+
+    def test_update_recipes_abort_when_codex_native_sync_fails(self) -> None:
+        for relative in UPDATE_RECIPES:
+            with self.subTest(recipe=relative):
+                markdown = (ROOT / relative).read_text(encoding="utf-8")
+                step = markdown.split("## Step 6: Wire Any New Skills and Agents", maxsplit=1)[1]
+                script_match = re.search(r"```bash\n(.*?)\n```", step, re.DOTALL)
+                self.assertIsNotNone(script_match, relative)
+                fixture = self.fixture / f"step6-{relative.replace('/', '-')}"
+                root = fixture / "repo"
+                home = fixture / "home"
+                helper = root / "codex/scripts/sync-managed-codex-skills.sh"
+                helper.parent.mkdir(parents=True)
+                helper.write_text("#!/usr/bin/env bash\nexit 42\n", encoding="utf-8")
+                helper.chmod(0o755)
+                result = subprocess.run(
+                    ["bash", "-c", script_match.group(1)],
+                    capture_output=True,
+                    check=False,
+                    env={**os.environ, "CROSSCHECK_DIR": str(root), "HOME": str(home)},
+                    text=True,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("Codex-native skill sync failed", result.stderr)
 
     def test_missing_claude_hook_fails(self) -> None:
         fixture = self.make_fixture(ROOT)

@@ -49,7 +49,7 @@ fi
 # A named Codex skill is not a complete mirror without its entrypoint.
 while IFS= read -r skill_name; do
   [ -n "$skill_name" ] || continue
-  if [ ! -f "$ROOT_DIR/codex/skills/$skill_name/SKILL.md" ]; then
+  if [ ! -f "$ROOT_DIR/codex/skills/$skill_name/SKILL.md" ] || [ -L "$ROOT_DIR/codex/skills/$skill_name/SKILL.md" ]; then
     echo "❌ FAIL: Missing required Codex skill entrypoint: codex/skills/$skill_name/SKILL.md"
     FAIL=1
   fi

@@ -67,7 +67,7 @@ fi
 
 for skill_dir in "$SOURCE_ROOT"/*; do
   [ -d "$skill_dir" ] && [ ! -L "$skill_dir" ] || continue
-  [ -f "$skill_dir/SKILL.md" ] || continue
+  [ -f "$skill_dir/SKILL.md" ] && [ ! -L "$skill_dir/SKILL.md" ] || continue
   skill_name="$(basename "$skill_dir")"
   if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
     continue
@@ -92,7 +92,7 @@ for skill_dir in "$SOURCE_ROOT"/*; do
 
     expected_snapshot="--absent"
     CURRENT_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-snapshot.XXXXXX")"
-    if python3 "$PUBLISH_HELPER" snapshot "$CODEX_ROOT" "$target_relative" "$CURRENT_SNAPSHOT" --strict-root; then
+    if python3 "$PUBLISH_HELPER" snapshot "$CODEX_ROOT" "$target_relative" "$CURRENT_SNAPSHOT" --private --strict-root; then
       if cmp -s "$source_file" "$CURRENT_SNAPSHOT"; then
         if ! python3 "$PUBLISH_HELPER" snapshot-cleanup "$CURRENT_SNAPSHOT"; then
           PRESERVED=$((PRESERVED + 1))

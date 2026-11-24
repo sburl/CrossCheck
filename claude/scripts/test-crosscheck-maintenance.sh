@@ -1062,6 +1062,11 @@ if sys.platform == "darwin":
         raise SystemExit("private settings stage retained an inherited ACL")
 if not module.snapshot_file(str(acl_temp_target_root), "settings.json", str(acl_temp_snapshot), private=True):
     raise SystemExit("atomic publisher could not create a snapshot in the ACL fixture")
+if stat.S_IMODE(acl_temp_snapshot.stat().st_mode) != 0o600:
+    raise SystemExit("private source snapshot did not remain mode 0600")
+snapshot_metadata = module._read_snapshot_metadata(str(acl_temp_snapshot))
+if snapshot_metadata.get("source_mode") != stat.S_IMODE(acl_temp_target.stat().st_mode):
+    raise SystemExit("private source snapshot did not retain the original mode in its metadata")
 if sys.platform == "darwin":
     for private_file in (acl_temp_snapshot, Path(module._snapshot_identity_path(str(acl_temp_snapshot)))):
         listing = subprocess.run(["/bin/ls", "-le", str(private_file)], capture_output=True, text=True, check=True).stdout
@@ -1102,6 +1107,50 @@ if sys.platform == "darwin":
     ).stdout
     if "everyone deny read" not in published_acl or f"user:{acl_user} allow read" not in published_acl:
         raise SystemExit("atomic publisher did not preserve the source file ACL")
+
+    late_acl_target = acl_temp_target_root / "late-settings.json"
+    late_acl_target.write_text('{"lateAcl":"original"}\n')
+    late_acl_snapshot = acl_temp_root / "late-settings-snapshot"
+    late_acl_snapshot.write_text("")
+    late_acl_stage = acl_temp_root / "late-settings-stage"
+    late_acl_stage.write_text('{"lateAcl":"updated"}\n')
+    subprocess.run(["/bin/chmod", "+a", "everyone deny read", str(late_acl_target)], check=True)
+    subprocess.run(["/bin/chmod", "+a#", "0", f"user:{acl_user} allow read", str(late_acl_target)], check=True)
+    if not module.snapshot_file(str(acl_temp_target_root), "late-settings.json", str(late_acl_snapshot), private=True):
+        raise SystemExit("atomic publisher could not snapshot the late-ACL fixture")
+    late_acl_identity = (late_acl_target.stat().st_dev, late_acl_target.stat().st_ino)
+    real_verify_recovery = module._verify_stable_recovery_link
+    verify_recovery_calls = [0]
+
+    def add_late_source_acl(base_fd, base_path, recovery_fd, recovery_name, recovery_path, entry_name, entry_path, expected_inode):
+        verify_recovery_calls[0] += 1
+        if verify_recovery_calls[0] == 2:
+            subprocess.run(["/bin/chmod", "+a#", "0", "everyone deny write", entry_path], check=True)
+        return real_verify_recovery(
+            base_fd, base_path, recovery_fd, recovery_name, recovery_path, entry_name, entry_path, expected_inode
+        )
+
+    module._verify_stable_recovery_link = add_late_source_acl
+    try:
+        try:
+            module.publish_file(
+                str(acl_temp_target_root), "late-settings.json", str(late_acl_snapshot),
+                str(late_acl_stage), expected_mode=0o644, expected_snapshot_mode=0o644,
+            )
+        except module.ConcurrentUpdate:
+            pass
+        else:
+            raise SystemExit("publisher accepted an ACL change during final recovery-link verification")
+    finally:
+        module._verify_stable_recovery_link = real_verify_recovery
+    if (late_acl_target.stat().st_dev, late_acl_target.stat().st_ino) != late_acl_identity:
+        raise SystemExit("late ACL rollback did not restore the original settings inode")
+    late_published_acl = subprocess.run(
+        ["/bin/ls", "-le", str(late_acl_target)], capture_output=True, text=True, check=True
+    ).stdout
+    if "everyone deny read" not in late_published_acl or "everyone deny write" not in late_published_acl:
+        raise SystemExit("late ACL rollback did not restore the latest ACL on the live settings file")
+    module.cleanup_snapshot(str(late_acl_snapshot))
 module.cleanup_snapshot(str(acl_temp_snapshot))
 
 # A command migration uses the commands directory as the recovery boundary so
@@ -1146,6 +1195,56 @@ command_boundary_backup = Path(str(module._read_snapshot_metadata(str(command_bo
 if command_boundary_backup.parent != command_boundary_home_real / ".crosscheck-recovery":
     raise SystemExit("Claude command snapshot recovery escaped its private home location")
 module.cleanup_snapshot(str(command_boundary_snapshot))
+
+# Compatibility commands use the command directory as their recovery
+# boundary, so an unwritable ancestor of HOME is never selected as recovery.
+compat_home_parent = scratch / "compat-home-parent"
+compat_home = compat_home_parent / "home"
+compat_command_dir = compat_home / ".codex/commands"
+compat_command_dir.mkdir(parents=True)
+compat_command = compat_command_dir / "managed.md"
+compat_command.write_text("published command\n")
+compat_repo = scratch / "compat-managed-repo"
+compat_skill_dir = compat_repo / "skill-sources"
+compat_skill_dir.mkdir(parents=True)
+compat_source = compat_skill_dir / "managed.md"
+compat_source.write_text("published command\n")
+git_env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1"}
+subprocess.run(["git", "-C", str(compat_repo), "init", "-q"], check=True, env=git_env)
+subprocess.run(["git", "-C", str(compat_repo), "add", "skill-sources/managed.md"], check=True, env=git_env)
+subprocess.run(
+    ["git", "-C", str(compat_repo), "-c", "user.name=CrossCheck test", "-c",
+     "user.email=crosscheck-test@example.invalid", "commit", "-qm", "published compatibility command"],
+    check=True,
+    env=git_env,
+)
+revision = subprocess.run(
+    ["git", "-C", str(compat_repo), "rev-parse", "HEAD"],
+    check=True, capture_output=True, text=True, env=git_env,
+).stdout.strip()
+subprocess.run(
+    ["git", "-C", str(compat_repo), "update-ref", "refs/remotes/origin/main", revision],
+    check=True, env=git_env,
+)
+compat_source.write_text("updated compatibility command\n")
+previous_home = os.environ.get("HOME")
+os.environ["HOME"] = str(compat_home)
+compat_home_parent.chmod(0o555)
+try:
+    status = module.sync_managed_compat_command(
+        str(compat_home), ".codex/commands/managed.md", str(compat_source),
+        str(compat_repo), "skill-sources/managed.md",
+    )
+finally:
+    compat_home_parent.chmod(0o755)
+    if previous_home is None:
+        os.environ.pop("HOME", None)
+    else:
+        os.environ["HOME"] = previous_home
+if status != "updated" or not compat_command.is_symlink():
+    raise SystemExit("compatibility command bootstrap failed with an unwritable HOME ancestor")
+if not list((compat_home / ".crosscheck-recovery").glob("snapshot-*.bak")):
+    raise SystemExit("compatibility command recovery did not stay under HOME")
 
 # The narrower recovery boundary must not weaken no-follow traversal from HOME.
 command_symlink_home = scratch / "command-symlink-home"

@@ -21,8 +21,8 @@
 #   - any command with env SAFE_INSTALL_OVERRIDE=1
 #
 # It blocks (with explanation):
-#   npm install <pkg>, npm i <pkg>, npm add, npx <untrusted>, pnpm add/install,
-#   yarn add, pip install <pkg>, pipx install, uv add, uv pip install,
+#   npm install, npm i <pkg>, npm add, npx <untrusted>, pnpm add/install,
+#   yarn add/install, pip install <pkg>, pipx install, uv add, uv pip install,
 #   cargo install, gem install, go install <url>
 
 set -u
@@ -69,7 +69,7 @@ esac
 
 # Pattern set for unsafe installs. Boundary-anchored to avoid matching inside strings.
 # We accept word boundaries before the verb (start, ;, &&, ||, |, $(, `, newline, space).
-unsafe='(^|[[:space:];&|`(])(npm[[:space:]]+(install|i|add|create)(\b|[[:space:]])|npm[[:space:]]+exec[[:space:]]|npx[[:space:]]+[^-]|pnpm[[:space:]]+(add|install)(\b|[[:space:]])|yarn[[:space:]]+add(\b|[[:space:]])|pip[[:space:]]+install(\b|[[:space:]])|pipx[[:space:]]+install(\b|[[:space:]])|uv[[:space:]]+add(\b|[[:space:]])|uv[[:space:]]+pip[[:space:]]+install(\b|[[:space:]])|cargo[[:space:]]+install(\b|[[:space:]])|gem[[:space:]]+install(\b|[[:space:]])|go[[:space:]]+install[[:space:]]+[a-zA-Z])'
+unsafe='(^|[[:space:];&|`(])(npm[[:space:]]+(install|i|add|create)([[:space:]]|$)|npm[[:space:]]+exec[[:space:]]|npx[[:space:]]+[^-]|pnpm[[:space:]]+(add|install)([[:space:]]|$)|yarn[[:space:]]+(add|install)([[:space:]]|$)|pip[[:space:]]+install([[:space:]]|$)|pipx[[:space:]]+install([[:space:]]|$)|uv[[:space:]]+add([[:space:]]|$)|uv[[:space:]]+pip[[:space:]]+install([[:space:]]|$)|cargo[[:space:]]+install([[:space:]]|$)|gem[[:space:]]+install([[:space:]]|$)|go[[:space:]]+install[[:space:]]+[a-zA-Z])'
 
 if [[ "$cmd" =~ $unsafe ]]; then
     cat >&2 <<EOF

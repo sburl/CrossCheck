@@ -119,6 +119,33 @@ class ScriptMirrorAuditTests(unittest.TestCase):
         self.assertFalse(customized_copy.is_symlink())
         self.assertEqual(customized_copy.read_text(encoding="utf-8"), "user customization\n")
 
+        guarded_parent = self.fixture / "guarded-parent"
+        guarded_home = guarded_parent / "home"
+        guarded_target_dir = guarded_home / ".codex/commands"
+        guarded_target_dir.mkdir(parents=True)
+        guarded_target = guarded_target_dir / "plan.md"
+        guarded_target.write_text("current shipped command\n", encoding="utf-8")
+        guarded_parent.chmod(0o555)
+        try:
+            guarded_env = {**git_env, "HOME": str(guarded_home)}
+            result = subprocess.run(
+                [
+                    "python3", str(root / "scripts/atomic-publish-file.py"), "managed-symlink",
+                    str(guarded_home), str(guarded_target.relative_to(guarded_home)), str(source),
+                    str(root), "skill-sources/plan.md",
+                ],
+                capture_output=True,
+                check=False,
+                text=True,
+                env=guarded_env,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stdout.strip(), "updated")
+            self.assertTrue(guarded_target.is_symlink())
+            self.assertTrue(list((guarded_home / ".crosscheck-recovery").glob("snapshot-*.bak")))
+        finally:
+            guarded_parent.chmod(0o755)
+
         fresh_source = root / "skill-sources/fresh.md"
         fresh_source.write_text("new command\n", encoding="utf-8")
         fresh_target = home_codex / "fresh.md"
@@ -163,6 +190,64 @@ class ScriptMirrorAuditTests(unittest.TestCase):
         result = subprocess.run(command, capture_output=True, check=False, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("All mirror directories match (1 skills)", result.stdout)
+
+        outside_entrypoint = fixture / "outside-SKILL.md"
+        outside_entrypoint.write_text("# outside\n", encoding="utf-8")
+        entrypoint = fixture / "codex/skills/example/SKILL.md"
+        entrypoint.unlink()
+        entrypoint.symlink_to(outside_entrypoint)
+        result = subprocess.run(command, capture_output=True, check=False, text=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Missing required Codex skill entrypoint", result.stdout)
+
+    def test_codex_installer_skips_symlinked_skill_entrypoint(self) -> None:
+        root = self.fixture / "codex-install"
+        (root / "scripts").mkdir(parents=True)
+        (root / "codex/skills/example").mkdir(parents=True)
+        shutil.copy(ROOT / "scripts/atomic-publish-file.py", root / "scripts/atomic-publish-file.py")
+        outside_entrypoint = self.fixture / "external-SKILL.md"
+        outside_entrypoint.write_text("# outside\n", encoding="utf-8")
+        (root / "codex/skills/example/SKILL.md").symlink_to(outside_entrypoint)
+        target_home = self.fixture / "codex-install-home"
+        target_home.mkdir()
+        result = subprocess.run(
+            ["bash", str(ROOT / "codex/scripts/sync-managed-codex-skills.sh"), str(root), str(target_home)],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((target_home / ".codex/skills/example/SKILL.md").exists())
+
+    def test_supply_chain_gate_blocks_bare_install_commands(self) -> None:
+        hook = ROOT / "claude/scripts/preuse-supply-chain-gate.sh"
+        for command in ("npm install", "npm i", "pnpm install", "yarn install"):
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    ["bash", str(hook)],
+                    input=json.dumps({"tool_name": "Bash", "tool_input": {"command": command}}),
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("direct package install blocked", result.stderr)
+
+        for command in (
+            "npm ci",
+            "npm install --offline",
+            "pnpm install --frozen-lockfile",
+            "yarn install --frozen-lockfile",
+        ):
+            with self.subTest(command=command):
+                result = subprocess.run(
+                    ["bash", str(hook)],
+                    input=json.dumps({"tool_name": "Bash", "tool_input": {"command": command}}),
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_update_recipes_abort_when_git_refresh_steps_fail(self) -> None:
         fake_bin = self.fixture / "fake-bin"

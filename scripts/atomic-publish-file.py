@@ -213,6 +213,7 @@ def _read_snapshot_metadata(snapshot_path: str) -> dict[str, object]:
         target_relative = metadata["target_relative"]
         recovery_boundary = metadata["recovery_boundary"]
         strict_root = metadata["strict_root"]
+        source_mode = metadata.get("source_mode")
     except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise OSError(f"invalid snapshot identity: {identity_path}") from error
     if (
@@ -229,6 +230,12 @@ def _read_snapshot_metadata(snapshot_path: str) -> dict[str, object]:
         or not isinstance(target_relative, str)
         or not target_relative
         or not isinstance(strict_root, bool)
+        or (source_mode is not None and (
+            not isinstance(source_mode, int)
+            or isinstance(source_mode, bool)
+            or source_mode < 0
+            or source_mode > 0o777
+        ))
     ):
         raise OSError(f"invalid snapshot identity: {identity_path}")
     if (
@@ -1108,6 +1115,7 @@ def publish_file(
     expected_identity: tuple[int, int] | None = None,
     expected_recovery_path: str | None = None,
     recovery_boundary: str | None = None,
+    expected_snapshot_mode: int | None = None,
 ) -> str | None:
     root_fd, root_path = _open_root(root, reject_leaf_symlink=strict_root)
     parent_fd, parent_path, target_name = _open_relative_parent(
@@ -1184,7 +1192,9 @@ def publish_file(
         snapshot_signature = _read_signature(expected_snapshot)
         expected_signature = (
             snapshot_signature[0],
-            snapshot_signature[1] if expected_mode is None else expected_mode,
+            expected_snapshot_mode
+            if expected_snapshot_mode is not None
+            else snapshot_signature[1] if expected_mode is None else expected_mode,
         )
         target_device = os.fstat(parent_fd).st_dev
         if expected_recovery_path is not None:
@@ -1315,6 +1325,10 @@ def publish_file(
                 f"file changed during CrossCheck update; previous file preserved: {target}",
                 recovery_path,
             )
+        if original_acl is not None:
+            final_acl = _read_acl_entries(stage_entry_path(), original_state[0][:2])
+            if final_acl != original_acl[0]:
+                raise ConcurrentUpdate(f"source ACL changed during CrossCheck update: {target}", recovery_path)
         swapped = False
         return recovery_path
     except BaseException as error:
@@ -1576,6 +1590,7 @@ def snapshot_file(
                 "recovery_path": recovery_path,
                 "target_root": root_path,
                 "target_relative": relative_target,
+                "source_mode": mode,
                 "recovery_boundary": effective_recovery_boundary,
                 "strict_root": strict_root,
             }
@@ -1607,6 +1622,7 @@ def sync_symlink(
     expected_identity: tuple[int, int] | None = None,
     expected_recovery_path: str | None = None,
     recovery_boundary: str | None = None,
+    expected_source_mode: int | None = None,
 ) -> str | None:
     """Create or conditionally replace one managed symlink without clobbering edits."""
     root_fd, root_path = _open_root(root)
@@ -1723,6 +1739,8 @@ def sync_symlink(
                     f"managed command inode changed since snapshot: {target}", expected_recovery_path
                 )
             expected_signature = _read_signature(expected_value)
+            if expected_source_mode is not None:
+                expected_signature = (expected_signature[0], expected_source_mode)
             try:
                 current_signature = _read_signature_at(parent_fd, target_name)
             except OSError:
@@ -1893,6 +1911,10 @@ def sync_symlink(
             if stable_recovery_fd is None or stable_recovery_name is None or stable_backup_path is None:
                 raise RestorationFailed(f"managed command has no stable recovery link: {target}", recovery_path)
             moved_state = _entry_state_at(recovery_fd, "original")
+            if moved_state[1] != expected_signature:
+                raise ConcurrentUpdate(
+                    f"managed command changed during CrossCheck update: {target}", stable_backup_path
+                )
             stable_state = _entry_state_at(stable_recovery_fd, stable_recovery_name)
             if moved_state[0][:2] != stable_state[0][:2]:
                 raise RestorationFailed(
@@ -2085,7 +2107,14 @@ def sync_managed_compat_command(
         snapshot_fd, snapshot_path = tempfile.mkstemp(prefix="crosscheck-compat-snapshot-")
         os.close(snapshot_fd)
         try:
-            if not snapshot_file(target_root, relative_target, snapshot_path):
+            target_parent = os.path.join(root_path, *relative_target.split("/")[:-1])
+            if not snapshot_file(
+                target_root,
+                relative_target,
+                snapshot_path,
+                private=True,
+                recovery_boundary=target_parent,
+            ):
                 continue
             if not _is_known_shipped_copy(repository_path, source_relative_path, snapshot_path):
                 return "preserved"
@@ -2099,6 +2128,7 @@ def sync_managed_compat_command(
                 (int(metadata["device"]), int(metadata["inode"])),
                 str(metadata["recovery_path"]),
                 str(metadata["recovery_boundary"]),
+                int(metadata["source_mode"]),
             )
             if updated is not None:
                 return "updated"
@@ -2213,6 +2243,9 @@ def main() -> int:
                 )
                 expected_recovery_path = str(snapshot_metadata["recovery_path"])
                 recovery_boundary = str(snapshot_metadata["recovery_boundary"])
+                expected_source_mode = snapshot_metadata.get("source_mode")
+            else:
+                expected_source_mode = None
             recovery_path = sync_symlink(
                 root,
                 relative_target,
@@ -2222,6 +2255,7 @@ def main() -> int:
                 expected_identity,
                 expected_recovery_path,
                 recovery_boundary,
+                None if expected_source_mode is None else int(expected_source_mode),
             )
         except RestorationFailed as error:
             sys.stderr.write(f"{error}\n")
@@ -2268,12 +2302,18 @@ def main() -> int:
     expected_identity: tuple[int, int] | None = None
     expected_recovery_path: str | None = None
     recovery_boundary: str | None = None
+    expected_snapshot_mode: int | None = None
     try:
         if expected != "--absent":
             expected_metadata = _read_snapshot_metadata(expected)
             expected_identity = (int(expected_metadata["device"]), int(expected_metadata["inode"]))
             expected_recovery_path = str(expected_metadata["recovery_path"])
             recovery_boundary = str(expected_metadata["recovery_boundary"])
+            snapshot_mode = expected_metadata.get("source_mode")
+            if expected_mode is not None:
+                expected_snapshot_mode = expected_mode
+            else:
+                expected_snapshot_mode = None if snapshot_mode is None else int(snapshot_mode)
         recovery_path = publish_file(
             root,
             relative_target,
@@ -2284,6 +2324,7 @@ def main() -> int:
             expected_identity,
             expected_recovery_path,
             recovery_boundary,
+            expected_snapshot_mode,
         )
     except RestorationFailed as error:
         sys.stderr.write(f"{error}\n")

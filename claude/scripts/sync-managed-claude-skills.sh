@@ -111,7 +111,7 @@ PY
   elif [ -f "$target" ]; then
     CURRENT_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-command-snapshot.XXXXXX")"
     if run_publisher snapshot "$HOME_DIR" "$target_relative" "$CURRENT_SNAPSHOT" \
-      --recovery-boundary "$TARGET_DIR"; then
+      --private --recovery-boundary "$TARGET_DIR"; then
       if is_known_shipped_copy "$CURRENT_SNAPSHOT" "$skill_name"; then
         run_publisher_and_count symlink "$HOME_DIR" "$target_relative" snapshot "$CURRENT_SNAPSHOT" "$skill_file"
       else

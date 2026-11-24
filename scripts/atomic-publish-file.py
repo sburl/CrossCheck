@@ -11,6 +11,7 @@ import secrets
 import stat
 import subprocess
 import sys
+import tempfile
 
 
 class ConcurrentUpdate(Exception):
@@ -320,6 +321,87 @@ def _clear_inherited_file_acl(file_fd: int) -> None:
     except (OSError, subprocess.CalledProcessError) as error:
         detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) else str(error)
         raise PermissionError(f"could not remove inherited ACL from private temporary file: {detail}") from error
+
+
+def _copy_acl_from_path(
+    source_path: str,
+    destination_fd: int,
+    expected_identity: tuple[int, int],
+) -> tuple[tuple[str, ...], int] | None:
+    """Copy a pinned file's macOS ACL to its staged replacement, failing closed."""
+    if sys.platform != "darwin":
+        return None
+    entries, source_ctime_ns = _read_acl_entries_and_ctime(source_path, expected_identity)
+    if entries:
+        try:
+            subprocess.run(
+                ["/bin/chmod", "-E", f"/dev/fd/{destination_fd}"],
+                input="\n".join(entries) + "\n",
+                check=True,
+                pass_fds=(destination_fd,),
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as error:
+            detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) else str(error)
+            raise PermissionError(f"could not preserve source ACL on staged file: {detail}") from error
+    return entries, source_ctime_ns
+
+
+def _read_acl_entries_and_ctime(
+    source_path: str,
+    expected_identity: tuple[int, int],
+) -> tuple[tuple[str, ...], int]:
+    if sys.platform != "darwin":
+        return (), 0
+    before = os.stat(source_path, follow_symlinks=False)
+    if not stat.S_ISREG(before.st_mode) or (before.st_dev, before.st_ino) != expected_identity:
+        raise OSError(f"ACL source changed before it could be copied: {source_path}")
+    try:
+        listing = subprocess.run(
+            ["/bin/ls", "-le", source_path],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) else str(error)
+        raise PermissionError(f"could not read source ACL: {detail}") from error
+    after = os.stat(source_path, follow_symlinks=False)
+    if (
+        (after.st_dev, after.st_ino) != expected_identity
+        or before.st_ctime_ns != after.st_ctime_ns
+    ):
+        raise OSError(f"ACL source changed while it was inspected: {source_path}")
+    entries = []
+    for line in listing.stdout.splitlines()[1:]:
+        prefix, separator, entry = line.strip().partition(":")
+        if separator and prefix.isdecimal():
+            entries.append(entry.lstrip())
+    return tuple(entries), after.st_ctime_ns
+
+
+def _verify_acl_source_ctime(
+    source_path: str,
+    expected_identity: tuple[int, int],
+    expected_ctime_ns: int | None,
+) -> None:
+    if sys.platform != "darwin" or expected_ctime_ns is None:
+        return
+    current = os.stat(source_path, follow_symlinks=False)
+    if (
+        not stat.S_ISREG(current.st_mode)
+        or (current.st_dev, current.st_ino) != expected_identity
+        or current.st_ctime_ns != expected_ctime_ns
+    ):
+        raise ConcurrentUpdate(f"source ACL changed during CrossCheck update: {source_path}")
+
+
+def _read_acl_entries(source_path: str, expected_identity: tuple[int, int]) -> tuple[str, ...] | None:
+    """Read ACL entries from a pinned macOS file and verify it stayed stable."""
+    if sys.platform != "darwin":
+        return None
+    return _read_acl_entries_and_ctime(source_path, expected_identity)[0]
 
 
 def _rename_noreplace(
@@ -1043,6 +1125,7 @@ def publish_file(
     exchange_attempted = False
     published_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
     original_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
+    original_acl: tuple[tuple[str, ...], int] | None = None
 
     stage_fd: int | None = None
     stage_dir_name: str | None = None
@@ -1156,6 +1239,29 @@ def publish_file(
                 recovery_path if expected_recovery_path is not None else None,
             )
 
+        original_inode = original_state[0][:2]
+        acl_source_path = _verify_stable_recovery_link(
+            stable_base_fd,
+            stable_base_path,
+            stable_recovery_fd,
+            os.path.basename(stable_recovery_dir),
+            stable_recovery_dir,
+            stable_recovery_name,
+            recovery_path,
+            original_inode,
+        )
+        staged_acl_fd = os.open(
+            staged_name,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=stage_fd,
+        )
+        try:
+            original_acl = _copy_acl_from_path(acl_source_path, staged_acl_fd, original_inode)
+        finally:
+            os.close(staged_acl_fd)
+        if original_acl is not None:
+            _verify_acl_source_ctime(acl_source_path, original_inode, original_acl[1])
+
         published_state = _entry_state_at(stage_fd, staged_name)
         # RENAME_SWAP leaves the live name populated and moves the old inode
         # to our staged name, where a racing writer can still be detected.
@@ -1171,6 +1277,10 @@ def publish_file(
             raise ConcurrentUpdate(f"target changed during CrossCheck update: {target}") from error
         if current_state != original_state:
             raise ConcurrentUpdate(f"file identity changed during CrossCheck update, refusing to overwrite: {target}")
+        if original_acl is not None:
+            current_acl = _read_acl_entries(os.path.join(stage_dir_path, staged_name), original_state[0][:2])
+            if current_acl != original_acl[0]:
+                raise ConcurrentUpdate(f"source ACL changed during CrossCheck update: {target}", recovery_path)
 
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
@@ -1888,7 +1998,140 @@ def sync_symlink(
         os.close(root_fd)
 
 
+def _is_known_shipped_copy(root: str, source_relative_path: str, snapshot_path: str) -> bool:
+    """Return true only when the file matches a version published on origin/main."""
+    try:
+        subprocess.run(
+            ["git", "-C", root, "rev-parse", "--verify", "refs/remotes/origin/main"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        history = subprocess.run(
+            ["git", "-C", root, "rev-list", "refs/remotes/origin/main", "--", source_relative_path],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        with open(snapshot_path, "rb") as snapshot_file:
+            snapshot_bytes = snapshot_file.read()
+        for revision in history:
+            shipped = subprocess.run(
+                ["git", "-C", root, "show", f"{revision}:{source_relative_path}"],
+                capture_output=True,
+                check=False,
+            )
+            if shipped.returncode == 0 and shipped.stdout == snapshot_bytes:
+                return True
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return False
+
+
+def sync_managed_compat_command(
+    target_root: str,
+    relative_target: str,
+    source_path: str,
+    repository_root: str,
+    source_relative_path: str,
+) -> str:
+    """Create a compatibility command, migrating only a published shipped copy."""
+    for relative_path in (relative_target, source_relative_path):
+        if any(part in ("", ".", "..") for part in relative_path.split("/")):
+            raise ValueError(f"path must be normalized and relative: {relative_path}")
+
+    repository_fd, repository_path = _open_root(repository_root)
+    os.close(repository_fd)
+    root_fd, root_path = _open_root(target_root)
+    os.close(root_fd)
+    source_absolute = os.path.abspath(source_path)
+    source_real = os.path.realpath(source_absolute)
+    if os.path.commonpath((repository_path, source_real)) != repository_path:
+        raise ValueError(f"managed command source is outside the repository: {source_path}")
+    if os.path.relpath(source_real, repository_path) != source_relative_path:
+        raise ValueError(f"managed command source path does not match its repository path: {source_path}")
+    source_fd = os.open(source_absolute, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(source_fd).st_mode):
+            raise OSError(f"managed command source is not a regular file: {source_path}")
+    finally:
+        os.close(source_fd)
+
+    for _attempt in range(3):
+        root_fd, root_path = _open_root(target_root)
+        try:
+            parent_fd, _parent_path, target_name = _open_relative_parent(
+                root_fd, root_path, relative_target, create=False
+            )
+            try:
+                try:
+                    target_info = os.stat(target_name, dir_fd=parent_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    target_info = None
+                if target_info is not None and stat.S_ISLNK(target_info.st_mode):
+                    return "unchanged" if os.readlink(target_name, dir_fd=parent_fd) == source_absolute else "preserved"
+                if target_info is not None and not stat.S_ISREG(target_info.st_mode):
+                    return "preserved"
+            finally:
+                os.close(parent_fd)
+        finally:
+            os.close(root_fd)
+
+        if target_info is None:
+            if sync_symlink(target_root, relative_target, "absent", "-", source_absolute) is not None:
+                return "created"
+            continue
+
+        snapshot_fd, snapshot_path = tempfile.mkstemp(prefix="crosscheck-compat-snapshot-")
+        os.close(snapshot_fd)
+        try:
+            if not snapshot_file(target_root, relative_target, snapshot_path):
+                continue
+            if not _is_known_shipped_copy(repository_path, source_relative_path, snapshot_path):
+                return "preserved"
+            metadata = _read_snapshot_metadata(snapshot_path)
+            updated = sync_symlink(
+                target_root,
+                relative_target,
+                "snapshot",
+                snapshot_path,
+                source_absolute,
+                (int(metadata["device"]), int(metadata["inode"])),
+                str(metadata["recovery_path"]),
+                str(metadata["recovery_boundary"]),
+            )
+            if updated is not None:
+                return "updated"
+        finally:
+            try:
+                cleanup_snapshot(snapshot_path)
+            finally:
+                for path in (snapshot_path, _snapshot_identity_path(snapshot_path)):
+                    try:
+                        os.unlink(path)
+                    except FileNotFoundError:
+                        pass
+    return "preserved"
+
+
 def main() -> int:
+    if len(sys.argv) == 7 and sys.argv[1] == "managed-symlink":
+        _, _, target_root, relative_target, source_path, repository_root, source_relative_path = sys.argv
+        try:
+            sys.stdout.write(
+                sync_managed_compat_command(
+                    target_root, relative_target, source_path, repository_root, source_relative_path
+                ) + "\n"
+            )
+        except ConcurrentUpdate as error:
+            sys.stderr.write(f"{error}\n")
+            if error.recovery_path:
+                sys.stderr.write(f"preserved concurrent file at {error.recovery_path}\n")
+            return 3
+        except (OSError, ValueError, KeyError) as error:
+            sys.stderr.write(f"could not safely synchronize managed compatibility command: {error}\n")
+            return 2
+        return 0
     if len(sys.argv) == 3 and sys.argv[1] == "snapshot-cleanup":
         try:
             recovery_path = cleanup_snapshot(sys.argv[2])
@@ -2007,7 +2250,8 @@ def main() -> int:
             "       atomic-publish-file.py snapshot-cleanup SNAPSHOT\n"
             "       atomic-publish-file.py private-file TEMP_FILE\n"
             "       atomic-publish-file.py ensure-directory ROOT RELATIVE_DIRECTORY\n"
-            "       atomic-publish-file.py symlink ROOT RELATIVE_TARGET absent|snapshot|link EXPECTED_VALUE NEW_LINK\n",
+            "       atomic-publish-file.py symlink ROOT RELATIVE_TARGET absent|snapshot|link EXPECTED_VALUE NEW_LINK\n"
+            "       atomic-publish-file.py managed-symlink TARGET_ROOT RELATIVE_TARGET SOURCE_FILE REPOSITORY_ROOT SOURCE_RELATIVE_PATH\n",
         )
         return 2
     _, _, root, relative_target, expected, staged, *publish_options = sys.argv

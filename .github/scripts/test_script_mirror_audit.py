@@ -48,6 +48,122 @@ class ScriptMirrorAuditTests(unittest.TestCase):
         self.home_patch.start()
         self.addCleanup(self.home_patch.stop)
 
+    def test_compatibility_bootstrap_preserves_custom_commands(self) -> None:
+        root = self.fixture / "compat-repo"
+        home = self.fixture / "compat-home"
+        (root / "scripts").mkdir(parents=True)
+        (root / "skill-sources").mkdir()
+        shutil.copy(ROOT / "scripts/atomic-publish-file.py", root / "scripts/atomic-publish-file.py")
+        source = root / "skill-sources/plan.md"
+        source.write_text("current shipped command\n", encoding="utf-8")
+        home_codex = home / ".codex/commands"
+        home_gemini = home / ".gemini/agents"
+        home_codex.mkdir(parents=True)
+        home_gemini.mkdir(parents=True)
+
+        git_env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1"}
+        subprocess.run(["git", "-C", str(root), "init", "-q"], check=True, env=git_env)
+        subprocess.run(
+            ["git", "-C", str(root), "add", "skill-sources/plan.md"], check=True, env=git_env
+        )
+        subprocess.run(
+            [
+                "git", "-C", str(root), "-c", "user.name=CrossCheck test", "-c",
+                "user.email=crosscheck-test@example.invalid", "commit", "-qm", "published command",
+            ],
+            check=True,
+            env=git_env,
+        )
+        revision = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=git_env,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "-C", str(root), "update-ref", "refs/remotes/origin/main", revision],
+            check=True,
+            env=git_env,
+        )
+
+        shipped_copy = home_codex / "plan.md"
+        shipped_copy.write_text("current shipped command\n", encoding="utf-8")
+        customized_copy = home_gemini / "plan.md"
+        customized_copy.write_text("user customization\n", encoding="utf-8")
+
+        def sync(target: Path) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [
+                    "python3", str(root / "scripts/atomic-publish-file.py"), "managed-symlink",
+                    str(home), str(target.relative_to(home)), str(source), str(root), "skill-sources/plan.md",
+                ],
+                capture_output=True,
+                check=False,
+                text=True,
+                env=git_env,
+            )
+
+        # A matching historical copy migrates, while a customized file stays intact.
+        source.write_text("updated shipped command\n", encoding="utf-8")
+        shipped_copy.write_text("current shipped command\n", encoding="utf-8")
+        result = sync(shipped_copy)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), "updated")
+        self.assertTrue(shipped_copy.is_symlink())
+        self.assertEqual(shipped_copy.read_text(encoding="utf-8"), "updated shipped command\n")
+
+        result = sync(customized_copy)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), "preserved")
+        self.assertFalse(customized_copy.is_symlink())
+        self.assertEqual(customized_copy.read_text(encoding="utf-8"), "user customization\n")
+
+        fresh_source = root / "skill-sources/fresh.md"
+        fresh_source.write_text("new command\n", encoding="utf-8")
+        fresh_target = home_codex / "fresh.md"
+        result = subprocess.run(
+            [
+                "python3", str(root / "scripts/atomic-publish-file.py"), "managed-symlink",
+                str(home), str(fresh_target.relative_to(home)), str(fresh_source), str(root),
+                "skill-sources/fresh.md",
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+            env=git_env,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), "created")
+        self.assertTrue(fresh_target.is_symlink())
+
+    def test_nightly_skill_mirror_gate_requires_codex_entrypoint(self) -> None:
+        fixture = self.fixture / "skill-mirror"
+        for relative in (
+            "skill-sources",
+            "claude/skill-sources",
+            "codex/skill-sources",
+            "codex/skills/example",
+        ):
+            (fixture / relative).mkdir(parents=True)
+        for relative in (
+            "skill-sources/example.md",
+            "claude/skill-sources/example.md",
+            "codex/skill-sources/example.md",
+        ):
+            (fixture / relative).write_text("# example\n", encoding="utf-8")
+        (fixture / "codex/skills/example/README.md").write_text("not an entrypoint\n", encoding="utf-8")
+
+        command = ["bash", str(ROOT / ".github/scripts/check-skill-mirrors.sh"), str(fixture)]
+        result = subprocess.run(command, capture_output=True, check=False, text=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Missing required Codex skill entrypoint: codex/skills/example/SKILL.md", result.stdout)
+
+        (fixture / "codex/skills/example/SKILL.md").write_text("# example\n", encoding="utf-8")
+        result = subprocess.run(command, capture_output=True, check=False, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("All mirror directories match (1 skills)", result.stdout)
+
     def test_update_recipes_abort_when_git_refresh_steps_fail(self) -> None:
         fake_bin = self.fixture / "fake-bin"
         fake_bin.mkdir()

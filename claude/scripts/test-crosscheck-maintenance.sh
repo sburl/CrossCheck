@@ -1082,6 +1082,26 @@ if sys.platform == "darwin":
         os.close(recovery_fd)
         os.rmdir(acl_recovery_parent / recovery_name)
         os.close(recovery_parent_fd)
+    acl_publish_stage = acl_temp_root / "settings-publish-stage"
+    acl_publish_stage.write_text('{"acl":"updated"}\n')
+    acl_user = subprocess.run(["id", "-un"], check=True, capture_output=True, text=True).stdout.strip()
+    subprocess.run(
+        ["/bin/chmod", "+a", "everyone deny read", str(acl_temp_target)],
+        check=True,
+    )
+    subprocess.run(
+        ["/bin/chmod", "+a#", "0", f"user:{acl_user} allow read", str(acl_temp_target)],
+        check=True,
+    )
+    module.publish_file(
+        str(acl_temp_target_root), "settings.json", str(acl_temp_snapshot),
+        str(acl_publish_stage), expected_mode=0o644,
+    )
+    published_acl = subprocess.run(
+        ["/bin/ls", "-le", str(acl_temp_target)], capture_output=True, text=True, check=True
+    ).stdout
+    if "everyone deny read" not in published_acl or f"user:{acl_user} allow read" not in published_acl:
+        raise SystemExit("atomic publisher did not preserve the source file ACL")
 module.cleanup_snapshot(str(acl_temp_snapshot))
 
 # A command migration uses the commands directory as the recovery boundary so

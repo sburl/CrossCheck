@@ -165,6 +165,10 @@ if [ -f "$SKIP_FILE" ]; then
     [ -n "$SKIP_DISPLAY" ] && echo "   Skipping (per ~/.crosscheck/skip-skills): $SKIP_DISPLAY"
 fi
 LINKED=0
+PRESERVED_COMPAT_COMMANDS=0
+PUBLISH_HELPER="$CROSSCHECK_DIR/scripts/atomic-publish-file.py"
+python3 "$PUBLISH_HELPER" ensure-directory "$HOME" ".codex/commands"
+python3 "$PUBLISH_HELPER" ensure-directory "$HOME" ".gemini/agents"
 for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
     skill_name="$(basename "$skill_file" .md)"
     [ "$skill_name" = "INSTALL" ] && continue
@@ -172,15 +176,26 @@ for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
         continue
     fi
     for TARGET_DIR in "$HOME/.codex/commands" "$HOME/.gemini/agents"; do
-        [ -d "$(dirname "$TARGET_DIR")" ] || mkdir -p "$(dirname "$TARGET_DIR")" 2>/dev/null
-        [ -d "$TARGET_DIR" ] || mkdir -p "$TARGET_DIR" 2>/dev/null
-        target="$TARGET_DIR/$skill_name.md"
-        [ -e "$target" ] || [ -L "$target" ] && rm "$target"
-        ln -sf "$skill_file" "$target"
-        LINKED=$((LINKED + 1))
+        target_relative="${TARGET_DIR#"$HOME"/}/$skill_name.md"
+        status="$(python3 "$PUBLISH_HELPER" managed-symlink \
+            "$HOME" "$target_relative" "$skill_file" "$CROSSCHECK_DIR" "skill-sources/$skill_name.md")"
+        case "$status" in
+            created|updated)
+                LINKED=$((LINKED + 1))
+                ;;
+            unchanged)
+                ;;
+            preserved)
+                PRESERVED_COMPAT_COMMANDS=$((PRESERVED_COMPAT_COMMANDS + 1))
+                ;;
+            *)
+                echo "Unexpected compatibility command sync result for $target_relative: $status" >&2
+                exit 1
+                ;;
+        esac
     done
 done
-echo "   ✅ Linked $LINKED skill(s) via symlinks"
+echo "   ✅ Created or refreshed $LINKED compatibility command symlink(s); preserved $PRESERVED_COMPAT_COMMANDS existing path(s)"
 echo "   💡 Skills update instantly on git pull in CrossCheck — no re-run needed"
 echo ""
 

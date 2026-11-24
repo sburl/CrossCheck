@@ -168,6 +168,32 @@ def _rename_noreplace(
     raise OSError(error, os.strerror(error), source, destination)
 
 
+def _rename_exchange(
+    first_fd: int, first: str, second_fd: int, second: str
+) -> None:
+    """Atomically exchange two entries without emptying either pathname."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    first_bytes = os.fsencode(first)
+    second_bytes = os.fsencode(second)
+
+    if sys.platform == "darwin" and hasattr(libc, "renameatx_np"):
+        rename = libc.renameatx_np
+        rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        rename.restype = ctypes.c_int
+        result = rename(first_fd, first_bytes, second_fd, second_bytes, 0x00000002)  # RENAME_SWAP
+    elif sys.platform.startswith("linux") and hasattr(libc, "renameat2"):
+        rename = libc.renameat2
+        rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        rename.restype = ctypes.c_int
+        result = rename(first_fd, first_bytes, second_fd, second_bytes, 0x00000002)  # RENAME_EXCHANGE
+    else:
+        raise OSError(errno.ENOTSUP, "atomic entry exchange is unavailable on this platform")
+
+    if result != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), first, second)
+
+
 def _copy_into_directory(source_path: str, directory_fd: int) -> str:
     """Copy a trusted staged file into the already-open target directory."""
     source_fd = os.open(os.path.abspath(source_path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
@@ -336,13 +362,13 @@ def _open_stable_recovery_directory(parent_path: str, target_device: int) -> tup
 
 
 def _new_stable_recovery_link(
-    source_fd: int, recovery_fd: int, recovery_dir: str
+    source_fd: int, source_name: str, recovery_fd: int, recovery_dir: str
 ) -> tuple[str, str]:
     while True:
         name = f"settings-{secrets.token_hex(12)}.bak"
         try:
             os.link(
-                "original",
+                source_name,
                 name,
                 src_dir_fd=source_fd,
                 dst_dir_fd=recovery_fd,
@@ -374,13 +400,11 @@ def publish_file(
     )
     target = os.path.join(parent_path, target_name)
     staged_name: str | None = None
-    recovery_fd: int | None = None
-    recovery_name: str | None = None
     stable_base_fd: int | None = None
     stable_recovery_fd: int | None = None
     stable_recovery_name: str | None = None
     recovery_path: str | None = None
-    original_moved = False
+    swapped = False
     published = False
     try:
         staged_name = _copy_into_directory(staged_file, parent_fd)
@@ -400,19 +424,11 @@ def publish_file(
             snapshot_signature[0],
             snapshot_signature[1] if expected_mode is None else expected_mode,
         )
-        recovery_fd, recovery_name, recovery_path = _new_recovery_directory(parent_fd, parent_path)
         stable_base_fd, stable_recovery_fd, stable_recovery_dir = _open_stable_recovery_directory(
             parent_path, os.fstat(parent_fd).st_dev
         )
-
-        try:
-            _rename_noreplace(parent_fd, target_name, recovery_fd, "original")
-            original_moved = True
-        except FileNotFoundError as error:
-            raise ConcurrentUpdate(f"target disappeared during CrossCheck update: {target}") from error
-
         stable_recovery_name, recovery_path = _new_stable_recovery_link(
-            recovery_fd, stable_recovery_fd, stable_recovery_dir
+            parent_fd, target_name, stable_recovery_fd, stable_recovery_dir
         )
         if _read_signature_at(stable_recovery_fd, stable_recovery_name) != expected_signature:
             raise ConcurrentUpdate(
@@ -420,7 +436,7 @@ def publish_file(
             )
 
         try:
-            current_signature = _read_signature_at(recovery_fd, "original")
+            current_signature = _read_signature_at(parent_fd, target_name)
         except OSError as error:
             raise ConcurrentUpdate(
                 f"target changed type during CrossCheck update: {target}", recovery_path
@@ -428,14 +444,51 @@ def publish_file(
         if current_signature != expected_signature:
             raise ConcurrentUpdate(f"file changed during CrossCheck update, refusing to overwrite: {target}")
 
+        # RENAME_SWAP leaves the live name populated and moves the old inode
+        # to our staged name, where a racing writer can still be detected.
+        _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
+        swapped = True
         try:
-            _rename_noreplace(parent_fd, staged_name, parent_fd, target_name)
-            staged_name = None
-            published = True
+            current_signature = _read_signature_at(parent_fd, staged_name)
         except OSError as error:
-            if isinstance(error, FileExistsError):
-                raise ConcurrentUpdate(f"destination appeared during CrossCheck update: {target}") from error
-            raise
+            try:
+                _, recovery_path = _new_stable_recovery_link(
+                    parent_fd, staged_name, stable_recovery_fd, stable_recovery_dir
+                )
+            except OSError:
+                pass
+            try:
+                _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
+                swapped = False
+            except OSError as restore_error:
+                raise ConcurrentUpdate(
+                    f"settings exchange could not be restored at {target}", recovery_path
+                ) from restore_error
+            raise ConcurrentUpdate(
+                f"target changed type during CrossCheck update: {target}", recovery_path
+            ) from error
+
+        if current_signature != expected_signature:
+            _, conflict_recovery_path = _new_stable_recovery_link(
+                parent_fd, staged_name, stable_recovery_fd, stable_recovery_dir
+            )
+            try:
+                _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
+                swapped = False
+            except OSError as error:
+                raise ConcurrentUpdate(
+                    f"concurrent settings update could not be restored at {target}",
+                    conflict_recovery_path,
+                ) from error
+            _unlink_stable_recovery(stable_recovery_fd, stable_recovery_name)
+            stable_recovery_name = None
+            raise ConcurrentUpdate(
+                f"file changed during CrossCheck update, refusing to overwrite: {target}",
+                conflict_recovery_path,
+            )
+
+        swapped = False
+        published = True
 
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
@@ -443,7 +496,7 @@ def publish_file(
         # with an already-open descriptor can still save to the old inode, and
         # the reported path remains valid if the target directory is renamed.
         try:
-            if _read_signature_at(recovery_fd, "original") != expected_signature:
+            if _read_signature_at(stable_recovery_fd, stable_recovery_name) != expected_signature:
                 raise ConcurrentUpdate(
                     f"file changed during CrossCheck update; previous file preserved: {target}", recovery_path
                 )
@@ -451,45 +504,22 @@ def publish_file(
             raise ConcurrentUpdate(
                 f"could not verify previous file after CrossCheck update: {target}", recovery_path
             ) from error
-        if recovery_fd is not None and recovery_name is not None:
-            _discard_recovery(parent_fd, recovery_fd, recovery_name)
-            recovery_fd = None
-            recovery_name = None
         return recovery_path
     except BaseException as error:
         if published:
-            if recovery_fd is not None and recovery_name is not None:
-                _discard_recovery(parent_fd, recovery_fd, recovery_name)
-                recovery_fd = None
-                recovery_name = None
             raise ConcurrentUpdate(
                 f"settings published but a concurrent path change needs attention: {target}", recovery_path
             ) from error
-        if original_moved and recovery_fd is not None and recovery_name is not None:
-            try:
-                _rename_noreplace(recovery_fd, "original", parent_fd, target_name)
-                original_moved = False
-            except OSError as restore_error:
-                # Leave a durable, private recovery path and name it to callers.
-                raise ConcurrentUpdate(
-                    f"could not restore or publish settings safely: {target}", recovery_path
-                ) from restore_error
-        if stable_recovery_fd is not None:
+        if stable_recovery_fd is not None and not swapped:
             _unlink_stable_recovery(stable_recovery_fd, stable_recovery_name)
             stable_recovery_name = None
-        if recovery_fd is not None and recovery_name is not None and not original_moved:
-            _discard_recovery(parent_fd, recovery_fd, recovery_name)
-            recovery_fd = None
-            recovery_name = None
         raise
     finally:
-        if staged_name is not None:
+        if staged_name is not None and not swapped:
             try:
                 os.unlink(staged_name, dir_fd=parent_fd)
             except FileNotFoundError:
                 pass
-        if recovery_fd is not None:
-            os.close(recovery_fd)
         if stable_recovery_fd is not None:
             os.close(stable_recovery_fd)
         if stable_base_fd is not None:

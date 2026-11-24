@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version — pulls from main. Skills
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-11-24-02-36
+**Last Updated:** 2026-11-24-03-19
 
 # Update CrossCheck
 
@@ -57,10 +57,16 @@ echo "   Current version: $CURRENT"
 
 ```bash
 cd "$CROSSCHECK_DIR"
-git fetch origin main --quiet
+if ! git fetch origin main --quiet; then
+    echo "❌ Failed to fetch origin/main; no update was applied." >&2
+    exit 1
+fi
 
 # Ensure we're on main before pulling — avoids merging into a feature branch
-CURRENT_BRANCH=$(git branch --show-current)
+CURRENT_BRANCH=$(git branch --show-current) || {
+    echo "❌ Failed to read the current branch." >&2
+    exit 1
+}
 if [ "$CURRENT_BRANCH" != "main" ]; then
     echo "   Switching to main branch (was on: $CURRENT_BRANCH)..."
     git checkout main --quiet || {
@@ -70,13 +76,23 @@ if [ "$CURRENT_BRANCH" != "main" ]; then
     }
 fi
 
-BEHIND=$(git rev-list HEAD..origin/main --count 2>/dev/null || echo "0")
+BEHIND=$(git rev-list HEAD..origin/main --count 2>/dev/null) || {
+    echo "❌ Failed to determine whether origin/main has new commits." >&2
+    exit 1
+}
+if ! [[ "$BEHIND" =~ ^[0-9]+$ ]]; then
+    echo "❌ Git returned an invalid commit count: $BEHIND" >&2
+    exit 1
+fi
 
 if [ "$BEHIND" = "0" ]; then
     echo "✅ Already up to date (version $CURRENT)"
 else
     echo "   $BEHIND new commit(s) available — pulling..."
-    git pull origin main --quiet
+    if ! git pull origin main --quiet; then
+        echo "❌ Failed to pull origin/main." >&2
+        exit 1
+    fi
     echo "   ✅ Pulled latest"
 fi
 ```
@@ -133,6 +149,12 @@ them in place. This step only needs to create symlinks for files that were
 ```bash
 SKIP_FILE="$HOME/.crosscheck/skip-skills"
 NEW_LINKED=0
+
+# Refresh Codex-native skills even when main was already current.
+if ! bash "$CROSSCHECK_DIR/codex/scripts/sync-managed-codex-skills.sh" "$CROSSCHECK_DIR" "$HOME"; then
+    echo "❌ Codex-native skill sync failed." >&2
+    exit 1
+fi
 
 # New skills
 for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do

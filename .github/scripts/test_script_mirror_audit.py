@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -12,6 +13,12 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 HOOK = "preuse-supply-chain-gate.sh"
 HOOK_INSTALLER = ROOT / "claude/scripts/install-supply-chain-hook.sh"
+UPDATE_RECIPES = (
+    "skill-sources/update-crosscheck.md",
+    "claude/skill-sources/update-crosscheck.md",
+    "codex/skill-sources/update-crosscheck.md",
+    "codex/skills/update-crosscheck/SKILL.md",
+)
 
 
 def run_audit(fixture: Path) -> subprocess.CompletedProcess[str]:
@@ -35,9 +42,78 @@ class ScriptMirrorAuditTests(unittest.TestCase):
         self.fixture = Path(self.temp_dir.name)
         self.home = self.fixture / "home"
         self.home.mkdir()
+        self.settings_dir = self.fixture / "settings"
+        self.settings_dir.mkdir()
         self.home_patch = patch.dict(os.environ, {"HOME": str(self.home)})
         self.home_patch.start()
         self.addCleanup(self.home_patch.stop)
+
+    def test_update_recipes_abort_when_git_refresh_steps_fail(self) -> None:
+        fake_bin = self.fixture / "fake-bin"
+        fake_bin.mkdir()
+        fake_git = fake_bin / "git"
+        fake_git.write_text(
+            """#!/usr/bin/env bash
+set -u
+printf '%s\\n' "$1" >> "$GIT_CALL_LOG"
+case "$1" in
+    fetch)
+        [ "${FAIL_GIT_COMMAND:-}" != fetch ] || exit 1
+        ;;
+    branch)
+        printf 'main\\n'
+        ;;
+    rev-list)
+        [ "${FAIL_GIT_COMMAND:-}" != rev-list ] || exit 1
+        if [ "${FAIL_GIT_COMMAND:-}" = pull ]; then
+            printf '1\\n'
+        else
+            printf '0\\n'
+        fi
+        ;;
+    pull)
+        [ "${FAIL_GIT_COMMAND:-}" != pull ] || exit 1
+        ;;
+esac
+""",
+            encoding="utf-8",
+        )
+        fake_git.chmod(0o755)
+        repo = self.fixture / "repo"
+        repo.mkdir()
+
+        for relative in UPDATE_RECIPES:
+            markdown = (ROOT / relative).read_text(encoding="utf-8")
+            step = markdown.split("## Step 3: Pull Latest", maxsplit=1)[1]
+            script_match = re.search(r"```bash\n(.*?)\n```", step, re.DOTALL)
+            self.assertIsNotNone(script_match, relative)
+            script = script_match.group(1)
+            for failing_command in ("fetch", "rev-list", "pull"):
+                with self.subTest(recipe=relative, failing_command=failing_command):
+                    call_log = self.fixture / f"git-calls-{failing_command}.txt"
+                    result = subprocess.run(
+                        ["bash", "-c", script],
+                        capture_output=True,
+                        check=False,
+                        env={
+                            **os.environ,
+                            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                            "CROSSCHECK_DIR": str(repo),
+                            "CURRENT": "test-version",
+                            "FAIL_GIT_COMMAND": failing_command,
+                            "GIT_CALL_LOG": str(call_log),
+                        },
+                        text=True,
+                    )
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertNotIn("✅ Pulled latest", result.stdout)
+                    self.assertIn(failing_command, call_log.read_text(encoding="utf-8").splitlines())
+
+    def test_update_recipes_sync_codex_native_skills(self) -> None:
+        for relative in UPDATE_RECIPES:
+            with self.subTest(recipe=relative):
+                content = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("codex/scripts/sync-managed-codex-skills.sh", content)
 
     def test_missing_claude_hook_fails(self) -> None:
         fixture = self.make_fixture(ROOT)
@@ -96,7 +172,7 @@ class ScriptMirrorAuditTests(unittest.TestCase):
 
     def test_claude_hook_installer_pins_checkout_and_preserves_other_hooks(self) -> None:
         fixture = self.make_fixture(ROOT)
-        settings = fixture / "settings.json"
+        settings = fixture / "settings" / "settings.json"
         hook_file = fixture / "claude/scripts" / HOOK
         original = {
             "hooks": {"PreToolUse": [
@@ -208,7 +284,7 @@ class ScriptMirrorAuditTests(unittest.TestCase):
         )
         self.assertIn("gate failed (7)", errexit_failure.stderr)
 
-        fresh_settings = fixture / "fresh-settings.json"
+        fresh_settings = fixture / "settings" / "fresh-settings.json"
         fresh_settings.write_text("{}")
         result = subprocess.run(
             ["bash", str(HOOK_INSTALLER), str(fresh_settings), str(hook_file)],
@@ -223,7 +299,7 @@ class ScriptMirrorAuditTests(unittest.TestCase):
 
     def test_filename_mentions_in_unrelated_hooks_are_preserved_and_bash_is_added(self) -> None:
         fixture = self.make_fixture(ROOT)
-        settings = fixture / "settings.json"
+        settings = fixture / "settings" / "settings.json"
         hook_file = fixture / "claude/scripts" / HOOK
         write_hook = {
             "matcher": "Write",
@@ -252,7 +328,7 @@ class ScriptMirrorAuditTests(unittest.TestCase):
 
     def test_filename_mentions_in_same_bash_matcher_are_not_migrated(self) -> None:
         fixture = self.make_fixture(ROOT)
-        settings = fixture / "settings.json"
+        settings = fixture / "settings" / "settings.json"
         hook_file = fixture / "claude/scripts" / HOOK
         unrelated_hooks = [
             {"type": "command", "command": "echo preuse-supply-chain-gate.sh in an audit log"},
@@ -290,7 +366,7 @@ class ScriptMirrorAuditTests(unittest.TestCase):
         target = fixture / "settings-target.json"
         target.write_text("{}")
         target.chmod(0o640)
-        settings = fixture / "settings.json"
+        settings = fixture / "settings" / "settings.json"
         settings.symlink_to(target)
         hook_file = fixture / "claude/scripts" / HOOK
 

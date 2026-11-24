@@ -8,6 +8,8 @@ TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 mkdir -p "$TEMP_DIR/test-home"
 export HOME="$TEMP_DIR/test-home"
+SETTINGS_DIR="$TEMP_DIR/settings"
+mkdir -p "$SETTINGS_DIR"
 
 HOOK="$TEMP_DIR/preuse-supply-chain-gate.sh"
 cat > "$HOOK" <<'HOOK_EOF'
@@ -19,7 +21,7 @@ HOOK_EOF
 chmod +x "$HOOK"
 
 for invalid in empty multiple malformed legacy-wrong-type nested-wrong-type deny-wrong-type; do
-  SETTINGS="$TEMP_DIR/$invalid.json"
+  SETTINGS="$SETTINGS_DIR/$invalid.json"
   case "$invalid" in
     empty) : > "$SETTINGS" ;;
     multiple) printf '{}\n{}\n' > "$SETTINGS" ;;
@@ -40,7 +42,7 @@ for invalid in empty multiple malformed legacy-wrong-type nested-wrong-type deny
   fi
 done
 
-SETTINGS="$TEMP_DIR/settings.json"
+SETTINGS="$SETTINGS_DIR/settings.json"
 cp "$REPO_ROOT/settings.template.json" "$SETTINGS"
 "$INSTALLER" "$SETTINGS" "$HOOK"
 COMMAND_COUNT="$(jq -r --arg hook "$HOOK" '[.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[] | select(.type == "command" and (.command | contains($hook)))] | length' "$SETTINGS")"
@@ -80,7 +82,7 @@ if [ "$STATUS" -ne 2 ] || [ "$(cat "$TEMP_DIR/invoked")" != "ran" ]; then
 fi
 
 # Legacy top-level PreToolUse is migrated into Claude's nested schema.
-LEGACY_SETTINGS="$TEMP_DIR/legacy-settings.json"
+LEGACY_SETTINGS="$SETTINGS_DIR/legacy-settings.json"
 printf '{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo legacy"}]}]}\n' > "$LEGACY_SETTINGS"
 "$INSTALLER" "$LEGACY_SETTINGS" "$HOOK"
 if ! jq -e 'has("PreToolUse") | not' "$LEGACY_SETTINGS" >/dev/null || ! jq -e '.hooks.PreToolUse | any(.[]; .matcher == "Bash" and any(.hooks[]?; .command == "echo legacy"))' "$LEGACY_SETTINGS" >/dev/null; then
@@ -89,8 +91,8 @@ if ! jq -e 'has("PreToolUse") | not' "$LEGACY_SETTINGS" >/dev/null || ! jq -e '.
 fi
 
 # An aliased settings file keeps both the link and target mode.
-REAL_SETTINGS="$TEMP_DIR/real-settings.json"
-LINKED_SETTINGS="$TEMP_DIR/linked-settings.json"
+REAL_SETTINGS="$SETTINGS_DIR/real-settings.json"
+LINKED_SETTINGS="$SETTINGS_DIR/linked-settings.json"
 printf '{"permissions":{"deny":[]}}\n' > "$REAL_SETTINGS"
 chmod 0640 "$REAL_SETTINGS"
 ln -s "$REAL_SETTINGS" "$LINKED_SETTINGS"
@@ -102,7 +104,7 @@ fi
 
 # Intermediate settings must remain private even when the caller's umask is
 # permissive and the installed settings contain private values.
-PRIVATE_SETTINGS="$TEMP_DIR/private-settings.json"
+PRIVATE_SETTINGS="$SETTINGS_DIR/private-settings.json"
 PRIVATE_JQ_BIN="$TEMP_DIR/private-jq-bin"
 PRIVATE_MODE_MARKER="$TEMP_DIR/private-settings-temp-mode"
 mkdir -p "$PRIVATE_JQ_BIN"
@@ -620,7 +622,7 @@ if cross_volume_target.read_text() != '{"crossVolume":"original"}\n':
 if list(cross_volume_target.parent.glob(".crosscheck-publish-*")):
     raise SystemExit("publisher left temporary recovery data after a cross-volume preflight failure")
 
-# A publish error after moving the live file must restore it to the live path.
+# An exchange error must leave the original live settings in place.
 error_dir = scratch / "publish-error"
 error_dir.mkdir()
 (error_dir / ".claude").mkdir()
@@ -630,14 +632,14 @@ error_stage = error_dir / "staged.json"
 error_target.write_text('{"setting":"original"}\n')
 error_snapshot.write_text('{"setting":"original"}\n')
 error_stage.write_text('{"setting":"updated"}\n')
-real_rename = module._rename_noreplace
+real_exchange = module._rename_exchange
 
-def fail_stage_publish(source_fd, source, destination_fd, destination):
-    if source.startswith(".crosscheck-stage-") and destination == "settings.json":
+def fail_stage_publish(first_fd, first, second_fd, second):
+    if first == "settings.json" or second == "settings.json":
         raise OSError(95, "injected publish failure")
-    return real_rename(source_fd, source, destination_fd, destination)
+    return real_exchange(first_fd, first, second_fd, second)
 
-module._rename_noreplace = fail_stage_publish
+module._rename_exchange = fail_stage_publish
 try:
     module.publish_file(str(error_dir), ".claude/settings.json", str(error_snapshot), str(error_stage))
 except OSError as error:
@@ -646,11 +648,53 @@ except OSError as error:
 else:
     raise SystemExit("atomic publisher accepted an injected publish failure")
 finally:
-    module._rename_noreplace = real_rename
+    module._rename_exchange = real_exchange
 if error_target.read_text() != '{"setting":"original"}\n':
-    raise SystemExit("atomic publisher failed to restore settings after a publish error")
+    raise SystemExit("atomic publisher changed settings after an exchange failure")
 if list((error_dir / ".claude").glob(".crosscheck-publish-*")):
     raise SystemExit("atomic publisher left recovery data after successful restoration")
+
+# If a writer atomically replaces settings immediately before the exchange,
+# the new file must be detected and restored with a durable recovery copy.
+race_target_dir = scratch / "atomic-exchange-race"
+race_target_dir.mkdir()
+race_target = race_target_dir / "settings.json"
+race_snapshot = scratch / "atomic-exchange-race-snapshot.json"
+race_stage = scratch / "atomic-exchange-race-stage.json"
+race_target.write_text('{"setting":"original"}\n')
+race_snapshot.write_text('{"setting":"original"}\n')
+race_stage.write_text('{"setting":"updated"}\n')
+real_exchange = module._rename_exchange
+exchange_calls = [0]
+
+def replace_user_settings_then_exchange(first_fd, first, second_fd, second):
+    exchange_calls[0] += 1
+    target = race_target_dir / "settings.json"
+    if not target.exists():
+        raise SystemExit("live settings disappeared before atomic exchange")
+    if exchange_calls[0] == 1:
+        competitor = race_target_dir / "concurrent-settings.json"
+        competitor.write_text('{"setting":"concurrent user edit"}\n')
+        competitor.replace(target)
+    result = real_exchange(first_fd, first, second_fd, second)
+    if not target.exists():
+        raise SystemExit("live settings disappeared during atomic exchange")
+    return result
+
+module._rename_exchange = replace_user_settings_then_exchange
+try:
+    module.publish_file(str(race_target_dir), "settings.json", str(race_snapshot), str(race_stage))
+except module.ConcurrentUpdate as error:
+    if not error.recovery_path or Path(error.recovery_path).read_text() != '{"setting":"concurrent user edit"}\n':
+        raise SystemExit("concurrent settings were not preserved in a durable recovery file")
+else:
+    raise SystemExit("atomic publisher overwrote settings replaced by a concurrent writer")
+finally:
+    module._rename_exchange = real_exchange
+if race_target.read_text() != '{"setting":"concurrent user edit"}\n':
+    raise SystemExit("atomic publisher did not restore concurrent settings to the live path")
+if list(race_target_dir.glob(".crosscheck-stage-*")):
+    raise SystemExit("atomic publisher left a staged file after a concurrent update")
 
 # A directory symlink introduced during staging must not redirect publication.
 link_root = scratch / "codex-home"

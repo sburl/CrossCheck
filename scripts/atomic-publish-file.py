@@ -503,31 +503,30 @@ def main() -> int:
         try:
             return 0 if snapshot_file(root, relative_target, output_path) else 4
         except OSError as error:
-            print(f"could not safely snapshot {relative_target}: {error}", file=sys.stderr)
+            sys.stderr.write(f"could not safely snapshot {relative_target}: {error}\n")
             return 2
     if len(sys.argv) == 7 and sys.argv[1] == "symlink":
         _, _, root, relative_target, expected_kind, expected_value, new_link = sys.argv
         try:
             recovery_path = sync_symlink(root, relative_target, expected_kind, expected_value, new_link)
         except ConcurrentUpdate as error:
-            print(str(error), file=sys.stderr)
+            sys.stderr.write(f"{error}\n")
             if error.recovery_path:
-                print(f"preserved concurrent file at {error.recovery_path}", file=sys.stderr)
+                sys.stderr.write(f"preserved concurrent file at {error.recovery_path}\n")
             return 3
         except OSError as error:
-            print(f"could not safely synchronize {relative_target}: {error}", file=sys.stderr)
+            sys.stderr.write(f"could not safely synchronize {relative_target}: {error}\n")
             return 2
         if recovery_path:
-            print(f"previous command copy preserved at {recovery_path}", file=sys.stderr)
+            sys.stderr.write(f"previous command copy preserved at {recovery_path}\n")
         elif recovery_path == "":
-            print(f"managed command link synchronized: {relative_target}")
+            sys.stdout.write(f"managed command link synchronized: {relative_target}\n")
         return 0
     if len(sys.argv) not in (6, 7) or sys.argv[1] != "publish":
-        print(
+        sys.stderr.write(
             "usage: atomic-publish-file.py publish ROOT RELATIVE_TARGET EXPECTED_SNAPSHOT|--absent STAGED_FILE [EXPECTED_MODE]\n"
             "       atomic-publish-file.py snapshot ROOT RELATIVE_TARGET OUTPUT_SNAPSHOT\n"
-            "       atomic-publish-file.py symlink ROOT RELATIVE_TARGET absent|snapshot|link EXPECTED_VALUE NEW_LINK",
-            file=sys.stderr,
+            "       atomic-publish-file.py symlink ROOT RELATIVE_TARGET absent|snapshot|link EXPECTED_VALUE NEW_LINK\n",
         )
         return 2
     _, _, root, relative_target, expected, staged, *mode_arg = sys.argv
@@ -537,15 +536,15 @@ def main() -> int:
             root, relative_target, None if expected == "--absent" else expected, staged, expected_mode
         )
     except ConcurrentUpdate as error:
-        print(str(error), file=sys.stderr)
+        sys.stderr.write(f"{error}\n")
         if error.recovery_path:
-            print(f"preserved concurrent file at {error.recovery_path}", file=sys.stderr)
+            sys.stderr.write(f"preserved concurrent file at {error.recovery_path}\n")
         return 3
     except OSError as error:
-        print(f"could not safely publish file {relative_target}: {error}", file=sys.stderr)
+        sys.stderr.write(f"could not safely publish file {relative_target}: {error}\n")
         return 2
     if recovery_path:
-        print(f"previous file preserved at {recovery_path}", file=sys.stderr)
+        sys.stderr.write(f"previous file preserved at {recovery_path}\n")
     return 0
 
 

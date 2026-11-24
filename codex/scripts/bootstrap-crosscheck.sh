@@ -176,7 +176,7 @@ if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
 else
     echo "   Creating ~/.codex/settings.json from template..."
     SETTINGS_STAGE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-codex-settings.XXXXXX")"
-    cp "$CROSSCHECK_ROOT_DIR/settings.template.json" "$SETTINGS_STAGE"
+    cp "$CROSSCHECK_ROOT_DIR/codex/settings.template.json" "$SETTINGS_STAGE"
     "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_STAGE"
     if python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" publish \
         "$HOME" ".codex/settings.json" --absent "$SETTINGS_STAGE"; then

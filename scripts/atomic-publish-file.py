@@ -214,7 +214,7 @@ def _rename_exchange(
         raise OSError(error, os.strerror(error), first, second)
 
 
-def _copy_into_directory(source_path: str, directory_fd: int) -> str:
+def _copy_into_directory(source_path: str, directory_fd: int, mode_override: int | None = None) -> str:
     """Copy a trusted staged file into the already-open target directory."""
     source_fd = os.open(os.path.abspath(source_path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     try:
@@ -234,7 +234,6 @@ def _copy_into_directory(source_path: str, directory_fd: int) -> str:
             except FileExistsError:
                 continue
         try:
-            os.fchmod(destination_fd, stat.S_IMODE(source_info.st_mode))
             while True:
                 chunk = os.read(source_fd, 1024 * 1024)
                 if not chunk:
@@ -243,6 +242,8 @@ def _copy_into_directory(source_path: str, directory_fd: int) -> str:
                 while view:
                     written = os.write(destination_fd, view)
                     view = view[written:]
+            destination_mode = stat.S_IMODE(source_info.st_mode) if mode_override is None else mode_override
+            os.fchmod(destination_fd, destination_mode)
             os.fsync(destination_fd)
         except BaseException:
             os.close(destination_fd)
@@ -252,7 +253,11 @@ def _copy_into_directory(source_path: str, directory_fd: int) -> str:
         try:
             copied_signature = _read_signature_at(directory_fd, name)
             source_signature = _read_signature(source_path)
-            if copied_signature != source_signature:
+            expected_signature = (
+                source_signature[0],
+                stat.S_IMODE(source_info.st_mode) if mode_override is None else mode_override,
+            )
+            if copied_signature != expected_signature:
                 raise OSError(f"staged source changed while it was being copied: {source_path}")
         except BaseException:
             try:
@@ -622,6 +627,14 @@ def _rollback_failed_publish(
                         f"settings recovery link no longer matches before cleanup: {stage_path}", stage_path
                     )
                 verify_live_parent_after_rollback()
+                try:
+                    for recovered_inode in recovered_entries:
+                        verified_backup(recovered_inode)
+                except OSError as error:
+                    raise RestorationFailed(
+                        f"settings recovery link changed before cleanup: {stage_path}",
+                        recoverable_backup_path() or stage_path,
+                    ) from error
                 return desired_backup_path or stage_backup_path
             preserved, _, _ = preserve_stage_state()
             if not preserved:
@@ -702,12 +715,13 @@ def publish_file(
     stable_recovery_name: str | None = None
     recovery_path: str | None = None
     failure_recovery_path: str | None = None
+    recovered_entries: dict[tuple[int, int], tuple[str, str]] = {}
     swapped = False
     exchange_attempted = False
     published_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
     original_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
     try:
-        staged_name = _copy_into_directory(staged_file, parent_fd)
+        staged_name = _copy_into_directory(staged_file, parent_fd, expected_mode)
         _fsync_directory(parent_fd)
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
@@ -742,6 +756,7 @@ def publish_file(
             stable_recovery_name,
         )
         original_state = _entry_state_at(stable_recovery_fd, stable_recovery_name)
+        recovered_entries[original_state[0][:2]] = (stable_recovery_name, recovery_path)
         if original_state[1] != expected_signature:
             raise ConcurrentUpdate(
                 f"file changed during CrossCheck update, refusing to overwrite: {target}"
@@ -805,7 +820,6 @@ def publish_file(
         if swapped and staged_name is not None and published_state is not None and original_state is not None:
             known_states = {published_state, original_state}
             observed_states = {published_state, original_state}
-            recovered_entries: dict[tuple[int, int], tuple[str, str]] = {}
             if stable_recovery_name is not None and recovery_path is not None:
                 recovered_entries[original_state[0][:2]] = (stable_recovery_name, recovery_path)
             try:
@@ -913,6 +927,23 @@ def publish_file(
                             f"settings parent changed before recovery cleanup: {target}",
                             failure_recovery_path or recovery_path or os.path.join(parent_path, staged_name),
                         ) from rollback_error
+                    try:
+                        for recovered_inode, (backup_name, backup_path) in recovered_entries.items():
+                            _verify_stable_recovery_link(
+                                stable_base_fd,
+                                stable_base_path,
+                                stable_recovery_fd,
+                                os.path.basename(stable_recovery_dir),
+                                stable_recovery_dir,
+                                backup_name,
+                                backup_path,
+                                recovered_inode,
+                            )
+                    except OSError as recovery_error:
+                        raise RestorationFailed(
+                            f"settings recovery link changed before cleanup: {target}",
+                            failure_recovery_path or recovery_path or os.path.join(parent_path, staged_name),
+                        ) from recovery_error
                 try:
                     os.unlink(staged_name, dir_fd=parent_fd)
                 except FileNotFoundError:
@@ -930,8 +961,8 @@ def publish_file(
             os.close(root_fd)
 
 
-def snapshot_file(root: str, relative_target: str, output_path: str) -> bool:
-    """Copy a regular target to a private snapshot without following symlinks."""
+def snapshot_file(root: str, relative_target: str, output_path: str, private: bool = False) -> bool:
+    """Copy a regular target to a snapshot without following symlinks."""
     try:
         root_fd, root_path = _open_root(root)
     except FileNotFoundError:
@@ -954,7 +985,7 @@ def snapshot_file(root: str, relative_target: str, output_path: str) -> bool:
             os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0),
         )
         try:
-            os.fchmod(output_fd, mode)
+            os.fchmod(output_fd, 0o600 if private else mode)
             view = memoryview(content)
             while view:
                 written = os.write(output_fd, view)
@@ -1242,6 +1273,7 @@ def sync_symlink(
                 stable_recovery_dir,
                 stable_recovery_name,
             )
+            _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
             _verify_stable_recovery_link(
                 stable_base_fd,
                 stable_base_path,
@@ -1252,7 +1284,6 @@ def sync_symlink(
                 stable_backup_path,
                 moved_state[0][:2],
             )
-            _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
             _discard_recovery(parent_fd, recovery_fd, recovery_name)
             recovery_fd = None
             recovery_name = None
@@ -1334,10 +1365,13 @@ def sync_symlink(
 
 
 def main() -> int:
-    if len(sys.argv) == 5 and sys.argv[1] == "snapshot":
-        _, _, root, relative_target, output_path = sys.argv
+    if len(sys.argv) in (5, 6) and sys.argv[1] == "snapshot":
+        if len(sys.argv) == 6 and sys.argv[5] != "--private":
+            sys.stderr.write("snapshot's optional mode must be --private\n")
+            return 2
+        _, _, root, relative_target, output_path, *options = sys.argv
         try:
-            return 0 if snapshot_file(root, relative_target, output_path) else 4
+            return 0 if snapshot_file(root, relative_target, output_path, private=bool(options)) else 4
         except OSError as error:
             sys.stderr.write(f"could not safely snapshot {relative_target}: {error}\n")
             return 2
@@ -1368,7 +1402,7 @@ def main() -> int:
     if len(sys.argv) not in (6, 7) or sys.argv[1] != "publish":
         sys.stderr.write(
             "usage: atomic-publish-file.py publish ROOT RELATIVE_TARGET EXPECTED_SNAPSHOT|--absent STAGED_FILE [EXPECTED_MODE]\n"
-            "       atomic-publish-file.py snapshot ROOT RELATIVE_TARGET OUTPUT_SNAPSHOT\n"
+            "       atomic-publish-file.py snapshot ROOT RELATIVE_TARGET OUTPUT_SNAPSHOT [--private]\n"
             "       atomic-publish-file.py symlink ROOT RELATIVE_TARGET absent|snapshot|link EXPECTED_VALUE NEW_LINK\n",
         )
         return 2

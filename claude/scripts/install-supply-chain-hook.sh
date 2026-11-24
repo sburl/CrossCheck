@@ -28,7 +28,7 @@ PUBLISH_HELPER="$(cd "$(dirname "$0")/../.." && pwd)/scripts/atomic-publish-file
 SETTINGS_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-settings-snapshot.XXXXXX")"
 TEMP_FILE=""
 trap 'rm -f "$TEMP_FILE" "$SETTINGS_SNAPSHOT"' EXIT
-if ! python3 "$PUBLISH_HELPER" snapshot "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SETTINGS_SNAPSHOT"; then
+if ! python3 "$PUBLISH_HELPER" snapshot "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SETTINGS_SNAPSHOT" --private; then
   echo "Claude settings changed or became unsafe while it was being read: $SETTINGS_FILE" >&2
   exit 1
 fi
@@ -124,7 +124,6 @@ if ! jq -s -e --arg hook "$HOOK_COMMAND" --argjson rules '[
   exit 1
 fi
 
-chmod "$SETTINGS_MODE" "$TEMP_FILE"
 CURRENT_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
 if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
   echo "Claude settings path changed while the supply-chain hook was being installed; refusing to update: $SETTINGS_FILE" >&2

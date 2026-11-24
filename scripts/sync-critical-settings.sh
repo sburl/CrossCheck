@@ -29,7 +29,7 @@ fi
 SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-settings-snapshot.XXXXXX")"
 STAGED="$(mktemp "${TMPDIR:-/tmp}/crosscheck-settings-stage.XXXXXX")"
 trap 'rm -f "$SNAPSHOT" "$STAGED"' EXIT
-if ! python3 "$PUBLISH_HELPER" snapshot "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SNAPSHOT"; then
+if ! python3 "$PUBLISH_HELPER" snapshot "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SNAPSHOT" --private; then
   echo "Settings changed or became unsafe while it was being read: $SETTINGS_FILE" >&2
   exit 1
 fi
@@ -72,7 +72,6 @@ else
   ' "$SNAPSHOT" > "$STAGED"
 fi
 
-chmod "$SETTINGS_MODE" "$STAGED"
 CURRENT_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
 if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
   echo "Settings path changed during CrossCheck update; refusing to publish: $SETTINGS_FILE" >&2

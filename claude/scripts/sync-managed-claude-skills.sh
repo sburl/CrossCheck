@@ -81,12 +81,26 @@ for skill_file in "$CLAUDE_SKILL_DIR/"*.md; do
   if [ ! -e "$target" ] && [ ! -L "$target" ]; then
     run_publisher_and_count symlink "$HOME_DIR" "$target_relative" absent - "$skill_file"
   elif [ -L "$target" ]; then
-    target_source="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$target")"
+    if ! target_link="$(readlink "$target" 2>/dev/null)"; then
+      PRESERVED=$((PRESERVED + 1))
+      continue
+    fi
+    target_source="$(python3 - "$target" "$target_link" <<'PY'
+import os
+import sys
+
+link_value = sys.argv[2]
+if not os.path.isabs(link_value):
+    link_value = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), link_value)
+print(os.path.realpath(link_value))
+PY
+)"
     if [ "$target_source" = "$expected_claude" ] || [ "$target_source" = "$expected_root" ]; then
       if [ "$target_source" != "$expected_claude" ]; then
-        target_link="$(readlink "$target")"
         run_publisher_and_count symlink "$HOME_DIR" "$target_relative" link "$target_link" "$skill_file"
       fi
+    else
+      PRESERVED=$((PRESERVED + 1))
     fi
   elif [ -f "$target" ]; then
     CURRENT_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-command-snapshot.XXXXXX")"

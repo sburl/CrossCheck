@@ -104,13 +104,41 @@ fi
 
 # Intermediate settings must remain private even when the caller's umask is
 # permissive and the installed settings contain private values.
-PRIVATE_SETTINGS="$SETTINGS_DIR/private-settings.json"
+PRIVATE_HOME="$TEMP_DIR/private-settings-home"
+mkdir -p "$PRIVATE_HOME/.claude"
+chmod 0700 "$PRIVATE_HOME/.claude"
+PRIVATE_SETTINGS="$PRIVATE_HOME/.claude/settings.json"
 PRIVATE_JQ_BIN="$TEMP_DIR/private-jq-bin"
 PRIVATE_MODE_MARKER="$TEMP_DIR/private-settings-temp-mode"
+PRIVATE_SNAPSHOT_MODE_MARKER="$TEMP_DIR/private-settings-snapshot-mode"
+PRIVATE_SHARED_TMP="$(mktemp -d /tmp/crosscheck-shared-temp.XXXXXX)"
+chmod 1777 "$PRIVATE_SHARED_TMP"
+trap 'rm -rf "$TEMP_DIR" "$PRIVATE_SHARED_TMP"' EXIT
 mkdir -p "$PRIVATE_JQ_BIN"
 printf '{"privateValue":"fixture"}\n' > "$PRIVATE_SETTINGS"
-chmod 0600 "$PRIVATE_SETTINGS"
+chmod 0644 "$PRIVATE_SETTINGS"
 REAL_JQ="$(command -v jq)"
+REAL_PYTHON="$(command -v python3)"
+cat > "$PRIVATE_JQ_BIN/python3" <<'SH'
+#!/usr/bin/env bash
+set -e
+if [ "$1" = "$PRIVATE_PUBLISH_HELPER" ] && [ "$2" = snapshot ]; then
+  "$REAL_PYTHON" "$@"
+  "$REAL_PYTHON" - "$5" "$PRIVATE_SNAPSHOT_MODE_MARKER" <<'PY'
+import os
+import stat
+import sys
+
+mode = stat.S_IMODE(os.stat(sys.argv[1]).st_mode)
+open(sys.argv[2], "w").write(oct(mode))
+if mode != 0o600:
+    raise SystemExit(f"settings snapshot is exposed in shared TMPDIR with mode {oct(mode)}")
+PY
+  exit 0
+fi
+exec "$REAL_PYTHON" "$@"
+SH
+chmod +x "$PRIVATE_JQ_BIN/python3"
 cat > "$PRIVATE_JQ_BIN/jq" <<'SH'
 #!/usr/bin/env bash
 set -e
@@ -134,13 +162,13 @@ SH
 chmod +x "$PRIVATE_JQ_BIN/jq"
 (
   umask 022
-  PATH="$PRIVATE_JQ_BIN:$PATH" TMPDIR="$TEMP_DIR" REAL_JQ="$REAL_JQ" TEMP_MODE_MARKER="$PRIVATE_MODE_MARKER" TEMP_MODE_TARGET="$PRIVATE_SETTINGS" "$INSTALLER" "$PRIVATE_SETTINGS" "$HOOK"
+  PATH="$PRIVATE_JQ_BIN:$PATH" TMPDIR="$PRIVATE_SHARED_TMP" REAL_JQ="$REAL_JQ" REAL_PYTHON="$REAL_PYTHON" PRIVATE_PUBLISH_HELPER="$REPO_ROOT/scripts/atomic-publish-file.py" PRIVATE_SNAPSHOT_MODE_MARKER="$PRIVATE_SNAPSHOT_MODE_MARKER" TEMP_MODE_MARKER="$PRIVATE_MODE_MARKER" TEMP_MODE_TARGET="$PRIVATE_SETTINGS" "$INSTALLER" "$PRIVATE_SETTINGS" "$HOOK"
 )
-if [ "$(cat "$PRIVATE_MODE_MARKER")" != "0o600" ] || [ "$(python3 -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "$PRIVATE_SETTINGS")" != "0o600" ]; then
+if [ "$(cat "$PRIVATE_MODE_MARKER")" != "0o600" ] || [ "$(cat "$PRIVATE_SNAPSHOT_MODE_MARKER")" != "0o600" ] || [ "$(python3 -c 'import os,stat,sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "$PRIVATE_SETTINGS")" != "0o644" ]; then
   echo "installer did not keep private settings and its intermediate file at mode 0600" >&2
   exit 1
 fi
-if find "$TEMP_DIR" -maxdepth 1 -name 'crosscheck-settings-stage.*' -print -quit | grep -q .; then
+if find "$PRIVATE_SHARED_TMP" -mindepth 1 -print -quit | grep -q .; then
   echo "installer left its private staged settings file in TMPDIR" >&2
   exit 1
 fi
@@ -247,6 +275,9 @@ PY
     COMMAND_LINK="$BOOTSTRAP_HOME/.codex/skills/update-crosscheck/SKILL.md"
     EXPECTED_COMMAND="$BOOTSTRAP_REPO/codex/skills/update-crosscheck/SKILL.md"
     jq -e '
+      .model == "gpt-5-codex" and
+      .env.CODEX_EXPERIMENTAL_AGENT_TEAMS == "1" and
+      ((.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS // "") == "") and
       (.permissions.deny as $deny | [
         "Bash(gh*--admin*)", "Bash(*--admin*)", "Bash(gh api*rulesets*)",
         "Bash(gh api*branches/*/protection*)", "Bash(*graphql*BranchProtection*)",
@@ -357,7 +388,7 @@ PY
     FAIL_SETTINGS="$FAIL_HOME/.claude/settings.json"
     EXPECTED_VALIDATION='Claude settings file must contain exactly one valid JSON object:'
   else
-    FAIL_TEMPLATE="$FAIL_REPO/settings.template.json"
+    FAIL_TEMPLATE="$FAIL_REPO/codex/settings.template.json"
     FAIL_SCRIPT="$FAIL_REPO/codex/scripts/bootstrap-crosscheck.sh"
     FAIL_SETTINGS="$FAIL_HOME/.codex/settings.json"
     EXPECTED_VALIDATION='Settings must contain exactly one valid JSON object:'
@@ -861,6 +892,57 @@ if (late_move_root / "settings.json").exists():
     raise SystemExit("publisher restored settings only in the detached target parent")
 if not list(late_move_detached.glob(".crosscheck-stage-*")):
     raise SystemExit("publisher discarded the staged inode after a late target-parent move")
+
+# A same-content recovery replacement during the final parent check must not
+# allow cleanup of the original settings inode in the stage name.
+final_recovery_home = scratch / "final-recovery-home"
+final_recovery_root = scratch / "final-recovery-root"
+final_recovery_home.mkdir()
+final_recovery_root.mkdir()
+final_recovery_target = final_recovery_root / "settings.json"
+final_recovery_snapshot = scratch / "final-recovery-snapshot.json"
+final_recovery_stage = scratch / "final-recovery-stage.json"
+final_recovery_text = '{"finalRecovery":"original"}\n'
+final_recovery_target.write_text(final_recovery_text)
+final_recovery_snapshot.write_text(final_recovery_text)
+final_recovery_stage.write_text('{"finalRecovery":"updated"}\n')
+final_recovery_identity = (final_recovery_target.stat().st_dev, final_recovery_target.stat().st_ino)
+real_verify = module._verify_parent_path
+verify_calls = [0]
+
+def replace_backup_during_final_publish_parent_check(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 4:
+        backup_dir = final_recovery_home / ".crosscheck-recovery"
+        backup = next(path for path in backup_dir.glob("settings-*.bak") if path.read_text() == final_recovery_text)
+        replacement = backup.with_name(backup.name + ".replacement")
+        mode = stat.S_IMODE(backup.stat().st_mode)
+        replacement.write_text(final_recovery_text)
+        replacement.chmod(mode)
+        os.replace(replacement, backup)
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+module._verify_parent_path = replace_backup_during_final_publish_parent_check
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(final_recovery_home)
+try:
+    try:
+        module.publish_file(
+            str(final_recovery_root), "settings.json", str(final_recovery_snapshot), str(final_recovery_stage)
+        )
+    except module.RestorationFailed:
+        pass
+    else:
+        raise SystemExit("publisher accepted a recovery inode replaced during its final parent check")
+finally:
+    os.environ["HOME"] = previous_home
+    module._verify_parent_path = real_verify
+final_recovery_staged = list(final_recovery_root.glob(".crosscheck-stage-*"))
+if not any(
+    (path.stat().st_dev, path.stat().st_ino) == final_recovery_identity and path.read_text() == final_recovery_text
+    for path in final_recovery_staged
+):
+    raise SystemExit("publisher removed the only original settings inode after a recovery-link replacement")
 
 # Settings callers use the target directory as the publisher root. Moving that
 # root after publication must be detected, with recovery outside the root.
@@ -1435,6 +1517,47 @@ if "Claude command links added or refreshed: 0; preserved 1" not in sync_result.
 if os.path.realpath(noop_sync_target) != str(noop_sync_claude.resolve()):
     raise SystemExit("Claude sync race fixture did not leave the user's current symlink live")
 
+# Link ownership and the expected raw value must come from one sample. Replacing
+# a managed link with a custom link before readlink must preserve the custom path.
+noop_sync_target.unlink()
+noop_sync_target.symlink_to(noop_sync_root_skill)
+custom_sync_target = scratch / "custom-managed-command.md"
+custom_sync_target.write_text("user-owned command\n")
+custom_readlink_shim = readlink_shim
+custom_readlink_shim.write_text(
+    "#!/bin/sh\n"
+    'if [ "$1" = "$RACE_TARGET" ]; then\n'
+    '  ln -s "$RACE_NEW_LINK" "$RACE_TARGET.next"\n'
+    '  mv -f "$RACE_TARGET.next" "$RACE_TARGET"\n'
+    'fi\n'
+    'exec "$REAL_READLINK" "$@"\n'
+)
+custom_readlink_shim.chmod(0o755)
+custom_sync_env = sync_env.copy()
+custom_sync_env.update(
+    PATH=f"{readlink_shims}:{sync_env['PATH']}",
+    RACE_NEW_LINK=str(custom_sync_target),
+)
+custom_sync_result = subprocess.run(
+    ["bash", str(Path(sys.argv[1]).parents[1] / "claude/scripts/sync-managed-claude-skills.sh"),
+     str(noop_sync_root), str(noop_sync_home)],
+    check=False,
+    text=True,
+    capture_output=True,
+    env=custom_sync_env,
+)
+if custom_sync_result.returncode != 0:
+    raise SystemExit(
+        f"Claude sync custom-link race fixture failed: {custom_sync_result.stderr}\n{custom_sync_result.stdout}"
+    )
+if "Claude command links added or refreshed: 0; preserved 1" not in custom_sync_result.stdout:
+    raise SystemExit(
+        "Claude sync rewrote a concurrent custom command link: "
+        f"stdout={custom_sync_result.stdout!r}; stderr={custom_sync_result.stderr!r}"
+    )
+if os.readlink(noop_sync_target) != str(custom_sync_target):
+    raise SystemExit("Claude sync replaced a concurrent custom command link")
+
 # If syncing the removal of a failed new symlink errors, still attempt to
 # restore the displaced command before returning a fatal status.
 symlink_rollback_home = scratch / "symlink-rollback-home"
@@ -1868,6 +1991,57 @@ if not any(
 ):
     raise SystemExit("rollback did not keep a stable original settings backup after the parent moved")
 
+# Replacing a published-inode backup during the rollback parent check must be
+# fatal and retain the staged inode for recovery.
+backup_rollback_home = scratch / "backup-rollback-home"
+backup_rollback_root = scratch / "backup-rollback-root"
+backup_rollback_home.mkdir()
+backup_rollback_root.mkdir()
+backup_rollback_target = backup_rollback_root / "settings.json"
+backup_rollback_snapshot = scratch / "backup-rollback-snapshot.json"
+backup_rollback_stage = scratch / "backup-rollback-stage.json"
+backup_rollback_original = '{"backupRollback":"original"}\n'
+backup_rollback_updated = '{"backupRollback":"updated"}\n'
+backup_rollback_target.write_text(backup_rollback_original)
+backup_rollback_snapshot.write_text(backup_rollback_original)
+backup_rollback_stage.write_text(backup_rollback_updated)
+real_verify = module._verify_parent_path
+verify_calls = [0]
+
+def replace_backup_during_rollback_parent_check(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 2:
+        raise module.ConcurrentUpdate("injected failure that starts rollback")
+    if verify_calls[0] == 4:
+        backup_dir = backup_rollback_home / ".crosscheck-recovery"
+        backup = next(path for path in backup_dir.glob("settings-*.bak") if path.read_text() == backup_rollback_updated)
+        replacement = backup.with_name(backup.name + ".replacement")
+        mode = stat.S_IMODE(backup.stat().st_mode)
+        replacement.write_text(backup_rollback_updated)
+        replacement.chmod(mode)
+        os.replace(replacement, backup)
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+module._verify_parent_path = replace_backup_during_rollback_parent_check
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(backup_rollback_home)
+original_argv = module.sys.argv
+module.sys.argv = [
+    "atomic-publish-file.py", "publish", str(backup_rollback_root), "settings.json",
+    str(backup_rollback_snapshot), str(backup_rollback_stage),
+]
+try:
+    if module.main() != 5:
+        raise SystemExit("rollback accepted a replaced published-inode recovery link")
+finally:
+    module.sys.argv = original_argv
+    module._verify_parent_path = real_verify
+    os.environ["HOME"] = previous_home
+if backup_rollback_target.read_text() != backup_rollback_original:
+    raise SystemExit("rollback changed the live original settings after recovery-link replacement")
+if not any(path.read_text() == backup_rollback_updated for path in backup_rollback_root.glob(".crosscheck-stage-*")):
+    raise SystemExit("rollback removed the only staged published inode after recovery-link replacement")
+
 # Managed link no-ops have an explicit status instead of looking like updates.
 noop_root = scratch / "managed-link-noop"
 noop_target = noop_root / ".claude/commands/managed.md"
@@ -1894,11 +2068,11 @@ link_stage = scratch / "skill-stage"
 link_stage.write_text("managed skill\n")
 real_copy = module._copy_into_directory
 
-def swap_skill_directory(source_path, directory_fd):
+def swap_skill_directory(source_path, directory_fd, mode_override=None):
     moved_dir = skill_dir.with_name("example-moved")
     skill_dir.rename(moved_dir)
     skill_dir.symlink_to(outside, target_is_directory=True)
-    return real_copy(source_path, directory_fd)
+    return real_copy(source_path, directory_fd, mode_override)
 
 module._copy_into_directory = swap_skill_directory
 try:
@@ -2061,6 +2235,74 @@ if not any(
     raise SystemExit("Claude command migration discarded the only link to the original inode")
 if replacement_command.is_symlink() or replacement_command.read_text() != "late write through original descriptor\n":
     raise SystemExit("Claude command migration did not restore the original inode after failed verification")
+
+# Replacing the command backup during the final parent check must leave the
+# original inode recoverable through either the restored command or backup.
+parent_check_home = scratch / "parent-check-command-home"
+parent_check_command = parent_check_home / ".claude/commands/managed.md"
+parent_check_command.parent.mkdir(parents=True)
+parent_check_text = "parent-check original command\n"
+parent_check_command.write_text(parent_check_text)
+parent_check_snapshot = scratch / "parent-check-command-snapshot.md"
+parent_check_snapshot.write_text(parent_check_text)
+parent_check_fd = parent_check_command.open("r+")
+parent_check_identity = (parent_check_command.stat().st_dev, parent_check_command.stat().st_ino)
+real_verify = module._verify_parent_path
+verify_calls = [0]
+real_sync_recovery = module._sync_stable_recovery_entry
+parent_check_backup = [None]
+
+def capture_parent_check_backup(base_fd, base_path, recovery_fd, recovery_name, recovery_dir, entry_name):
+    result = real_sync_recovery(
+        base_fd, base_path, recovery_fd, recovery_name, recovery_dir, entry_name
+    )
+    parent_check_backup[0] = Path(recovery_dir) / entry_name
+    return result
+
+def replace_command_backup_during_parent_check(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 2:
+        backup = parent_check_backup[0]
+        if backup is None or backup.read_text() != parent_check_text:
+            raise SystemExit("Claude command migration did not stage its stable recovery link")
+        replacement = backup.with_name(backup.name + ".replacement")
+        mode = stat.S_IMODE(backup.stat().st_mode)
+        replacement.write_text(parent_check_text)
+        replacement.chmod(mode)
+        os.replace(replacement, backup)
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+module._verify_parent_path = replace_command_backup_during_parent_check
+module._sync_stable_recovery_entry = capture_parent_check_backup
+previous_home = os.environ["HOME"]
+try:
+    try:
+        module.sync_symlink(
+            str(parent_check_home), ".claude/commands/managed.md", "snapshot",
+            str(parent_check_snapshot), "/repo/claude/skill-sources/managed.md",
+        )
+    except OSError:
+        pass
+    else:
+        raise SystemExit("Claude command migration accepted a replaced backup during its final parent check")
+finally:
+    os.environ["HOME"] = previous_home
+    module._verify_parent_path = real_verify
+    module._sync_stable_recovery_entry = real_sync_recovery
+parent_check_fd.seek(0)
+parent_check_fd.truncate()
+parent_check_fd.write("late write after parent check\n")
+parent_check_fd.flush()
+parent_check_fd.close()
+parent_check_backups = list((Path(previous_home) / ".crosscheck-recovery").glob("settings-*.bak"))
+if not any(
+    (backup.stat().st_dev, backup.stat().st_ino) == parent_check_identity
+    and backup.read_text() == "late write after parent check\n"
+    for backup in parent_check_backups
+):
+    raise SystemExit("Claude migration lost the original inode after backup replacement during parent check")
+if parent_check_command.is_symlink() or parent_check_command.read_text() != "late write after parent check\n":
+    raise SystemExit("Claude migration failed to restore the original command after backup replacement")
 
 race_dir = scratch / "command-race-home"
 race_command = race_dir / ".claude/commands/managed.md"

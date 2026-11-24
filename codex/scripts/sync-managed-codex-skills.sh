@@ -46,7 +46,10 @@ if [ -L "$TARGET_HOME/.codex" ] || [ -L "$SKILLS_ROOT" ]; then
   exit 0
 fi
 
-mkdir -p "$CODEX_ROOT"
+if ! python3 "$PUBLISH_HELPER" ensure-directory "$TARGET_HOME" ".codex"; then
+  echo "Could not safely create Codex configuration directory: $CODEX_ROOT" >&2
+  exit 2
+fi
 
 for skill_dir in "$SOURCE_ROOT"/*; do
   [ -d "$skill_dir" ] && [ ! -L "$skill_dir" ] || continue
@@ -75,7 +78,7 @@ for skill_dir in "$SOURCE_ROOT"/*; do
 
     expected_snapshot="--absent"
     CURRENT_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-snapshot.XXXXXX")"
-    if python3 "$PUBLISH_HELPER" snapshot "$CODEX_ROOT" "$target_relative" "$CURRENT_SNAPSHOT"; then
+    if python3 "$PUBLISH_HELPER" snapshot "$CODEX_ROOT" "$target_relative" "$CURRENT_SNAPSHOT" --strict-root; then
       if cmp -s "$source_file" "$CURRENT_SNAPSHOT"; then
         rm -f "$CURRENT_SNAPSHOT"
         CURRENT_SNAPSHOT=""
@@ -104,7 +107,7 @@ for skill_dir in "$SOURCE_ROOT"/*; do
 
     CURRENT_STAGE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-stage.XXXXXX")"
     cp -p "$source_file" "$CURRENT_STAGE"
-    if python3 "$PUBLISH_HELPER" publish "$CODEX_ROOT" "$target_relative" "$expected_snapshot" "$CURRENT_STAGE"; then
+    if python3 "$PUBLISH_HELPER" publish "$CODEX_ROOT" "$target_relative" "$expected_snapshot" "$CURRENT_STAGE" --strict-root; then
       skill_changed=1
     else
       publish_status=$?

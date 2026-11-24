@@ -247,7 +247,7 @@ def _rename_exchange(
 
 
 def _copy_into_directory(source_path: str, directory_fd: int, mode_override: int | None = None) -> str:
-    """Copy a trusted staged file into the already-open target directory."""
+    """Copy a trusted staged file into the already-open private directory."""
     source_fd = os.open(os.path.abspath(source_path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     try:
         source_info = os.fstat(source_fd)
@@ -393,6 +393,46 @@ def _new_recovery_directory(parent_fd: int, parent_path: str) -> tuple[int, str,
     )
     _fsync_directory(parent_fd)
     return recovery_fd, name, os.path.join(parent_path, name)
+
+
+def _new_private_stage_directory(
+    parent_fd: int, parent_path: str, target_device: int
+) -> tuple[int, str, str]:
+    """Create a durable mode-0700 staging directory beside the target."""
+    while True:
+        name = f".crosscheck-staging-{secrets.token_hex(8)}"
+        try:
+            os.mkdir(name, 0o700, dir_fd=parent_fd)
+            break
+        except FileExistsError:
+            continue
+    stage_fd: int | None = None
+    try:
+        stage_fd = os.open(
+            name,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=parent_fd,
+        )
+        info = os.fstat(stage_fd)
+        if (
+            info.st_dev != target_device
+            or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) & 0o077
+        ):
+            raise PermissionError(
+                "staging directory is not private and same-filesystem: "
+                f"{os.path.join(parent_path, name)}"
+            )
+        _fsync_directory(parent_fd)
+        return stage_fd, name, os.path.join(parent_path, name)
+    except BaseException:
+        if stage_fd is not None:
+            os.close(stage_fd)
+        try:
+            os.rmdir(name, dir_fd=parent_fd)
+        except OSError:
+            pass
+        raise
 
 
 def _discard_recovery(parent_fd: int, recovery_fd: int, recovery_name: str) -> None:
@@ -551,7 +591,9 @@ def _rollback_failed_publish(
     parent_fd: int,
     parent_path: str,
     target_name: str,
+    stage_fd: int,
     staged_name: str,
+    stage_path: str,
     published_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None],
     known_states: set[tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None]],
     observed_states: set[tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None]],
@@ -564,11 +606,10 @@ def _rollback_failed_publish(
     stable_recovery_dir: str,
 ) -> str | None:
     """Restore the newest observed concurrent entry and keep every displaced edit."""
-    stage_path = os.path.join(parent_path, staged_name)
 
     def preserve_stage_state() -> tuple[bool, str | None, tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None]:
         try:
-            state = _entry_state_at(parent_fd, staged_name)
+            state = _entry_state_at(stage_fd, staged_name)
         except OSError:
             return False, None, None
         inode_key = state[0][:2]
@@ -577,7 +618,7 @@ def _rollback_failed_publish(
             return True, backup_path, state
         try:
             backup_name, backup_path = _new_stable_recovery_link(
-                parent_fd, staged_name, stable_recovery_fd, stable_recovery_dir
+                stage_fd, staged_name, stable_recovery_fd, stable_recovery_dir
             )
             backup_state = _entry_state_at(stable_recovery_fd, backup_name)
             if backup_state[0][:2] != inode_key:
@@ -619,7 +660,7 @@ def _rollback_failed_publish(
             except OSError:
                 return None
         try:
-            stage_inode = _entry_state_at(parent_fd, staged_name)[0][:2]
+            stage_inode = _entry_state_at(stage_fd, staged_name)[0][:2]
         except OSError:
             stage_inode = None
         candidates = (desired_state[0][:2], stage_inode)
@@ -646,7 +687,7 @@ def _rollback_failed_publish(
     def finalize_recovery() -> str | None:
         while True:
             try:
-                stage_state = _entry_state_at(parent_fd, staged_name)
+                stage_state = _entry_state_at(stage_fd, staged_name)
             except OSError as error:
                 raise RestorationFailed(
                     f"could not verify settings recovery before cleanup: {stage_path}", stage_path
@@ -682,10 +723,11 @@ def _rollback_failed_publish(
 
     while True:
         try:
-            _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
+            _rename_exchange(parent_fd, target_name, stage_fd, staged_name)
             _fsync_directory(parent_fd)
+            _fsync_directory(stage_fd)
             verify_live_parent_after_rollback()
-            displaced_state = _entry_state_at(parent_fd, staged_name)
+            displaced_state = _entry_state_at(stage_fd, staged_name)
             live_state = _entry_state_at(parent_fd, target_name)
         except OSError as error:
             raise RestorationFailed(
@@ -712,8 +754,9 @@ def _rollback_failed_publish(
                     )
                 if displaced_state == desired_state:
                     try:
-                        _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
+                        _rename_exchange(parent_fd, target_name, stage_fd, staged_name)
                         _fsync_directory(parent_fd)
+                        _fsync_directory(stage_fd)
                         verify_live_parent_after_rollback()
                         live_state = _entry_state_at(parent_fd, target_name)
                     except OSError as error:
@@ -760,8 +803,17 @@ def publish_file(
     published_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
     original_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
 
+    stage_fd: int | None = None
+    stage_dir_name: str | None = None
+    stage_dir_path: str | None = None
+
+    def stage_entry_path() -> str:
+        if stage_dir_path is None or staged_name is None:
+            return target
+        return os.path.join(stage_dir_path, staged_name)
+
     def staged_recovery_path() -> str:
-        stage_path = os.path.join(parent_path, staged_name) if staged_name is not None else target
+        stage_path = stage_entry_path()
         if published_state is None or stable_base_fd is None or stable_recovery_fd is None or recovery_path is None:
             return stage_path
         backup = recovered_entries.get(published_state[0][:2])
@@ -786,17 +838,22 @@ def publish_file(
         return verified or stage_path
 
     try:
-        staged_name = _copy_into_directory(staged_file, parent_fd, expected_mode)
-        _fsync_directory(parent_fd)
+        target_info = os.fstat(parent_fd)
+        stage_fd, stage_dir_name, stage_dir_path = _new_private_stage_directory(
+            parent_fd, parent_path, target_info.st_dev
+        )
+        staged_name = _copy_into_directory(staged_file, stage_fd, expected_mode)
+        _fsync_directory(stage_fd)
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
         if expected_snapshot is None:
             try:
-                _rename_noreplace(parent_fd, staged_name, parent_fd, target_name)
+                _rename_noreplace(stage_fd, staged_name, parent_fd, target_name)
             except FileExistsError as error:
                 raise ConcurrentUpdate(f"destination appeared during CrossCheck update: {target}") from error
             staged_name = None
             _fsync_directory(parent_fd)
+            _fsync_directory(stage_fd)
             _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
             return None
 
@@ -836,16 +893,17 @@ def publish_file(
         if current_signature != expected_signature:
             raise ConcurrentUpdate(f"file changed during CrossCheck update, refusing to overwrite: {target}")
 
-        published_state = _entry_state_at(parent_fd, staged_name)
+        published_state = _entry_state_at(stage_fd, staged_name)
         # RENAME_SWAP leaves the live name populated and moves the old inode
         # to our staged name, where a racing writer can still be detected.
-        _rename_exchange(parent_fd, target_name, parent_fd, staged_name)
+        _rename_exchange(parent_fd, target_name, stage_fd, staged_name)
         exchange_attempted = True
         swapped = True
         _fsync_directory(parent_fd)
+        _fsync_directory(stage_fd)
 
         try:
-            current_state = _entry_state_at(parent_fd, staged_name)
+            current_state = _entry_state_at(stage_fd, staged_name)
         except OSError as error:
             raise ConcurrentUpdate(f"target changed during CrossCheck update: {target}") from error
         if current_state != original_state:
@@ -879,6 +937,11 @@ def publish_file(
             original_state[0][:2],
         )
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+        if _entry_state_at(parent_fd, target_name) != published_state:
+            raise ConcurrentUpdate(
+                f"file changed during CrossCheck update; previous file preserved: {target}",
+                recovery_path,
+            )
         swapped = False
         return recovery_path
     except BaseException as error:
@@ -888,7 +951,7 @@ def publish_file(
             if stable_recovery_name is not None and recovery_path is not None:
                 recovered_entries[original_state[0][:2]] = (stable_recovery_name, recovery_path)
             try:
-                current_state = _entry_state_at(parent_fd, staged_name)
+                current_state = _entry_state_at(stage_fd, staged_name)
             except OSError:
                 current_state = None
             desired_state = current_state or original_state
@@ -897,7 +960,7 @@ def publish_file(
                 # A recovery link failure must not prevent an attempted rollback.
                 try:
                     backup_name, backup_path = _new_stable_recovery_link(
-                        parent_fd, staged_name, stable_recovery_fd, stable_recovery_dir
+                        stage_fd, staged_name, stable_recovery_fd, stable_recovery_dir
                     )
                     backup_state = _entry_state_at(stable_recovery_fd, backup_name)
                     if backup_state[0][:2] != current_state[0][:2]:
@@ -958,7 +1021,9 @@ def publish_file(
                 parent_fd,
                 parent_path,
                 target_name,
+                stage_fd,
                 staged_name,
+                stage_entry_path(),
                 published_state,
                 known_states,
                 observed_states,
@@ -1010,14 +1075,27 @@ def publish_file(
                             staged_recovery_path(),
                         ) from recovery_error
                 try:
-                    os.unlink(staged_name, dir_fd=parent_fd)
+                    os.unlink(staged_name, dir_fd=stage_fd)
                 except FileNotFoundError:
-                    pass
+                    staged_name = None
                 except OSError as rollback_error:
                     raise RestorationFailed(
-                        f"could not inspect the managed command while restoring it: {target}", recovery_path
+                        f"could not inspect the managed command while restoring it: {target}",
+                        staged_recovery_path(),
                     ) from rollback_error
+                else:
+                    staged_name = None
         finally:
+            if stage_fd is not None:
+                try:
+                    os.close(stage_fd)
+                finally:
+                    if stage_dir_name is not None and staged_name is None:
+                        try:
+                            os.rmdir(stage_dir_name, dir_fd=parent_fd)
+                            _fsync_directory(parent_fd)
+                        except OSError:
+                            pass
             if stable_recovery_fd is not None:
                 os.close(stable_recovery_fd)
             if stable_base_fd is not None:
@@ -1026,10 +1104,16 @@ def publish_file(
             os.close(root_fd)
 
 
-def snapshot_file(root: str, relative_target: str, output_path: str, private: bool = False) -> bool:
+def snapshot_file(
+    root: str,
+    relative_target: str,
+    output_path: str,
+    private: bool = False,
+    strict_root: bool = False,
+) -> bool:
     """Copy a regular target to a snapshot without following symlinks."""
     try:
-        root_fd, root_path = _open_root(root)
+        root_fd, root_path = _open_root(root, reject_leaf_symlink=strict_root)
     except FileNotFoundError:
         return False
     parent_fd: int | None = None
@@ -1438,13 +1522,22 @@ def main() -> int:
             sys.stderr.write(f"could not safely create directory {relative_directory}: {error}\n")
             return 2
         return 0
-    if len(sys.argv) in (5, 6) and sys.argv[1] == "snapshot":
-        if len(sys.argv) == 6 and sys.argv[5] != "--private":
-            sys.stderr.write("snapshot's optional mode must be --private\n")
+    if 5 <= len(sys.argv) <= 7 and sys.argv[1] == "snapshot":
+        snapshot_options = sys.argv[5:]
+        if any(option not in {"--private", "--strict-root"} for option in snapshot_options) or len(
+            set(snapshot_options)
+        ) != len(snapshot_options):
+            sys.stderr.write("snapshot accepts --private and --strict-root at most once\n")
             return 2
         _, _, root, relative_target, output_path, *options = sys.argv
         try:
-            return 0 if snapshot_file(root, relative_target, output_path, private=bool(options)) else 4
+            return 0 if snapshot_file(
+                root,
+                relative_target,
+                output_path,
+                private="--private" in options,
+                strict_root="--strict-root" in options,
+            ) else 4
         except OSError as error:
             sys.stderr.write(f"could not safely snapshot {relative_target}: {error}\n")
             return 2
@@ -1475,7 +1568,7 @@ def main() -> int:
     if not 6 <= len(sys.argv) <= 8 or sys.argv[1] != "publish":
         sys.stderr.write(
             "usage: atomic-publish-file.py publish ROOT RELATIVE_TARGET EXPECTED_SNAPSHOT|--absent STAGED_FILE [EXPECTED_MODE] [--strict-root]\n"
-            "       atomic-publish-file.py snapshot ROOT RELATIVE_TARGET OUTPUT_SNAPSHOT [--private]\n"
+            "       atomic-publish-file.py snapshot ROOT RELATIVE_TARGET OUTPUT_SNAPSHOT [--private] [--strict-root]\n"
             "       atomic-publish-file.py ensure-directory ROOT RELATIVE_DIRECTORY\n"
             "       atomic-publish-file.py symlink ROOT RELATIVE_TARGET absent|snapshot|link EXPECTED_VALUE NEW_LINK\n",
         )

@@ -135,21 +135,36 @@ expected_snapshot = sys.argv[1]
 snapshot_file = Path(sys.argv[2])
 stage_file = Path(sys.argv[3])
 workflow = Path(sys.argv[4]).expanduser().resolve()
-start = "<!-- BEGIN CrossCheck managed workflow -->"
-end = "<!-- END CrossCheck managed workflow -->"
-block = f"{start}\nRead and follow the CrossCheck Codex workflow at {workflow}.\n{end}"
-text = snapshot_file.read_text() if expected_snapshot != "--absent" else ""
+start = b"<!-- BEGIN CrossCheck managed workflow -->"
+end = b"<!-- END CrossCheck managed workflow -->"
+text = snapshot_file.read_bytes() if expected_snapshot != "--absent" else b""
+newline = b"\r\n" if b"\r\n" in text else b"\n"
+block = newline.join(
+    (
+        start,
+        f"Read and follow the CrossCheck Codex workflow at {workflow}".encode(),
+        end,
+    )
+)
 has_start = start in text
 has_end = end in text
 if has_start != has_end or text.count(start) > 1 or text.count(end) > 1:
     raise SystemExit(f"Malformed CrossCheck workflow markers in {Path.home() / '.codex/AGENTS.md'}")
 if has_start:
-    before, remainder = text.split(start, 1)
-    _, after = remainder.split(end, 1)
-    updated = before.rstrip() + "\n\n" + block + after
+    start_index = text.index(start)
+    end_index = text.index(end, start_index) + len(end)
+    updated = text[:start_index] + block + text[end_index:]
 else:
-    updated = text.rstrip() + ("\n\n" if text.strip() else "") + block + "\n"
-stage_file.write_text(updated)
+    if not text:
+        separator = b""
+    elif text.endswith(newline * 2):
+        separator = b""
+    elif text.endswith(newline):
+        separator = newline
+    else:
+        separator = newline * 2
+    updated = text + separator + block + newline
+stage_file.write_bytes(updated)
 if expected_snapshot != "--absent":
     mode = stat.S_IMODE(snapshot_file.stat().st_mode)
 else:

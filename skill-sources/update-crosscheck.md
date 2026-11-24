@@ -104,7 +104,7 @@ Update existing settings through the managed scripts. They preserve a settings
 symlink and refuse to replace concurrent edits.
 
 ```bash
-for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json"; do
+for SETTINGS_FILE in "$HOME/.claude/settings.json" "$HOME/.codex/settings.json" "$HOME/.gemini/settings.json"; do
     if [ -f "$SETTINGS_FILE" ]; then
         if ! "$CROSSCHECK_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --include-ask; then
             echo "❌ Failed to sync critical settings in $SETTINGS_FILE." >&2

@@ -339,6 +339,46 @@ PY
   fi
 done
 
+# Codex bootstrap must preserve every user byte around the managed block,
+# including CRLF line endings and Markdown hard breaks, while retaining mode.
+CODEX_BYTE_REPO="$TEMP_DIR/workspace/codex-byte-preservation/CrossCheck"
+CODEX_BYTE_HOME="$TEMP_DIR/home-codex-byte-preservation"
+CODEX_BYTE_SCRIPT="$CODEX_BYTE_REPO/codex/scripts/bootstrap-crosscheck.sh"
+mkdir -p "$(dirname "$CODEX_BYTE_REPO")" "$CODEX_BYTE_HOME/.codex"
+python3 - "$REPO_ROOT" "$CODEX_BYTE_REPO" <<'PY'
+import shutil
+import sys
+shutil.copytree(sys.argv[1], sys.argv[2], ignore=shutil.ignore_patterns(".git"))
+PY
+CODEX_BYTE_PREFIX=$'## personal\r\nline with hard break  \r\nnext line\r\n'
+CODEX_BYTE_OLD_BLOCK=$'<!-- BEGIN CrossCheck managed workflow -->\r\nold managed workflow\r\n<!-- END CrossCheck managed workflow -->'
+CODEX_BYTE_SUFFIX=$'\r\n## preserved tail\r\nlast hard break  \r\n'
+printf '%s' "$CODEX_BYTE_PREFIX$CODEX_BYTE_OLD_BLOCK$CODEX_BYTE_SUFFIX" > "$CODEX_BYTE_HOME/.codex/AGENTS.md"
+chmod 0640 "$CODEX_BYTE_HOME/.codex/AGENTS.md"
+run_bootstrap_with_declines "$CODEX_BYTE_HOME" "$CODEX_BYTE_SCRIPT" "Codex existing instruction byte preservation"
+python3 - "$CODEX_BYTE_HOME/.codex/AGENTS.md" "$CODEX_BYTE_REPO/codex/CODEX.md" <<'PY'
+import os
+import stat
+import sys
+from pathlib import Path
+
+actual = Path(sys.argv[1]).read_bytes()
+workflow = Path(sys.argv[2]).resolve()
+prefix = b"## personal\r\nline with hard break  \r\nnext line\r\n"
+suffix = b"\r\n## preserved tail\r\nlast hard break  \r\n"
+expected_block = (
+    b"<!-- BEGIN CrossCheck managed workflow -->\r\n"
+    + f"Read and follow the CrossCheck Codex workflow at {workflow}".encode()
+    + b"\r\n<!-- END CrossCheck managed workflow -->"
+)
+if not actual.startswith(prefix) or not actual.endswith(suffix):
+    raise SystemExit("Codex bootstrap changed user bytes outside its managed workflow block")
+if actual.count(expected_block) != 1:
+    raise SystemExit("Codex bootstrap did not install one CRLF managed workflow block")
+if stat.S_IMODE(os.stat(sys.argv[1]).st_mode) != 0o640:
+    raise SystemExit("Codex bootstrap changed the existing AGENTS.md mode")
+PY
+
 # Codex bootstrap must detect an atomic edit to global instructions between
 # reading the source snapshot and publishing the managed block.
 AGENT_RACE_REPO="$TEMP_DIR/workspace/codex-agent-race/CrossCheck"
@@ -640,6 +680,10 @@ for updater in "$REPO_ROOT/skill-sources/update-crosscheck.md" "$REPO_ROOT/claud
     exit 1
   fi
 done
+if ! grep -Fq '"$HOME/.gemini/settings.json"' "$REPO_ROOT/skill-sources/update-crosscheck.md"; then
+  echo "root updater no longer refreshes Gemini critical settings" >&2
+  exit 1
+fi
 for drain_skill in "$REPO_ROOT/skill-sources/drain-repo.md" "$REPO_ROOT/claude/skill-sources/drain-repo.md" "$REPO_ROOT/codex/skill-sources/drain-repo.md" "$REPO_ROOT/codex/skills/drain-repo/SKILL.md"; do
   if grep -Fq 'core.hooksPath=/dev/null' "$drain_skill" || grep -Fq 'Merge is YOURS to execute' "$drain_skill"; then
     echo "drain skill still recommends bypassing configured workflow gates: $drain_skill" >&2
@@ -726,6 +770,44 @@ if ! grep -Fq "Could not safely snapshot Codex skill file" "$TEMP_DIR/codex-nati
   exit 1
 fi
 
+# Replacing ~/.codex with a symlink after the shell preflight must fail at the
+# snapshot boundary without writing into the symlink destination.
+SYMLINK_NATIVE_HOME="$TEMP_DIR/home-codex-native-symlink-race"
+SYMLINK_NATIVE_OUTSIDE="$TEMP_DIR/codex-native-symlink-outside"
+SYMLINK_NATIVE_BIN="$TEMP_DIR/codex-native-symlink-bin"
+SYMLINK_NATIVE_MARKER="$TEMP_DIR/codex-native-symlink-swapped"
+SYMLINK_NATIVE_LOG="$TEMP_DIR/codex-native-symlink.log"
+SYMLINK_NATIVE_REAL_PYTHON="$(command -v python3)"
+mkdir -p "$SYMLINK_NATIVE_HOME" "$SYMLINK_NATIVE_OUTSIDE" "$SYMLINK_NATIVE_BIN"
+SYMLINK_NATIVE_HOME="$(cd "$SYMLINK_NATIVE_HOME" && pwd -P)"
+cat > "$SYMLINK_NATIVE_BIN/python3" <<'SH'
+#!/usr/bin/env bash
+set -e
+if [ "$2" = snapshot ] \
+  && [ ! -e "$SYMLINK_NATIVE_MARKER" ]; then
+  mv "$SYMLINK_NATIVE_HOME/.codex" "$SYMLINK_NATIVE_HOME/.codex-before-symlink"
+  ln -s "$SYMLINK_NATIVE_OUTSIDE" "$SYMLINK_NATIVE_HOME/.codex"
+  : > "$SYMLINK_NATIVE_MARKER"
+fi
+exec "$SYMLINK_NATIVE_REAL_PYTHON" "$@"
+SH
+chmod +x "$SYMLINK_NATIVE_BIN/python3"
+export NATIVE_REPO SYMLINK_NATIVE_HOME SYMLINK_NATIVE_OUTSIDE SYMLINK_NATIVE_MARKER SYMLINK_NATIVE_REAL_PYTHON
+if HOME="$SYMLINK_NATIVE_HOME" PATH="$SYMLINK_NATIVE_BIN:$PATH" \
+  bash "$NATIVE_REPO/codex/scripts/sync-managed-codex-skills.sh" "$NATIVE_REPO" "$SYMLINK_NATIVE_HOME" \
+  > "$SYMLINK_NATIVE_LOG" 2>&1; then
+  echo "Codex native updater accepted a .codex symlink installed after its preflight" >&2
+  cat "$SYMLINK_NATIVE_LOG" >&2
+  exit 1
+fi
+if [ ! -e "$SYMLINK_NATIVE_MARKER" ] \
+  || ! grep -Fq "Could not safely snapshot Codex skill file" "$SYMLINK_NATIVE_LOG" \
+  || find "$SYMLINK_NATIVE_OUTSIDE" -mindepth 1 -print -quit | grep -q .; then
+  echo "Codex native updater did not fail safely on a replacement .codex symlink" >&2
+  cat "$SYMLINK_NATIVE_LOG" >&2
+  exit 1
+fi
+
 python3 - "$REPO_ROOT/scripts/atomic-publish-file.py" "$TEMP_DIR" <<'PY'
 import contextlib
 import errno
@@ -742,6 +824,14 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 scratch = Path(sys.argv[2]) / "atomic-publish-race"
 scratch.mkdir()
+
+def stage_entries(root):
+    return [
+        entry
+        for directory in root.glob(".crosscheck-staging-*")
+        for entry in directory.glob(".crosscheck-stage-*")
+    ]
+
 ensure_root = scratch / "ensure-directory-root"
 ensure_root.mkdir()
 module.ensure_directory(str(ensure_root), ".codex")
@@ -767,6 +857,54 @@ else:
     raise SystemExit("atomic publisher followed a symlink used as a strict root")
 if strict_target.read_text() != "original global instructions\n":
     raise SystemExit("atomic publisher modified a target through a strict-root symlink")
+
+# The staged settings file may have the destination's readable mode only
+# inside a private same-filesystem directory.
+private_stage_root = scratch / "private-publisher-stage"
+private_stage_root.mkdir(mode=0o755)
+private_stage_target = private_stage_root / "settings.json"
+private_stage_snapshot = scratch / "private-publisher-snapshot.json"
+private_stage_source = scratch / "private-publisher-source.json"
+private_stage_target.write_text('{"privateStage":"before"}\n')
+private_stage_snapshot.write_text('{"privateStage":"before"}\n')
+private_stage_source.write_text('{"privateStage":"after"}\n')
+os.chmod(private_stage_root, 0o755)
+os.chmod(private_stage_target, 0o644)
+os.chmod(private_stage_snapshot, 0o644)
+os.chmod(private_stage_source, 0o600)
+real_exchange = module._rename_exchange
+private_stage_observed = []
+
+def inspect_private_publisher_stage(first_fd, first, second_fd, second):
+    staging_directories = list(private_stage_root.glob(".crosscheck-staging-*"))
+    if len(staging_directories) != 1:
+        raise SystemExit("publisher did not create one private staging directory")
+    staging_directory = staging_directories[0]
+    entries = list(staging_directory.glob(".crosscheck-stage-*"))
+    if len(entries) != 1:
+        raise SystemExit("publisher staging directory did not contain one staged file")
+    directory_mode = stat.S_IMODE(staging_directory.stat().st_mode)
+    file_mode = stat.S_IMODE(entries[0].stat().st_mode)
+    if directory_mode != 0o700 or file_mode != 0o644:
+        raise SystemExit(
+            f"publisher stage was exposed: directory={oct(directory_mode)}, file={oct(file_mode)}"
+        )
+    private_stage_observed.append((directory_mode, file_mode))
+    return real_exchange(first_fd, first, second_fd, second)
+
+module._rename_exchange = inspect_private_publisher_stage
+try:
+    module.publish_file(
+        str(private_stage_root), "settings.json", str(private_stage_snapshot),
+        str(private_stage_source), expected_mode=0o644,
+    )
+finally:
+    module._rename_exchange = real_exchange
+if not private_stage_observed:
+    raise SystemExit("publisher did not exercise the private-stage check")
+if list(private_stage_root.glob(".crosscheck-staging-*")):
+    raise SystemExit("publisher left its private staging directory after success")
+
 settings_dir = scratch / ".claude"
 settings_dir.mkdir()
 target = settings_dir / "settings.json"
@@ -786,6 +924,61 @@ open_file.flush()
 open_file.close()
 if not recovery_path or Path(recovery_path).read_text() != '{"concurrentWriter":"late save"}\n':
     raise SystemExit("atomic publisher did not preserve a save through an already-open settings file")
+
+# A concurrent atomic replacement during the final live-state check must
+# invalidate success and restore the concurrent writer's exact inode.
+final_race_root = scratch / "final-live-state-race"
+final_race_root.mkdir()
+final_race_target = final_race_root / "settings.json"
+final_race_snapshot = scratch / "final-live-state-snapshot.json"
+final_race_source = scratch / "final-live-state-source.json"
+final_race_concurrent = scratch / "final-live-state-concurrent.json"
+final_race_original = '{"finalRace":"before"}\n'
+final_race_updated = '{"finalRace":"published"}\n'
+final_race_concurrent_text = '{"finalRace":"concurrent save"}\n'
+final_race_target.write_text(final_race_original)
+final_race_snapshot.write_text(final_race_original)
+final_race_source.write_text(final_race_updated)
+final_race_concurrent.write_text(final_race_concurrent_text)
+final_race_root_identity = (final_race_root.stat().st_dev, final_race_root.stat().st_ino)
+real_entry_state = module._entry_state_at
+final_race_injected = []
+final_race_identity = []
+final_race_recovery = []
+
+def replace_live_file_before_final_check(directory_fd, name):
+    directory_info = os.fstat(directory_fd)
+    if (
+        not final_race_injected
+        and name == "settings.json"
+        and (directory_info.st_dev, directory_info.st_ino) == final_race_root_identity
+    ):
+        os.replace(final_race_concurrent, final_race_target)
+        info = final_race_target.stat()
+        final_race_identity.append((info.st_dev, info.st_ino))
+        final_race_injected.append(True)
+    return real_entry_state(directory_fd, name)
+
+module._entry_state_at = replace_live_file_before_final_check
+try:
+    try:
+        module.publish_file(
+            str(final_race_root), "settings.json", str(final_race_snapshot), str(final_race_source)
+        )
+    except module.ConcurrentUpdate as error:
+        if not error.recovery_path or Path(error.recovery_path).read_text() != final_race_concurrent_text:
+            raise SystemExit("publisher did not report the concurrent save after final-state validation")
+        final_race_recovery.append(error.recovery_path)
+    else:
+        raise SystemExit("publisher reported success after its target changed during final-state validation")
+finally:
+    module._entry_state_at = real_entry_state
+if not final_race_injected or final_race_target.read_text() != final_race_concurrent_text:
+    raise SystemExit("publisher did not restore the concurrent save after final-state validation")
+if (final_race_target.stat().st_dev, final_race_target.stat().st_ino) != final_race_identity[0]:
+    raise SystemExit("publisher replaced the concurrent save with a same-content inode")
+if (Path(final_race_recovery[0]).stat().st_dev, Path(final_race_recovery[0]).stat().st_ino) != final_race_identity[0]:
+    raise SystemExit("publisher recovery path did not retain the exact concurrent-save inode")
 
 # Replacing the stable backup with a same-content inode must fail closed before
 # the displaced original can be unlinked during successful publication.
@@ -865,8 +1058,10 @@ for failed_signature_read in ("copied", "source"):
     finally:
         module._read_signature_at = real_read_signature_at
         module._read_signature = real_read_signature
-    if list(copy_failure_root.glob(".crosscheck-stage-*")):
+    if list(stage_entries(copy_failure_root)):
         raise SystemExit(f"publisher left a staging file after a {failed_signature_read} signature read error")
+    if list(copy_failure_root.glob(".crosscheck-staging-*")):
+        raise SystemExit(f"publisher left a staging directory after a {failed_signature_read} signature read error")
     if (copy_failure_root / "settings.json").exists():
         raise SystemExit(f"publisher published a file after a {failed_signature_read} signature read error")
 
@@ -901,7 +1096,7 @@ if (scratch / "settings-dir-moved-during-publish/settings.json").read_text() != 
     raise SystemExit("atomic publisher failed to restore the previous settings after a target parent rename")
 if settings_dir.joinpath("settings.json").exists():
     raise SystemExit("atomic publisher restored settings only in the detached parent")
-if not list((scratch / "settings-dir-moved-during-publish").glob(".crosscheck-stage-*")):
+if not list(stage_entries(scratch / "settings-dir-moved-during-publish")):
     raise SystemExit("atomic publisher cleaned the stage after failing live-parent verification")
 
 # Moving the target parent during final recovery validation must not report a
@@ -942,7 +1137,7 @@ finally:
 late_move_detached = late_move_root.with_name("late-move-root-detached")
 if (late_move_root / "settings.json").exists():
     raise SystemExit("publisher restored settings only in the detached target parent")
-if not list(late_move_detached.glob(".crosscheck-stage-*")):
+if not list(stage_entries(late_move_detached)):
     raise SystemExit("publisher discarded the staged inode after a late target-parent move")
 
 # A same-content recovery replacement during the final parent check must not
@@ -989,7 +1184,7 @@ try:
 finally:
     os.environ["HOME"] = previous_home
     module._verify_parent_path = real_verify
-final_recovery_staged = list(final_recovery_root.glob(".crosscheck-stage-*"))
+final_recovery_staged = list(stage_entries(final_recovery_root))
 if not any(
     (path.stat().st_dev, path.stat().st_ino) == final_recovery_identity and path.read_text() == final_recovery_text
     for path in final_recovery_staged
@@ -1155,7 +1350,7 @@ finally:
     module._rename_exchange = real_exchange
 if race_target.read_text() != '{"setting":"concurrent user edit 9"}\n':
     raise SystemExit("atomic publisher did not restore the latest concurrent settings to the live path")
-if list(race_target_dir.glob(".crosscheck-stage-*")):
+if list(stage_entries(race_target_dir)):
     raise SystemExit("atomic publisher left a staged file after a concurrent update")
 
 # A failed recovery link still triggers rollback, so the staged update is not
@@ -1980,7 +2175,7 @@ finally:
     os.environ["HOME"] = previous_home
 if rollback_recovery_target.read_text() != '{"setting":"original"}\n':
     raise SystemExit("moved rollback recovery fixture did not restore the original settings")
-if not list(rollback_recovery_root.glob(".crosscheck-stage-*")):
+if not list(stage_entries(rollback_recovery_root)):
     raise SystemExit("moved rollback recovery directory allowed cleanup of the staged inode")
 
 # A target parent moved during final rollback recovery validation must keep the
@@ -2035,13 +2230,66 @@ finally:
 late_rollback_detached = late_rollback_root.with_name("late-rollback-root-detached")
 if (late_rollback_root / "settings.json").exists():
     raise SystemExit("rollback reported a live settings file in the recreated parent")
-if not list(late_rollback_detached.glob(".crosscheck-stage-*")):
+if not list(stage_entries(late_rollback_detached)):
     raise SystemExit("rollback discarded its stage after the parent moved during recovery checks")
 if not any(
     backup.read_text() == '{"lateRollback":"original"}\n'
     for backup in (late_rollback_home / ".crosscheck-recovery").glob("settings-*.bak")
 ):
     raise SystemExit("rollback did not keep a stable original settings backup after the parent moved")
+
+# A failed cleanup of the displaced file must report the exact retained inode.
+unlink_error_home = scratch / "unlink-error-home"
+unlink_error_root = scratch / "unlink-error-root"
+unlink_error_home.mkdir()
+unlink_error_root.mkdir()
+unlink_error_target = unlink_error_root / "settings.json"
+unlink_error_snapshot = scratch / "unlink-error-snapshot.json"
+unlink_error_stage = scratch / "unlink-error-stage.json"
+unlink_error_target.write_text('{"unlinkError":"original"}\n')
+unlink_error_snapshot.write_text('{"unlinkError":"original"}\n')
+unlink_error_stage.write_text('{"unlinkError":"updated"}\n')
+unlink_error_original_identity = (unlink_error_target.stat().st_dev, unlink_error_target.stat().st_ino)
+real_unlink = module.os.unlink
+
+def fail_publisher_stage_unlink(path, *args, **kwargs):
+    if isinstance(path, str) and path.startswith(".crosscheck-stage-"):
+        raise OSError(errno.EIO, "injected staged settings cleanup failure")
+    return real_unlink(path, *args, **kwargs)
+
+module.os.unlink = fail_publisher_stage_unlink
+previous_home = os.environ["HOME"]
+os.environ["HOME"] = str(unlink_error_home)
+original_argv = module.sys.argv
+module.sys.argv = [
+    "atomic-publish-file.py", "publish", str(unlink_error_root), "settings.json",
+    str(unlink_error_snapshot), str(unlink_error_stage),
+]
+try:
+    diagnostic = io.StringIO()
+    with contextlib.redirect_stderr(diagnostic):
+        result = module.main()
+    if result != 5:
+        raise SystemExit("publisher ignored a failed staged settings cleanup")
+finally:
+    module.sys.argv = original_argv
+    module.os.unlink = real_unlink
+    os.environ["HOME"] = previous_home
+unlink_error_line = next(
+    (line for line in diagnostic.getvalue().splitlines() if line.startswith("recovery data remains at ")),
+    None,
+)
+if unlink_error_line is None:
+    raise SystemExit("publisher omitted the staged settings recovery path after cleanup failure")
+unlink_error_recovery = Path(unlink_error_line.removeprefix("recovery data remains at "))
+unlink_error_identity = (unlink_error_recovery.stat().st_dev, unlink_error_recovery.stat().st_ino)
+if unlink_error_identity != unlink_error_original_identity:
+    raise SystemExit("publisher reported the wrong settings inode after staged cleanup failure")
+if not any(
+    (path.stat().st_dev, path.stat().st_ino) == unlink_error_identity
+    for path in stage_entries(unlink_error_root)
+):
+    raise SystemExit("publisher recovery path does not identify the retained staging inode")
 
 # Replacing a published-inode backup during the rollback parent check must be
 # fatal and retain the staged inode for recovery.
@@ -2094,7 +2342,7 @@ finally:
     os.environ["HOME"] = previous_home
 if backup_rollback_target.read_text() != backup_rollback_original:
     raise SystemExit("rollback changed the live original settings after recovery-link replacement")
-if not any(path.read_text() == backup_rollback_updated for path in backup_rollback_root.glob(".crosscheck-stage-*")):
+if not any(path.read_text() == backup_rollback_updated for path in stage_entries(backup_rollback_root)):
     raise SystemExit("rollback removed the only staged published inode after recovery-link replacement")
 recovery_line = next(
     (line for line in diagnostic.getvalue().splitlines() if line.startswith("recovery data remains at ")),
@@ -2105,6 +2353,12 @@ if recovery_line is None:
 reported_recovery = Path(recovery_line.removeprefix("recovery data remains at "))
 if reported_recovery.read_text() != backup_rollback_updated:
     raise SystemExit(f"rollback reported the wrong recovery data path: {reported_recovery}")
+reported_identity = (reported_recovery.stat().st_dev, reported_recovery.stat().st_ino)
+if not any(
+    (path.stat().st_dev, path.stat().st_ino) == reported_identity
+    for path in stage_entries(backup_rollback_root)
+):
+    raise SystemExit("rollback reported matching bytes from the wrong staged inode")
 
 # Managed link no-ops have an explicit status instead of looking like updates.
 noop_root = scratch / "managed-link-noop"

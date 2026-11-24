@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version — pulls from main. Skills
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-02-24-13-46
+**Last Updated:** 2026-11-23-17-07
 
 # Update CrossCheck
 
@@ -131,13 +131,15 @@ BEHIND=$(git rev-list HEAD..origin/main --count 2>/dev/null || echo "0")
 
 if [ "$BEHIND" = "0" ]; then
     echo "✅ Already up to date (version $CURRENT)"
-    exit 0
+else
+    echo "   $BEHIND new commit(s) available — pulling..."
+    git pull origin main --quiet
+    echo "   ✅ Pulled latest"
 fi
-
-echo "   $BEHIND new commit(s) available — pulling..."
-git pull origin main --quiet
-echo "   ✅ Pulled latest"
 ```
+
+Continue to Steps 5 and 6 when `main` is already current. Step 6 refreshes
+installed Codex-native skill copies even when there are no new Git commits.
 
 ## Step 5: Show New Version
 

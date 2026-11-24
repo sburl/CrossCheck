@@ -20,32 +20,44 @@ else
   SETTINGS_MODE="$(stat -f '%Lp' "$SETTINGS_TARGET")"
 fi
 
-HOOK_RUNNER='hook=$1; if [[ ! -x "$hook" ]]; then printf "Claude supply-chain gate unavailable or non-executable: %s\\n" "$hook" >&2; exit 2; fi; if bash "$hook"; then status=0; else status=$?; fi; if [[ "$status" -ne 0 && "$status" -ne 2 ]]; then printf "Claude supply-chain gate failed (%d): %s\\n" "$status" "$hook" >&2; exit 2; fi; exit "$status"'
+HOOK_RUNNER='CROSSCHECK_SUPPLY_CHAIN_GATE_V1=1; hook=$1; if [[ ! -x "$hook" ]]; then printf "Claude supply-chain gate unavailable or non-executable: %s\\n" "$hook" >&2; exit 2; fi; if bash "$hook"; then status=0; else status=$?; fi; if [[ "$status" -ne 0 && "$status" -ne 2 ]]; then printf "Claude supply-chain gate failed (%d): %s\\n" "$status" "$hook" >&2; exit 2; fi; exit "$status"'
 printf -v HOOK_COMMAND 'bash -c %q -- %q' "$HOOK_RUNNER" "$HOOK_FILE"
 TEMP_FILE="${SETTINGS_TARGET}.tmp.$$"
 trap 'rm -f "$TEMP_FILE"' EXIT
 
 if ! jq --arg hook "$HOOK_COMMAND" '
   def is_supply_chain_hook:
-    .type == "command" and (
-      ((.command // "") | startswith("for c in ") and contains("preuse-supply-chain-gate.sh") and contains("CrossCheck supply-chain hook not found")) or
-      ((.command // "") | startswith("hook=$1; if [[ ! -x \"$hook\" ]]; then") and contains("preuse-supply-chain-gate.sh") and contains("bash \"$hook\""))
+    .type == "command" and ((.command // "") as $command |
+      (($command | startswith("for c in ") and contains("preuse-supply-chain-gate.sh") and (contains("CrossCheck supply-chain hook not found") or contains("done; exit 0"))) or
+       ($command | contains("preuse-supply-chain-gate.sh") and ((contains("CROSSCHECK_SUPPLY_CHAIN_GATE_V1=1")) or (contains("bash -c") and contains("unavailable") and contains("non-executable:")))))
     );
   def install_hook($command):
-    if any(.[]?; .matcher == "Bash" and any(.hooks[]?; is_supply_chain_hook)) then
-      map(
-        if .matcher == "Bash" then
-          .hooks |= map(if is_supply_chain_hook then .command = $command else . end)
-        else . end
-      )
-    elif any(.[]?; .matcher == "Bash") then
-      reduce .[] as $entry ([];
-        if $entry.matcher == "Bash" and (any(.[]; .matcher == "Bash") | not) then
-          . + [$entry + {"hooks": (($entry.hooks // []) + [{"type":"command","command":$command}])}]
-        else . + [$entry] end
-      )
+    (reduce .[] as $entry ({found:false, entries:[]};
+      if $entry.matcher != "Bash" then
+        .entries += [$entry]
+      else
+        ($entry.hooks // []) as $hooks |
+        ($hooks | map(select(is_supply_chain_hook))) as $managed |
+        ($hooks | map(select(is_supply_chain_hook | not))) as $other |
+        if ($managed | length) > 0 then
+          if .found then
+            if ($other | length) > 0 then
+              .entries += [($entry | .hooks = $other)]
+            else . end
+          else
+            .found = true | .entries += [($entry | .hooks = ($other + [($managed[0] | .command = $command)]))]
+          end
+        elif .found then
+          .entries += [$entry]
+        else
+          .found = true | .entries += [($entry | .hooks = ($hooks + [{"type":"command","command":$command}]))]
+        end
+      end
+    )) as $result |
+    if $result.found then
+      $result.entries
     else
-      . + [{"matcher":"Bash","hooks":[{"type":"command","command":$command}]}]
+      $result.entries + [{"matcher":"Bash","hooks":[{"type":"command","command":$command}]}]
     end;
   if (.hooks | type) == "object" then
     .hooks.PreToolUse = ((.hooks.PreToolUse // []) | install_hook($hook))

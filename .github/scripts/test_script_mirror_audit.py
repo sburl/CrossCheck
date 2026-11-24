@@ -100,6 +100,10 @@ class ScriptMirrorAuditTests(unittest.TestCase):
                     "hooks": [
                         {
                             "type": "command",
+                            "command": "for c in \"$HOME/.crosscheck/scripts/preuse-supply-chain-gate.sh\" \"$HOME/.claude/CrossCheck/scripts/preuse-supply-chain-gate.sh\"; do [ -x \"$c\" ] && exec bash \"$c\"; done; exit 0",
+                        },
+                        {
+                            "type": "command",
                             "command": "for c in \"$HOME/Developer/CrossCheck/scripts/preuse-supply-chain-gate.sh\"; do [ -x \"$c\" ] && exec bash \"$c\"; done; echo 'CrossCheck supply-chain hook not found' >&2; exit 2",
                         },
                         {
@@ -126,14 +130,33 @@ class ScriptMirrorAuditTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for _ in range(3):
+            result = subprocess.run(
+                ["bash", str(HOOK_INSTALLER), str(settings), str(hook_file)],
+                capture_output=True,
+                check=False,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         updated = json.loads(settings.read_text())
         self.assertEqual(updated["custom"], {"retained": True})
         self.assertEqual(updated["hooks"]["PreToolUse"][1], original["hooks"]["PreToolUse"][1])
         bash_hooks = updated["hooks"]["PreToolUse"][0]["hooks"]
-        command = bash_hooks[0]["command"]
+        command = next(
+            hook["command"]
+            for hook in bash_hooks
+            if "CROSSCHECK_SUPPLY_CHAIN_GATE_V1=1" in hook["command"]
+        )
         self.assertIn("bash -c", command)
         self.assertIn(r"exit\ 2", command)
-        self.assertEqual(bash_hooks[1:], original["hooks"]["PreToolUse"][0]["hooks"][1:])
+        self.assertEqual(
+            [hook for hook in bash_hooks if hook["command"] != command],
+            original["hooks"]["PreToolUse"][0]["hooks"][2:],
+        )
+        self.assertEqual(
+            sum("CROSSCHECK_SUPPLY_CHAIN_GATE_V1=1" in hook["command"] for hook in bash_hooks),
+            1,
+        )
 
         hook_file.write_text("#!/usr/bin/env bash\nexit 0\n")
         hook_file.chmod(0o755)
@@ -287,6 +310,55 @@ class ScriptMirrorAuditTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Missing or non-executable required Claude mirror", result.stdout)
+
+    def test_claude_supply_chain_hook_fails_closed_without_jq(self) -> None:
+        fixture = self.make_fixture(ROOT)
+        hook = fixture / "claude/scripts" / HOOK
+        minimal_path = fixture / "bin"
+        minimal_path.mkdir()
+        minimal_path.joinpath("cat").symlink_to(shutil.which("cat"))
+
+        result = subprocess.run(
+            ["/bin/bash", str(hook)],
+            capture_output=True,
+            check=False,
+            env={**os.environ, "PATH": str(minimal_path)},
+            input='{"tool_name":"Bash","tool_input":{"command":"npm install untrusted-pkg"}}',
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("jq is unavailable", result.stderr)
+
+    def test_claude_supply_chain_hook_fails_closed_on_malformed_payload(self) -> None:
+        fixture = self.make_fixture(ROOT)
+        hook = fixture / "claude/scripts" / HOOK
+
+        result = subprocess.run(
+            ["/bin/bash", str(hook)],
+            capture_output=True,
+            check=False,
+            input="{malformed json",
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("invalid Claude hook payload", result.stderr)
+
+    def test_claude_supply_chain_hook_fails_closed_on_multiple_json_values(self) -> None:
+        fixture = self.make_fixture(ROOT)
+        hook = fixture / "claude/scripts" / HOOK
+
+        result = subprocess.run(
+            ["/bin/bash", str(hook)],
+            capture_output=True,
+            check=False,
+            input='{"tool_name":"Bash","tool_input":{"command":"npm install untrusted-pkg"}} {}',
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("invalid Claude hook payload", result.stderr)
 
 
 if __name__ == "__main__":

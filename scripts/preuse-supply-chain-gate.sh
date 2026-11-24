@@ -29,11 +29,26 @@ set -u
 
 input=$(cat)
 
-# Only gate Bash calls — let everything else pass.
-tool=$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)
+if ! command -v jq >/dev/null 2>&1; then
+    echo "🛡️  Supply-chain gate: jq is unavailable; blocking because the tool call cannot be inspected." >&2
+    exit 2
+fi
+
+if ! printf '%s' "$input" | jq -e -s 'length == 1 and (.[0] | type == "object" and (.tool_name | type == "string"))' >/dev/null 2>&1; then
+    echo "🛡️  Supply-chain gate: invalid Claude hook payload; blocking because the tool call cannot be inspected." >&2
+    exit 2
+fi
+
+# Only gate Bash calls — let other valid tool calls pass.
+tool=$(printf '%s' "$input" | jq -r '.tool_name')
 [ "$tool" != "Bash" ] && exit 0
 
-cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
+if ! printf '%s' "$input" | jq -e '.tool_input | type == "object" and (.command | type == "string")' >/dev/null 2>&1; then
+    echo "🛡️  Supply-chain gate: invalid Bash tool payload; blocking because the command cannot be inspected." >&2
+    exit 2
+fi
+
+cmd=$(printf '%s' "$input" | jq -r '.tool_input.command')
 [ -z "$cmd" ] && exit 0
 
 # Allow override via env var. The model can request this in its tool input but it

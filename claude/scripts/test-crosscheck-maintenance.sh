@@ -5,7 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 INSTALLER="$SCRIPT_DIR/install-supply-chain-hook.sh"
 TEMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TEMP_DIR"' EXIT
+CROSS_FS_TMP=""
+trap 'rm -rf "$TEMP_DIR" "$CROSS_FS_TMP"' EXIT
 mkdir -p "$TEMP_DIR/test-home"
 export HOME="$TEMP_DIR/test-home"
 SETTINGS_DIR="$TEMP_DIR/settings"
@@ -113,7 +114,7 @@ PRIVATE_MODE_MARKER="$TEMP_DIR/private-settings-temp-mode"
 PRIVATE_SNAPSHOT_MODE_MARKER="$TEMP_DIR/private-settings-snapshot-mode"
 PRIVATE_SHARED_TMP="$(mktemp -d /tmp/crosscheck-shared-temp.XXXXXX)"
 chmod 1777 "$PRIVATE_SHARED_TMP"
-trap 'rm -rf "$TEMP_DIR" "$PRIVATE_SHARED_TMP"' EXIT
+trap 'rm -rf "$TEMP_DIR" "$PRIVATE_SHARED_TMP" "$CROSS_FS_TMP"' EXIT
 mkdir -p "$PRIVATE_JQ_BIN"
 printf '{"privateValue":"fixture"}\n' > "$PRIVATE_SETTINGS"
 chmod 0644 "$PRIVATE_SETTINGS"
@@ -202,7 +203,8 @@ run_bootstrap_with_declines() {
   local home="$1"
   local script="$2"
   local scenario="$3"
-  BOOTSTRAP_HOME="$home" BOOTSTRAP_SCRIPT="$script" BOOTSTRAP_SCENARIO="$scenario" TMPDIR="$TEMP_DIR" python3 <<'PY'
+  local temporary_directory="${4:-$TEMP_DIR}"
+  BOOTSTRAP_HOME="$home" BOOTSTRAP_SCRIPT="$script" BOOTSTRAP_SCENARIO="$scenario" TMPDIR="$temporary_directory" python3 <<'PY'
 import os
 import pty
 import select
@@ -338,6 +340,33 @@ PY
     fi
   fi
 done
+
+# Bootstrap stages for settings must stay on the destination filesystem even
+# when TMPDIR is mounted separately (for example, /dev/shm on Linux).
+if [ -d /dev/shm ] && [ "$(stat -c '%d' /dev/shm)" != "$(stat -c '%d' "$TEMP_DIR")" ]; then
+  CROSS_FS_TMP="$(mktemp -d /dev/shm/crosscheck-separate-temp.XXXXXX)"
+  chmod 0700 "$CROSS_FS_TMP"
+  for bootstrap in root claude codex; do
+    CROSS_FS_HOME="$TEMP_DIR/home-separate-tmp-$bootstrap"
+    if [ "$bootstrap" = root ]; then
+      CROSS_FS_SCRIPT="$TEMP_DIR/workspace/root/CrossCheck/scripts/bootstrap-crosscheck.sh"
+      CROSS_FS_SETTINGS="$CROSS_FS_HOME/.claude/settings.json"
+    elif [ "$bootstrap" = claude ]; then
+      CROSS_FS_SCRIPT="$TEMP_DIR/workspace/claude/CrossCheck/claude/scripts/bootstrap-crosscheck.sh"
+      CROSS_FS_SETTINGS="$CROSS_FS_HOME/.claude/settings.json"
+    else
+      CROSS_FS_SCRIPT="$TEMP_DIR/workspace/codex/CrossCheck/codex/scripts/bootstrap-crosscheck.sh"
+      CROSS_FS_SETTINGS="$CROSS_FS_HOME/.codex/settings.json"
+    fi
+    mkdir -p "$CROSS_FS_HOME"
+    run_bootstrap_with_declines "$CROSS_FS_HOME" "$CROSS_FS_SCRIPT" "separate-filesystem TMPDIR" "$CROSS_FS_TMP"
+    if [ ! -f "$CROSS_FS_SETTINGS" ]; then
+      echo "$bootstrap bootstrap did not publish settings with a separate-filesystem TMPDIR" >&2
+      exit 1
+    fi
+  done
+  rm -rf "$CROSS_FS_TMP"
+fi
 
 # Codex bootstrap must preserve every user byte around the managed block,
 # including CRLF line endings and Markdown hard breaks, while retaining mode.
@@ -510,7 +539,9 @@ PY
     cat "$TEMP_DIR/bootstrap-failure-$bootstrap.log" >&2
     exit 1
   fi
-  if [ -e "$FAIL_SETTINGS" ] || [ -L "$FAIL_SETTINGS" ] || find "$TEMP_DIR" -maxdepth 1 -name 'crosscheck-codex-settings.*' -print -quit | grep -q . || find "$TEMP_DIR" -maxdepth 1 -name 'crosscheck-claude-settings.*' -print -quit | grep -q .; then
+  if [ -e "$FAIL_SETTINGS" ] || [ -L "$FAIL_SETTINGS" ] \
+    || find "$FAIL_HOME" -maxdepth 2 -name '.crosscheck-settings.*' -print -quit | grep -q . \
+    || find "$TEMP_DIR" -maxdepth 1 -name 'crosscheck-codex-agents.*' -print -quit | grep -q .; then
     echo "$bootstrap bootstrap left a partially published settings file" >&2
     exit 1
   fi
@@ -559,7 +590,7 @@ SH
 set -e
 REAL_INSTALLER="$(dirname "$0")/install-supply-chain-hook.sh.real"
 case "$1" in
-  "$TMPDIR"/crosscheck-claude-settings.*)
+  "$HOME"/.claude/.crosscheck-settings.*)
     "$REAL_INSTALLER" "$@"
     if [ "$RACE_TARGET_KIND" = directory ]; then
       mkdir "$HOME/.claude/settings.json"
@@ -625,7 +656,7 @@ SH
     echo "$bootstrap bootstrap left a staged settings file after resolving a publish collision" >&2
     exit 1
   fi
-  if find "$TEMP_DIR" -maxdepth 1 -name 'crosscheck-claude-settings.*' -print -quit | grep -q .; then
+  if find "$RACE_HOME/.claude" -maxdepth 1 -name '.crosscheck-settings.*' -print -quit | grep -q .; then
     echo "$bootstrap bootstrap left its validated settings stage after resolving a publish collision" >&2
     exit 1
   fi
@@ -1051,6 +1082,18 @@ if sys.platform == "darwin":
     everyone_acl = "everyone allow list,search,readattr,readextattr,readsecurity,file_inherit,directory_inherit"
     subprocess.run(["/bin/chmod", "+a", everyone_acl, str(acl_temp_root)], check=True)
     subprocess.run(["/bin/chmod", "+a", everyone_acl, str(acl_recovery_parent)], check=True)
+acl_private_directory = acl_temp_root / "bootstrap-temp"
+acl_private_directory.mkdir(mode=0o755)
+os.chmod(acl_private_directory, 0o755)
+subprocess.run([sys.executable, sys.argv[1], "private-directory", str(acl_private_directory)], check=True)
+if stat.S_IMODE(acl_private_directory.stat().st_mode) != 0o700:
+    raise SystemExit("private temporary directory did not receive mode 0700")
+if sys.platform == "darwin":
+    private_directory_acl = subprocess.run(
+        ["/bin/ls", "-le", str(acl_private_directory)], capture_output=True, text=True, check=True
+    ).stdout
+    if "everyone" in private_directory_acl:
+        raise SystemExit("private temporary directory retained an inherited everyone ACL")
 acl_stage = acl_temp_root / "settings-stage"
 acl_stage_fd = os.open(acl_stage, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 os.close(acl_stage_fd)
@@ -1152,6 +1195,49 @@ if sys.platform == "darwin":
         raise SystemExit("late ACL rollback did not restore the latest ACL on the live settings file")
     module.cleanup_snapshot(str(late_acl_snapshot))
 module.cleanup_snapshot(str(acl_temp_snapshot))
+
+# Linux replacements must carry the pinned POSIX access ACL to the new inode,
+# including entries that are not represented by the numeric mode alone.
+if sys.platform.startswith("linux"):
+    linux_acl_source = acl_temp_target_root / "linux-acl-source"
+    linux_acl_source.write_text("source with a named-user ACL\n")
+    linux_acl_identity = (linux_acl_source.stat().st_dev, linux_acl_source.stat().st_ino)
+    linux_acl_value = bytes.fromhex("0200000001000600")
+    actual_os_getxattr = module.os.getxattr
+    actual_os_setxattr = module.os.setxattr
+    actual_sys = module.sys
+    copied_linux_acls = []
+
+    def fake_linux_getxattr(file_descriptor, attribute):
+        if attribute == "system.posix_acl_access" and os.fstat(file_descriptor).st_ino == linux_acl_identity[1]:
+            return linux_acl_value
+        raise OSError(errno.ENODATA, "no POSIX ACL")
+
+    def capture_linux_setxattr(file_descriptor, attribute, value):
+        copied_linux_acls.append((attribute, value))
+
+    module.sys = type("LinuxPlatform", (), {"platform": "linux"})()
+    module.os.getxattr = fake_linux_getxattr
+    module.os.setxattr = capture_linux_setxattr
+    try:
+        linux_acl_stage = acl_temp_root / "linux-acl-stage"
+        linux_acl_stage.touch(mode=0o600)
+        linux_acl_stage_fd = os.open(linux_acl_stage, os.O_RDONLY)
+        try:
+            observed_linux_acl = module._copy_acl_from_path(
+                str(linux_acl_source), linux_acl_stage_fd, linux_acl_identity
+            )
+        finally:
+            os.close(linux_acl_stage_fd)
+        expected_linux_acl = ("system.posix_acl_access=" + linux_acl_value.hex(),)
+        if observed_linux_acl != (expected_linux_acl, linux_acl_source.stat().st_ctime_ns):
+            raise SystemExit("Linux publisher did not retain the source POSIX ACL metadata")
+        if copied_linux_acls != [("system.posix_acl_access", linux_acl_value)]:
+            raise SystemExit("Linux publisher did not copy the source POSIX access ACL to its staged inode")
+    finally:
+        module.sys = actual_sys
+        module.os.getxattr = actual_os_getxattr
+        module.os.setxattr = actual_os_setxattr
 
 # A command migration uses the commands directory as the recovery boundary so
 # a normal home directory remains writable as the private recovery location.
@@ -2303,6 +2389,52 @@ if "Claude command links added or refreshed: 0; preserved 1" not in custom_sync_
 if os.readlink(noop_sync_target) != str(custom_sync_target):
     raise SystemExit("Claude sync replaced a concurrent custom command link")
 
+# A concurrent atomic save after rollback has isolated its own symlink must
+# remain at the live path while the displaced command stays recoverable.
+symlink_rollback_race_home = scratch / "symlink-rollback-race-home"
+symlink_rollback_race_target = symlink_rollback_race_home / ".claude/commands/managed.md"
+symlink_rollback_race_target.parent.mkdir(parents=True)
+symlink_rollback_race_target.write_text("original managed command\n")
+symlink_rollback_race_snapshot = scratch / "symlink-rollback-race-snapshot.md"
+symlink_rollback_race_snapshot.write_text("original managed command\n")
+symlink_rollback_race_source = scratch / "symlink-rollback-race-source.md"
+symlink_rollback_race_source.write_text("replacement managed command\n")
+real_verify = module._verify_parent_path
+real_readlink = module.os.readlink
+race_injected = []
+
+def fail_after_install_with_late_save(root_fd, root_path, relative_target, parent_fd):
+    if symlink_rollback_race_target.is_symlink() and not race_injected:
+        raise module.ConcurrentUpdate("injected post-install verification failure")
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+def save_after_rollback_quarantines_link(path, *, dir_fd=None):
+    if path == "rollback-candidate" and not race_injected:
+        user_save = symlink_rollback_race_target.with_name("user-save.md")
+        user_save.write_text("concurrent user save\n")
+        os.replace(user_save, symlink_rollback_race_target)
+        race_injected.append(True)
+    return real_readlink(path, dir_fd=dir_fd)
+
+module._verify_parent_path = fail_after_install_with_late_save
+module.os.readlink = save_after_rollback_quarantines_link
+try:
+    try:
+        module.sync_symlink(
+            str(symlink_rollback_race_home), ".claude/commands/managed.md", "snapshot",
+            str(symlink_rollback_race_snapshot), "/repo/claude/skill-sources/managed.md",
+        )
+    except module.RestorationFailed as error:
+        if not error.recovery_path or Path(error.recovery_path).read_text() != "original managed command\n":
+            raise SystemExit("rollback did not retain the displaced command after a concurrent save")
+    else:
+        raise SystemExit("rollback reported success after a concurrent save replaced its new link")
+finally:
+    module._verify_parent_path = real_verify
+    module.os.readlink = real_readlink
+if not race_injected or symlink_rollback_race_target.read_text() != "concurrent user save\n":
+    raise SystemExit("symlink rollback deleted a concurrent atomic save")
+
 # If syncing the removal of a failed new symlink errors, still attempt to
 # restore the displaced command before returning a fatal status.
 symlink_rollback_home = scratch / "symlink-rollback-home"
@@ -2580,13 +2712,15 @@ absent_race_home.joinpath(".claude/commands").mkdir(parents=True)
 absent_race_target = absent_race_home / ".claude/commands/managed.md"
 absent_race_source = scratch / "absent-link-race-source.md"
 absent_race_source.write_text("new command\n")
-real_symlink = module.os.symlink
+real_rename_noreplace = module._rename_noreplace
 
-def create_concurrent_desired_link(source, destination, **kwargs):
-    real_symlink(source, destination, **kwargs)
-    raise FileExistsError(errno.EEXIST, "injected concurrent symlink creation", destination)
+def create_concurrent_desired_link(source_fd, source, destination_fd, destination):
+    if source.startswith("new-link-") and destination == "managed.md":
+        os.symlink(absent_race_source, absent_race_target)
+        raise FileExistsError(errno.EEXIST, "injected concurrent symlink creation", destination)
+    return real_rename_noreplace(source_fd, source, destination_fd, destination)
 
-module.os.symlink = create_concurrent_desired_link
+module._rename_noreplace = create_concurrent_desired_link
 original_argv = module.sys.argv
 module.sys.argv = [
     "atomic-publish-file.py", "symlink", str(absent_race_home),
@@ -2597,7 +2731,7 @@ try:
         raise SystemExit("concurrent Claude symlink creation did not return no-op status 4")
 finally:
     module.sys.argv = original_argv
-    module.os.symlink = real_symlink
+    module._rename_noreplace = real_rename_noreplace
 if os.path.realpath(absent_race_target) != str(absent_race_source.resolve()):
     raise SystemExit("concurrent desired Claude symlink was not preserved")
 
@@ -3198,6 +3332,23 @@ ln -s "$CRITICAL_HOME/.claude/actual.json" "$CRITICAL_HOME/.claude/settings.json
 TMPDIR="$TEMP_DIR" "$REPO_ROOT/scripts/sync-critical-settings.sh" "$CRITICAL_HOME/.claude/settings.json" --include-ask
 if [ ! -L "$CRITICAL_HOME/.claude/settings.json" ] || ! jq -e '.custom == "keep" and (.permissions.deny | length == 6) and (.permissions.ask | index("Bash(gh api *)") != null)' "$CRITICAL_HOME/.claude/settings.json" >/dev/null; then
   echo "critical settings sync replaced its symlink or missed a security rule" >&2
+  exit 1
+fi
+CRITICAL_SETTINGS_INODE="$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_dev}:{s.st_ino}")' "$CRITICAL_HOME/.claude/actual.json")"
+CRITICAL_BACKUP_COUNT="$(find "$HOME/.crosscheck-recovery" -maxdepth 1 -name 'settings-*.bak' -type f 2>/dev/null | wc -l | tr -d ' ')"
+for SETTINGS_SYNC in "$REPO_ROOT/scripts/sync-critical-settings.sh" \
+  "$REPO_ROOT/claude/scripts/sync-critical-settings.sh" \
+  "$REPO_ROOT/codex/scripts/sync-critical-settings.sh"; do
+  for sync_run in 1 2 3; do
+    if ! TMPDIR="$TEMP_DIR" "$SETTINGS_SYNC" "$CRITICAL_HOME/.claude/settings.json" --include-ask | grep -Fq 'already current'; then
+      echo "$SETTINGS_SYNC did not report an unchanged critical settings no-op" >&2
+      exit 1
+    fi
+  done
+done
+if [ "$CRITICAL_SETTINGS_INODE" != "$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(f"{s.st_dev}:{s.st_ino}")' "$CRITICAL_HOME/.claude/actual.json")" ] \
+  || [ "$CRITICAL_BACKUP_COUNT" != "$(find "$HOME/.crosscheck-recovery" -maxdepth 1 -name 'settings-*.bak' -type f 2>/dev/null | wc -l | tr -d ' ')" ]; then
+  echo "unchanged critical settings sync replaced the settings inode or added recovery backups" >&2
   exit 1
 fi
 for install_guide in "$REPO_ROOT/skill-sources/INSTALL.md" "$REPO_ROOT/claude/skill-sources/INSTALL.md"; do

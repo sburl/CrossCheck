@@ -117,10 +117,11 @@ fi
 echo "📝 Step 2: Register the global Codex workflow..."
 CODEX_AGENTS_FILE="$HOME/.codex/AGENTS.md"
 CODEX_AGENTS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/crosscheck-codex-agents.XXXXXX")"
-CODEX_AGENTS_SNAPSHOT="$CODEX_AGENTS_TEMP_DIR/snapshot"
-CODEX_AGENTS_STAGE="$CODEX_AGENTS_TEMP_DIR/stage"
-: > "$CODEX_AGENTS_SNAPSHOT"
-: > "$CODEX_AGENTS_STAGE"
+python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" private-directory "$CODEX_AGENTS_TEMP_DIR"
+CODEX_AGENTS_SNAPSHOT="$(mktemp "$CODEX_AGENTS_TEMP_DIR/snapshot.XXXXXX")"
+CODEX_AGENTS_STAGE="$(mktemp "$CODEX_AGENTS_TEMP_DIR/stage.XXXXXX")"
+python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" private-file "$CODEX_AGENTS_SNAPSHOT"
+python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" private-file "$CODEX_AGENTS_STAGE"
 if python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" snapshot \
     "$HOME/.codex" "AGENTS.md" "$CODEX_AGENTS_SNAPSHOT" --strict-root; then
     CODEX_AGENTS_EXPECTED="$CODEX_AGENTS_SNAPSHOT"
@@ -203,7 +204,11 @@ if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
     "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_FILE" --strict-root
 else
     echo "   Creating ~/.codex/settings.json from template..."
-    SETTINGS_STAGE="$(mktemp "${TMPDIR:-/tmp}/crosscheck-codex-settings.XXXXXX")"
+    if ! python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" ensure-directory "$HOME" ".codex"; then
+        echo "❌ Could not safely create $HOME/.codex" >&2
+        exit 1
+    fi
+    SETTINGS_STAGE="$(mktemp "$HOME/.codex/.crosscheck-settings.XXXXXX")"
     python3 "$CROSSCHECK_ROOT_DIR/scripts/atomic-publish-file.py" private-file "$SETTINGS_STAGE"
     cp "$CROSSCHECK_ROOT_DIR/codex/settings.template.json" "$SETTINGS_STAGE"
     "$CROSSCHECK_ROOT_DIR/scripts/sync-critical-settings.sh" "$SETTINGS_STAGE"

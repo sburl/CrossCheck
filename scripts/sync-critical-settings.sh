@@ -119,6 +119,10 @@ if [ "$CURRENT_TARGET" != "$SETTINGS_TARGET" ]; then
   echo "Settings path changed during CrossCheck update; refusing to publish: $SETTINGS_FILE" >&2
   exit 1
 fi
+if cmp -s "$SNAPSHOT" "$STAGED"; then
+  echo "CrossCheck critical deny rules are already current in $SETTINGS_FILE"
+  exit 0
+fi
 PUBLISH_STARTED=1
 python3 "$PUBLISH_HELPER" publish "$SETTINGS_ROOT" "$SETTINGS_RELATIVE" "$SNAPSHOT" "$STAGED" "$SETTINGS_MODE" "${PUBLISH_OPTIONS[@]}"
 CURRENT_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"

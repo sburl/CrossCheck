@@ -335,7 +335,18 @@ def _copy_acl_from_path(
     destination_fd: int,
     expected_identity: tuple[int, int],
 ) -> tuple[tuple[str, ...], int] | None:
-    """Copy a pinned file's macOS ACL to its staged replacement, failing closed."""
+    """Copy a pinned file's ACL to its staged replacement, failing closed."""
+    if sys.platform.startswith("linux"):
+        entries, source_ctime_ns = _read_acl_entries_and_ctime(source_path, expected_identity)
+        for entry in entries:
+            attribute, separator, encoded = entry.partition("=")
+            if not separator or attribute != "system.posix_acl_access":
+                raise OSError(f"unsupported POSIX ACL metadata on {source_path}")
+            try:
+                os.setxattr(destination_fd, attribute, bytes.fromhex(encoded))
+            except OSError as error:
+                raise PermissionError(f"could not preserve source ACL on staged file: {error}") from error
+        return entries, source_ctime_ns
     if sys.platform != "darwin":
         return None
     entries, source_ctime_ns = _read_acl_entries_and_ctime(source_path, expected_identity)
@@ -359,6 +370,32 @@ def _read_acl_entries_and_ctime(
     source_path: str,
     expected_identity: tuple[int, int],
 ) -> tuple[tuple[str, ...], int]:
+    if sys.platform.startswith("linux"):
+        source_fd = os.open(
+            source_path,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+        )
+        try:
+            before = os.fstat(source_fd)
+            if not stat.S_ISREG(before.st_mode) or (before.st_dev, before.st_ino) != expected_identity:
+                raise OSError(f"ACL source changed before it could be copied: {source_path}")
+            try:
+                acl = os.getxattr(source_fd, "system.posix_acl_access")
+            except OSError as error:
+                if error.errno in (getattr(errno, "ENODATA", errno.ENOENT), errno.ENOTSUP, errno.EOPNOTSUPP):
+                    acl = None
+                else:
+                    raise PermissionError(f"could not read source ACL: {error}") from error
+            after = os.fstat(source_fd)
+            if (
+                (after.st_dev, after.st_ino) != expected_identity
+                or before.st_ctime_ns != after.st_ctime_ns
+            ):
+                raise OSError(f"ACL source changed while it was inspected: {source_path}")
+            entries = () if acl is None else (f"system.posix_acl_access={acl.hex()}",)
+            return entries, after.st_ctime_ns
+        finally:
+            os.close(source_fd)
     if sys.platform != "darwin":
         return (), 0
     before = os.stat(source_path, follow_symlinks=False)
@@ -393,7 +430,7 @@ def _verify_acl_source_ctime(
     expected_identity: tuple[int, int],
     expected_ctime_ns: int | None,
 ) -> None:
-    if sys.platform != "darwin" or expected_ctime_ns is None:
+    if not (sys.platform == "darwin" or sys.platform.startswith("linux")) or expected_ctime_ns is None:
         return
     current = os.stat(source_path, follow_symlinks=False)
     if (
@@ -405,8 +442,8 @@ def _verify_acl_source_ctime(
 
 
 def _read_acl_entries(source_path: str, expected_identity: tuple[int, int]) -> tuple[str, ...] | None:
-    """Read ACL entries from a pinned macOS file and verify it stayed stable."""
-    if sys.platform != "darwin":
+    """Read ACL entries from a pinned file and verify it stayed stable."""
+    if not (sys.platform == "darwin" or sys.platform.startswith("linux")):
         return None
     return _read_acl_entries_and_ctime(source_path, expected_identity)[0]
 
@@ -1644,6 +1681,46 @@ def sync_symlink(
     stable_original_state: tuple[tuple[int, int, int, int, int], tuple[bytes, int] | None] | None = None
     moved = False
     created_link = False
+    created_link_identity: tuple[int, int] | None = None
+
+    def install_new_link() -> bool:
+        nonlocal created_link, created_link_identity
+        if recovery_fd is None:
+            raise OSError("managed command has no private staging directory")
+        staged_name = f"new-link-{secrets.token_hex(8)}"
+        os.symlink(new_link, staged_name, dir_fd=recovery_fd)
+        staged_info = os.stat(staged_name, dir_fd=recovery_fd, follow_symlinks=False)
+        if not stat.S_ISLNK(staged_info.st_mode):
+            raise OSError("managed command staging entry is not a symlink")
+        staged_identity = (staged_info.st_dev, staged_info.st_ino)
+        try:
+            _rename_noreplace(recovery_fd, staged_name, parent_fd, target_name)
+        except FileExistsError:
+            try:
+                current_info = os.stat(staged_name, dir_fd=recovery_fd, follow_symlinks=False)
+                if (current_info.st_dev, current_info.st_ino) == staged_identity:
+                    os.unlink(staged_name, dir_fd=recovery_fd)
+            except FileNotFoundError:
+                pass
+            try:
+                current_info = os.stat(target_name, dir_fd=parent_fd, follow_symlinks=False)
+                if stat.S_ISLNK(current_info.st_mode) and os.readlink(target_name, dir_fd=parent_fd) == new_link:
+                    return False
+            except FileNotFoundError:
+                pass
+            raise
+        except BaseException:
+            try:
+                current_info = os.stat(staged_name, dir_fd=recovery_fd, follow_symlinks=False)
+                if (current_info.st_dev, current_info.st_ino) == staged_identity:
+                    os.unlink(staged_name, dir_fd=recovery_fd)
+            except FileNotFoundError:
+                pass
+            raise
+        created_link = True
+        created_link_identity = staged_identity
+        _fsync_directory(recovery_fd)
+        return True
 
     def preserve_moved_snapshot() -> None:
         nonlocal stable_recovery_name, stable_backup_path
@@ -1720,13 +1797,17 @@ def sync_symlink(
         except FileNotFoundError:
             if expected_kind != "absent":
                 return None
-            try:
-                os.symlink(new_link, target_name, dir_fd=parent_fd)
-            except FileExistsError:
+            recovery_fd, recovery_name, recovery_path = _new_recovery_directory(parent_fd, parent_path)
+            if not install_new_link():
+                _discard_recovery(parent_fd, recovery_fd, recovery_name)
+                recovery_fd = None
+                recovery_name = None
                 return None
-            created_link = True
             _fsync_directory(parent_fd)
             _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
+            _discard_recovery(parent_fd, recovery_fd, recovery_name)
+            recovery_fd = None
+            recovery_name = None
             return ""
 
         if expected_kind == "absent":
@@ -1900,8 +1981,11 @@ def sync_symlink(
                     f"managed command changed during CrossCheck update: {target}", recovery_path
                 ) from error
 
-        os.symlink(new_link, target_name, dir_fd=parent_fd)
-        created_link = True
+        if not install_new_link():
+            raise ConcurrentUpdate(
+                f"managed command link appeared during CrossCheck update: {target}",
+                stable_backup_path or recovery_path,
+            )
         _fsync_directory(parent_fd)
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
 
@@ -1954,21 +2038,57 @@ def sync_symlink(
         rollback_sync_error: OSError | None = None
         preserve_moved_snapshot()
         if created_link:
+            if recovery_fd is None:
+                raise RestorationFailed(
+                    f"could not safely stage rollback of the managed command: {target}", recovery_path
+                ) from error
+            candidate_name = "rollback-candidate"
+            candidate_path = os.path.join(recovery_path or "", candidate_name)
             try:
-                current_info = os.stat(target_name, dir_fd=parent_fd, follow_symlinks=False)
-                if stat.S_ISLNK(current_info.st_mode) and os.readlink(target_name, dir_fd=parent_fd) == new_link:
-                    os.unlink(target_name, dir_fd=parent_fd)
-                    created_link = False
-                elif moved:
-                    raise RestorationFailed(
-                        f"a concurrent path replaced the managed command during rollback: {target}", recovery_path
-                    ) from error
+                _rename_noreplace(parent_fd, target_name, recovery_fd, candidate_name)
             except FileNotFoundError:
-                pass
+                created_link = False
             except OSError as rollback_error:
                 raise RestorationFailed(
-                    f"could not remove the failed managed command link: {target}", recovery_path
+                    f"could not isolate the failed managed command link: {target}", recovery_path
                 ) from rollback_error
+            else:
+                try:
+                    candidate_info = os.stat(candidate_name, dir_fd=recovery_fd, follow_symlinks=False)
+                    candidate_is_ours = (
+                        stat.S_ISLNK(candidate_info.st_mode)
+                        and created_link_identity == (candidate_info.st_dev, candidate_info.st_ino)
+                        and os.readlink(candidate_name, dir_fd=recovery_fd) == new_link
+                    )
+                except OSError:
+                    candidate_is_ours = False
+                if candidate_is_ours:
+                    try:
+                        os.unlink(candidate_name, dir_fd=recovery_fd)
+                    except OSError as rollback_error:
+                        raise RestorationFailed(
+                            f"could not remove the failed managed command link: {target}", candidate_path
+                        ) from rollback_error
+                    created_link = False
+                    try:
+                        _fsync_directory(recovery_fd)
+                    except OSError as rollback_error:
+                        rollback_sync_error = rollback_error
+                else:
+                    retained_path = stable_backup_path or recovery_path
+                    try:
+                        _rename_noreplace(recovery_fd, candidate_name, parent_fd, target_name)
+                        _fsync_directory(parent_fd)
+                    except FileExistsError:
+                        candidate_path = os.path.join(recovery_path or "", candidate_name)
+                        retained_path = candidate_path
+                    except OSError as rollback_error:
+                        raise RestorationFailed(
+                            f"could not restore a concurrent managed command path: {target}", candidate_path
+                        ) from rollback_error
+                    raise RestorationFailed(
+                        f"a concurrent path replaced the managed command during rollback: {target}", retained_path
+                    ) from error
             if not created_link:
                 try:
                     _fsync_directory(parent_fd)
@@ -2006,6 +2126,10 @@ def sync_symlink(
             raise RestorationFailed(
                 f"managed command was restored but its directory could not be synced: {target}", recovery_path
             ) from rollback_sync_error
+        if recovery_fd is not None and recovery_name is not None and not moved:
+            _discard_recovery(parent_fd, recovery_fd, recovery_name)
+            recovery_fd = None
+            recovery_name = None
         if isinstance(error, ConcurrentUpdate):
             error.recovery_path = stable_backup_path or error.recovery_path
         raise
@@ -2190,6 +2314,25 @@ def main() -> int:
             sys.stderr.write(f"could not secure private temporary file: {error}\n")
             return 2
         return 0
+    if len(sys.argv) == 3 and sys.argv[1] == "private-directory":
+        try:
+            directory_fd = os.open(
+                os.path.abspath(sys.argv[2]),
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+            )
+            try:
+                info = os.fstat(directory_fd)
+                if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+                    raise PermissionError("temporary directory must be a directory owned by the current user")
+                _clear_inherited_acl(directory_fd)
+                os.fchmod(directory_fd, 0o700)
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError as error:
+            sys.stderr.write(f"could not secure private temporary directory: {error}\n")
+            return 2
+        return 0
     if len(sys.argv) == 4 and sys.argv[1] == "ensure-directory":
         _, _, root, relative_directory = sys.argv
         try:
@@ -2283,6 +2426,7 @@ def main() -> int:
             "       atomic-publish-file.py snapshot ROOT RELATIVE_TARGET OUTPUT_SNAPSHOT [--private] [--strict-root] [--recovery-boundary PATH]\n"
             "       atomic-publish-file.py snapshot-cleanup SNAPSHOT\n"
             "       atomic-publish-file.py private-file TEMP_FILE\n"
+            "       atomic-publish-file.py private-directory TEMP_DIR\n"
             "       atomic-publish-file.py ensure-directory ROOT RELATIVE_DIRECTORY\n"
             "       atomic-publish-file.py symlink ROOT RELATIVE_TARGET absent|snapshot|link EXPECTED_VALUE NEW_LINK\n"
             "       atomic-publish-file.py managed-symlink TARGET_ROOT RELATIVE_TARGET SOURCE_FILE REPOSITORY_ROOT SOURCE_RELATIVE_PATH\n",

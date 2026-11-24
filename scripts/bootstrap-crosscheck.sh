@@ -119,11 +119,18 @@ if ! "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_TO_INSTALL" "$SUPPLY_CHAIN_HOOK"; then
     exit 1
 fi
 if [ -n "$PENDING_SETTINGS_FILE" ]; then
-    if [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
+    # A same-directory hard link is an atomic no-clobber publish. If another
+    # process created settings after our initial check, ln fails with EEXIST
+    # and that file receives the validated update below.
+    if ln "$PENDING_SETTINGS_FILE" "$SETTINGS_FILE" 2>/dev/null; then
+        rm -f "$PENDING_SETTINGS_FILE"
+    elif [ -e "$SETTINGS_FILE" ] || [ -L "$SETTINGS_FILE" ]; then
         rm -f "$PENDING_SETTINGS_FILE"
         "$SUPPLY_CHAIN_INSTALLER" "$SETTINGS_FILE" "$SUPPLY_CHAIN_HOOK"
     else
-        mv "$PENDING_SETTINGS_FILE" "$SETTINGS_FILE"
+        echo "Could not publish prepared settings without replacing an existing file: $SETTINGS_FILE" >&2
+        rm -f "$PENDING_SETTINGS_FILE"
+        exit 1
     fi
 fi
 echo "   ✅ Claude supply-chain hook points to $SUPPLY_CHAIN_HOOK"

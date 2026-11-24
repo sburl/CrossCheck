@@ -98,6 +98,83 @@ if [ ! -L "$LINKED_SETTINGS" ] || [ "$(python3 -c 'import os,stat,sys; print(oct
   exit 1
 fi
 
+run_bootstrap_with_declines() {
+  local home="$1"
+  local script="$2"
+  local scenario="$3"
+  BOOTSTRAP_HOME="$home" BOOTSTRAP_SCRIPT="$script" BOOTSTRAP_SCENARIO="$scenario" python3 <<'PY'
+import os
+import pty
+import select
+import signal
+import sys
+import time
+
+home = os.environ["BOOTSTRAP_HOME"]
+script = os.environ["BOOTSTRAP_SCRIPT"]
+scenario = os.environ["BOOTSTRAP_SCENARIO"]
+pid, fd = pty.fork()
+if pid == 0:
+    env = os.environ.copy()
+    env["HOME"] = home
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    os.execve("/bin/bash", ["bash", script], env)
+
+output = bytearray()
+sent_prompts = set()
+prompt_fragments = (
+    b"Install git hooks globally (all repos)? (Y/n)",
+    b"Install Codex review hooks globally? (Y/n)",
+    b"Install Claude review hooks globally? (Y/n)",
+    b"Install TokenPrint (AI usage dashboard)? (Y/n)",
+)
+deadline = time.monotonic() + 90
+status = None
+while time.monotonic() < deadline:
+    readable, _, _ = select.select([fd], [], [], 0.2)
+    if readable:
+        try:
+            chunk = os.read(fd, 65536)
+        except OSError:
+            chunk = b""
+        if chunk:
+            output.extend(chunk)
+            for index, prompt in enumerate(prompt_fragments):
+                if index not in sent_prompts and prompt in output:
+                    os.write(fd, b"n")
+                    sent_prompts.add(index)
+    try:
+        waited, wait_status = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        waited = pid
+        wait_status = status or 0
+    if waited == pid:
+        status = wait_status
+        break
+if status is None:
+    os.kill(pid, signal.SIGKILL)
+    os.waitpid(pid, 0)
+    sys.stderr.write(output.decode(errors="replace"))
+    raise SystemExit(f"bootstrap timed out while testing {scenario}")
+if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
+    sys.stderr.write(output.decode(errors="replace"))
+    raise SystemExit(f"bootstrap exited unsuccessfully while testing {scenario}: {status}")
+
+declined_outcomes = [
+    b"Skipped global git hooks (you can install per-repo later)",
+    b"Skipped TokenPrint (/ai-usage will prompt to install when used)",
+]
+if "/claude/scripts/" in script:
+    declined_outcomes.append(b"Skipped Claude review hooks")
+else:
+    declined_outcomes.append(b"Skipped Codex review hooks")
+for declined in declined_outcomes:
+    if declined not in output:
+        sys.stderr.write(output.decode(errors="replace"))
+        raise SystemExit(f"bootstrap did not confirm declined optional install: {declined.decode()}")
+PY
+}
+
 for bootstrap in root claude; do
   BOOTSTRAP_REPO="$TEMP_DIR/workspace/$bootstrap/CrossCheck"
   BOOTSTRAP_HOME="$TEMP_DIR/home-$bootstrap"
@@ -115,63 +192,7 @@ PY
     SCRIPT="$BOOTSTRAP_REPO/claude/scripts/bootstrap-crosscheck.sh"
   fi
 
-  BOOTSTRAP_HOME="$BOOTSTRAP_HOME" BOOTSTRAP_SCRIPT="$SCRIPT" python3 <<'PY'
-import os
-import pty
-import select
-import signal
-import sys
-import time
-
-home = os.environ["BOOTSTRAP_HOME"]
-script = os.environ["BOOTSTRAP_SCRIPT"]
-pid, fd = pty.fork()
-if pid == 0:
-    env = os.environ.copy()
-    env["HOME"] = home
-    env["GIT_CONFIG_NOSYSTEM"] = "1"
-    os.execve("/bin/bash", ["bash", script], env)
-
-output = bytearray()
-sent_prompts = set()
-prompt_fragments = [
-    b"Install git hooks globally (all repos)? (Y/n)",
-    b"Install Codex review hooks globally? (Y/n)",
-    b"Install Claude review hooks globally? (Y/n)",
-    b"Install TokenPrint (AI usage dashboard)? (Y/n)",
-]
-deadline = time.monotonic() + 90
-status = None
-while time.monotonic() < deadline:
-    readable, _, _ = select.select([fd], [], [], 0.2)
-    if readable:
-        try:
-            chunk = os.read(fd, 65536)
-        except OSError:
-            chunk = b""
-        if chunk:
-            output.extend(chunk)
-            for index, prompt in enumerate(prompt_fragments):
-                if index not in sent_prompts and prompt in output:
-                    os.write(fd, b"n\n")
-                    sent_prompts.add(index)
-    try:
-        waited, wait_status = os.waitpid(pid, os.WNOHANG)
-    except ChildProcessError:
-        waited = pid
-        wait_status = status or 0
-    if waited == pid:
-        status = wait_status
-        break
-if status is None:
-    os.kill(pid, signal.SIGKILL)
-    os.waitpid(pid, 0)
-    sys.stderr.write(output.decode(errors="replace"))
-    raise SystemExit("bootstrap timed out while testing its isolated entry point")
-if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
-    sys.stderr.write(output.decode(errors="replace"))
-    raise SystemExit(f"bootstrap exited unsuccessfully: {status}")
-PY
+  run_bootstrap_with_declines "$BOOTSTRAP_HOME" "$SCRIPT" "fresh settings install"
 
   SETTINGS="$BOOTSTRAP_HOME/.claude/settings.json"
   jq -e '
@@ -217,8 +238,57 @@ PY
     echo "$bootstrap bootstrap unexpectedly accepted an invalid settings template" >&2
     exit 1
   fi
+  if ! grep -Fq 'Claude settings file must contain exactly one valid JSON object:' "$TEMP_DIR/bootstrap-failure-$bootstrap.log"; then
+    echo "$bootstrap bootstrap failed without the installer's settings validation diagnostic" >&2
+    cat "$TEMP_DIR/bootstrap-failure-$bootstrap.log" >&2
+    exit 1
+  fi
   if [ -e "$FAIL_HOME/.claude/settings.json" ] || [ -L "$FAIL_HOME/.claude/settings.json" ] || find "$FAIL_HOME/.claude" -name 'settings.json.bootstrap.*' -print -quit | grep -q .; then
     echo "$bootstrap bootstrap left a partially published settings file" >&2
+    exit 1
+  fi
+done
+
+# Simulate another process creating settings immediately after the staged
+# settings pass validation. The no-clobber publish must preserve that file and
+# route it through the existing-settings installer path for both entry points.
+for bootstrap in root claude; do
+  RACE_REPO="$TEMP_DIR/workspace/race-$bootstrap/CrossCheck"
+  RACE_HOME="$TEMP_DIR/home-race-$bootstrap"
+  mkdir -p "$(dirname "$RACE_REPO")" "$RACE_HOME/.claude"
+  python3 - "$REPO_ROOT" "$RACE_REPO" <<'PY'
+import shutil
+import sys
+shutil.copytree(sys.argv[1], sys.argv[2], ignore=shutil.ignore_patterns(".git"))
+PY
+  if [ "$bootstrap" = root ]; then
+    RACE_SCRIPT="$RACE_REPO/scripts/bootstrap-crosscheck.sh"
+  else
+    RACE_SCRIPT="$RACE_REPO/claude/scripts/bootstrap-crosscheck.sh"
+  fi
+  RACE_INSTALLER="$RACE_REPO/claude/scripts/install-supply-chain-hook.sh"
+  mv "$RACE_INSTALLER" "${RACE_INSTALLER}.real"
+  cat > "$RACE_INSTALLER" <<'SH'
+#!/usr/bin/env bash
+set -e
+"$(dirname "$0")/install-supply-chain-hook.sh.real" "$@"
+case "$1" in
+  "$HOME"/.claude/settings.json.bootstrap.*)
+    printf '{"concurrentWriter":"preserve me"}\n' > "$HOME/.claude/settings.json"
+    ;;
+esac
+SH
+  chmod +x "$RACE_INSTALLER"
+  run_bootstrap_with_declines "$RACE_HOME" "$RACE_SCRIPT" "concurrent settings creation"
+  RACE_SETTINGS="$RACE_HOME/.claude/settings.json"
+  if ! jq -e '.concurrentWriter == "preserve me"' "$RACE_SETTINGS" >/dev/null; then
+    echo "$bootstrap bootstrap overwrote settings created during first-time setup" >&2
+    cat "$RACE_SETTINGS" >&2
+    exit 1
+  fi
+  jq -e '.hooks.PreToolUse | type == "array"' "$RACE_SETTINGS" >/dev/null
+  if find "$RACE_HOME/.claude" -name 'settings.json.bootstrap.*' -print -quit | grep -q .; then
+    echo "$bootstrap bootstrap left a staged settings file after resolving a publish collision" >&2
     exit 1
   fi
 done

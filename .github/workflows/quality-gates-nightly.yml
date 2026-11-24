@@ -140,6 +140,9 @@ jobs:
       - name: Run hook behavior test suite
         run: bash scripts/test-hook-behavior.sh
 
+      - name: Run CrossCheck maintenance tests
+        run: bash claude/scripts/test-crosscheck-maintenance.sh
+
   doc-metadata:
     name: Documentation Metadata
     needs: check-changes

@@ -4,7 +4,7 @@ description: Update CrossCheck to the latest version — pulls from main. Skills
 ---
 
 **Created:** 2026-02-23-00-00
-**Last Updated:** 2026-11-23-17-07
+**Last Updated:** 2026-11-23-17-34
 
 # Update CrossCheck
 
@@ -155,30 +155,34 @@ fi
 
 ## Step 6: Wire Any New Skills and Agents
 
-Skills and agents are symlinked to CrossCheck — the git pull already updated
-them in place. This step only needs to create symlinks for files that were
-*added* since the last bootstrap (new symlinks aren't created by git pull).
+Refresh CrossCheck-managed Claude commands from the Claude mirror and add new
+commands. User-owned files are preserved. Codex compatibility commands keep
+using the root skill sources.
 
 ```bash
 SKIP_FILE="$HOME/.crosscheck/skip-skills"
 NEW_LINKED=0
 
-# New skills
-for skill_file in "$CROSSCHECK_DIR/skill-sources/"*.md; do
+# Claude commands: use the Claude mirror, not the Codex-oriented root sources.
+ROOT_SKILL_DIR="$CROSSCHECK_DIR/skill-sources"
+CLAUDE_SYNC_RESULT="$("$CROSSCHECK_DIR/claude/scripts/sync-managed-claude-skills.sh" "$HOME")"
+echo "   $CLAUDE_SYNC_RESULT"
+CLAUDE_SYNC_COUNT="${CLAUDE_SYNC_RESULT##*: }"
+NEW_LINKED=$((NEW_LINKED + CLAUDE_SYNC_COUNT))
+
+# Codex compatibility commands still use the root sources.
+for skill_file in "$ROOT_SKILL_DIR/"*.md; do
     skill_name="$(basename "$skill_file" .md)"
     [ "$skill_name" = "INSTALL" ] && continue
     if [ -f "$SKIP_FILE" ] && grep -qx "$skill_name" "$SKIP_FILE" 2>/dev/null; then
         continue
     fi
-    for TARGET_DIR in "$HOME/.claude/commands" "$HOME/.codex/commands"; do
-        [ -d "$TARGET_DIR" ] || continue
-        target="$TARGET_DIR/$skill_name.md"
-        if [ ! -e "$target" ] && [ ! -L "$target" ]; then
-            ln -sf "$skill_file" "$target"
-            echo "   + New skill linked: $skill_name"
-            NEW_LINKED=$((NEW_LINKED + 1))
-        fi
-    done
+    target="$HOME/.codex/commands/$skill_name.md"
+    if [ -d "$HOME/.codex/commands" ] && [ ! -e "$target" ] && [ ! -L "$target" ]; then
+        ln -s "$skill_file" "$target"
+        echo "   + New skill linked: $skill_name"
+        NEW_LINKED=$((NEW_LINKED + 1))
+    fi
 done
 
 # New agents
@@ -217,9 +221,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 ## Notes
 
-- **Skills and agents update instantly** — they're symlinked to CrossCheck, so
-  `git pull` is the update. No re-run needed for existing files; new files get
-  symlinked by Step 6.
+- **Skills and agents update instantly** — managed symlinks follow CrossCheck
+  updates. Step 6 migrates managed Claude command links to the Claude mirror,
+  refreshes exact CrossCheck copies, and leaves customized user files alone.
 - **CLAUDE.md updates instantly** — symlinked in multi-project mode; git pull
   propagates changes to all sessions automatically.
 - **Settings are not overwritten,** but **critical deny rules are synced.** Step 3

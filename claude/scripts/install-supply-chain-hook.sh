@@ -12,6 +12,10 @@ if [ ! -x "$HOOK_FILE" ]; then
   echo "Supply-chain hook is missing or non-executable: $HOOK_FILE" >&2
   exit 1
 fi
+if ! jq -s -e 'length == 1 and (.[0] | type == "object")' "$SETTINGS_FILE" >/dev/null; then
+  echo "Claude settings file must contain exactly one JSON object: $SETTINGS_FILE" >&2
+  exit 1
+fi
 
 SETTINGS_TARGET="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SETTINGS_FILE")"
 if stat -c '%a' "$SETTINGS_TARGET" >/dev/null 2>&1; then
@@ -68,6 +72,16 @@ if ! jq --arg hook "$HOOK_COMMAND" '
   end
 ' "$SETTINGS_FILE" > "$TEMP_FILE"; then
   echo "Could not add the Claude supply-chain hook to $SETTINGS_FILE" >&2
+  exit 1
+fi
+
+if ! jq -s -e --arg hook "$HOOK_COMMAND" '
+  length == 1 and
+  (.[0] |
+    (if (.hooks | type) == "object" then (.hooks.PreToolUse // []) else (.PreToolUse // []) end) |
+    any(.[]; .matcher == "Bash" and any(.hooks[]?; .type == "command" and .command == $hook)))
+' "$TEMP_FILE" >/dev/null; then
+  echo "Claude supply-chain hook was not present in the generated settings: $SETTINGS_FILE" >&2
   exit 1
 fi
 

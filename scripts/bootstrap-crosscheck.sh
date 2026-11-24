@@ -135,6 +135,19 @@ else
 fi
 echo ""
 
+# Install the native Claude Bash gate into the settings file created above or
+# an existing settings file. The path-search template is only a migration
+# fallback; the installer binds the hook to this checkout and fails closed.
+SUPPLY_CHAIN_INSTALLER="$CROSSCHECK_DIR/claude/scripts/install-supply-chain-hook.sh"
+SUPPLY_CHAIN_HOOK="$CROSSCHECK_DIR/claude/scripts/preuse-supply-chain-gate.sh"
+if [ ! -x "$SUPPLY_CHAIN_INSTALLER" ] || [ ! -x "$SUPPLY_CHAIN_HOOK" ]; then
+    echo "❌ Claude supply-chain hook installer or gate is missing under $CROSSCHECK_DIR/claude/scripts" >&2
+    exit 1
+fi
+"$SUPPLY_CHAIN_INSTALLER" "$HOME/.claude/settings.json" "$SUPPLY_CHAIN_HOOK"
+echo "   ✅ Claude supply-chain hook points to $SUPPLY_CHAIN_HOOK"
+echo ""
+
 # 4. Install all hooks
 echo "🎣 Step 4: Install automation hooks..."
 

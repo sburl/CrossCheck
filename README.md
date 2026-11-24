@@ -1,7 +1,7 @@
 # CrossCheck - AI-Reviewed Code, Human-Level Quality
 
 **Created:** 2026-01-30-16-27
-**Last Updated:** 2026-11-23-13-05
+**Last Updated:** 2026-11-23-17-34
 
 ## Sections
 
@@ -190,7 +190,7 @@ cd CrossCheck
 This installs:
 - Skills to `~/.claude/commands/` via symlinks (and `~/.codex/commands/` if present)
 - Global `CLAUDE.md` symlinked in your projects folder (full workflow, updates on `git pull`)
-- Agent settings with proper permissions
+- Agent settings with proper permissions and a checkout-specific Claude Bash supply-chain gate
 - [TokenPrint](https://github.com/sburl/TokenPrint) for the `/ai-usage` dashboard (prompted, can skip)
 
 ### 3. Enable CrossCheck for Your Project(s)

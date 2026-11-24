@@ -41,6 +41,14 @@ is_known_shipped_copy() {
   return 1
 }
 
+run_publisher() {
+  if [ "$COUNT_ONLY" -eq 1 ]; then
+    python3 "$PUBLISH_HELPER" "$@" 1>&2
+  else
+    python3 "$PUBLISH_HELPER" "$@"
+  fi
+}
+
 UPDATED=0
 PRESERVED=0
 
@@ -57,7 +65,7 @@ for skill_file in "$CLAUDE_SKILL_DIR/"*.md; do
   expected_claude="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$CLAUDE_SKILL_DIR/$skill_name.md")"
   expected_root="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$ROOT_SKILL_DIR/$skill_name.md")"
   if [ ! -e "$target" ] && [ ! -L "$target" ]; then
-    if python3 "$PUBLISH_HELPER" symlink "$HOME_DIR" "$target_relative" absent - "$skill_file"; then
+    if run_publisher symlink "$HOME_DIR" "$target_relative" absent - "$skill_file"; then
       UPDATED=$((UPDATED + 1))
     else
       PRESERVED=$((PRESERVED + 1))
@@ -67,7 +75,7 @@ for skill_file in "$CLAUDE_SKILL_DIR/"*.md; do
     if [ "$target_source" = "$expected_claude" ] || [ "$target_source" = "$expected_root" ]; then
       if [ "$target_source" != "$expected_claude" ]; then
         target_link="$(readlink "$target")"
-        if python3 "$PUBLISH_HELPER" symlink "$HOME_DIR" "$target_relative" link "$target_link" "$skill_file"; then
+        if run_publisher symlink "$HOME_DIR" "$target_relative" link "$target_link" "$skill_file"; then
           UPDATED=$((UPDATED + 1))
         else
           PRESERVED=$((PRESERVED + 1))
@@ -76,9 +84,9 @@ for skill_file in "$CLAUDE_SKILL_DIR/"*.md; do
     fi
   elif [ -f "$target" ]; then
     CURRENT_SNAPSHOT="$(mktemp "${TMPDIR:-/tmp}/crosscheck-command-snapshot.XXXXXX")"
-    if python3 "$PUBLISH_HELPER" snapshot "$HOME_DIR" "$target_relative" "$CURRENT_SNAPSHOT"; then
+    if run_publisher snapshot "$HOME_DIR" "$target_relative" "$CURRENT_SNAPSHOT"; then
       if is_known_shipped_copy "$CURRENT_SNAPSHOT" "$skill_name"; then
-        if python3 "$PUBLISH_HELPER" symlink "$HOME_DIR" "$target_relative" snapshot "$CURRENT_SNAPSHOT" "$skill_file"; then
+        if run_publisher symlink "$HOME_DIR" "$target_relative" snapshot "$CURRENT_SNAPSHOT" "$skill_file"; then
           UPDATED=$((UPDATED + 1))
         else
           PRESERVED=$((PRESERVED + 1))

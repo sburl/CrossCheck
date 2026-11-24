@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOK = "preuse-supply-chain-gate.sh"
@@ -33,6 +33,11 @@ class ScriptMirrorAuditTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.fixture = Path(self.temp_dir.name)
+        self.home = self.fixture / "home"
+        self.home.mkdir()
+        self.home_patch = patch.dict(os.environ, {"HOME": str(self.home)})
+        self.home_patch.start()
+        self.addCleanup(self.home_patch.stop)
 
     def test_missing_claude_hook_fails(self) -> None:
         fixture = self.make_fixture(ROOT)

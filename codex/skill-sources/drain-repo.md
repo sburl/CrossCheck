@@ -3,7 +3,7 @@ name: drain-repo
 description: |
   Drain review-approved PRs for a target repo via the integration-branch process.
   Partitions open PRs into DRAINABLE / PENDING / STALE / QUEUE:HUMAN / DUP buckets,
-  validates the combined branch with dispatch-only CI, and merges wave-by-wave.
+  validates the combined branch through the configured integration route, and drains wave-by-wave.
   Pass the target as an argument: acorn | firehose | thriftfit | switchyard.
 argument-hint: "<repo: acorn|firehose|thriftfit|switchyard>"
 date: 2026-06-11
@@ -11,7 +11,7 @@ source: ~/Desktop/integration-drain-prompt.md (GIT-2633 Acorn + FireHose drain s
 ---
 
 **Created:** 2026-06-11-03-53
-**Last Updated:** 2026-11-23-13-05
+**Last Updated:** 2026-11-24-02-49
 
 # Drain Repo — Integration-Branch Drain / Triage
 
@@ -62,15 +62,19 @@ Report the partition + counts + recommendation per cluster **before** proceeding
 1. Readiness = Linear state `review: approved` only. Don't drain anything else.
 2. `git merge` is ground truth (not filename overlap). Use a FULL clone, not shallow
    (shallow has no merge base).
-3. Validate the COMBINED branch with dispatch-only CI (Fast Checks) before merge:
-   `gh workflow run`. CI auto-triggers are disabled; monitors are off.
-4. Merge is YOURS to execute once authorized — `gh pr merge <N> --merge` and
-   `gh pr ready` work for the agent (only `--admin` and force-push-to-a-bot-branch
-   are denied; TEST before assuming blocked). "Operator go" is a one-time
-   authorization, not a per-PR wall. Always a MERGE COMMIT, never squash
-   (squash breaks constituent auto-close).
-5. Branch DELETION is operator-only. Never pass `--linear-apply`.
-6. No bash for/while loops (sandbox blocks them) — use python3 scripts instead.
+3. Use the repository's configured Switchyard integration route. Run its required
+   combined CI and validate the actual merge candidate; dispatch-only CI by itself
+   does not satisfy the required checks.
+4. Preserve independent review and all required CODEOWNERS/source approval gates.
+   Mark a PR ready only after independent approval and required CI pass. Request any
+   required human review directly on the stable head.
+5. Land through the configured Switchyard route or merge queue only after all required
+   approvals and CI pass. Preserve native deployment and environment approvals.
+   Do not merge directly with `gh pr merge` or bypass a configured integration gate.
+6. Branch DELETION is operator-only. Never pass `--linear-apply`.
+7. Never disable Git hooks or use `--no-verify`. If a hook blocks work, diagnose it
+   and follow the repository's documented setup.
+8. No bash for/while loops (sandbox blocks them) — use python3 scripts instead.
 
 ---
 
@@ -112,18 +116,21 @@ Report the partition + counts + recommendation per cluster **before** proceeding
 - **Conflict tail:** all approved PRs usually merge clean individually vs main, yet
   greedy accumulation surfaces 1–3. Run both checks. To land a conflicter: worktree
   at origin/main, `git fetch origin pull/<N>/head` ALONE (multi-refspec leaves
-  FETCH_HEAD at the first ref), checkout it, `git merge origin/main`, resolve,
-  non-force push to the PR branch, `gh pr merge`.
+  FETCH_HEAD at the first ref), checkout it, merge `origin/main` into the PR
+  branch, resolve, run the required checks, and non-force push. Land through the
+  configured Switchyard route after refreshed approval and CI.
   - Additive → union; timestamp-only → newer; lockfile → regenerate (`uv lock`),
     never hand-merge; competing refactor → verify test set identical then take one side wholesale.
-- **Draft PR + approved Linear issue:** `gh` won't merge a draft — `gh pr ready <N>` first.
+- **Draft PR + approved Linear issue:** mark ready with `gh pr ready <N>` only
+  after independent review and required CI pass; then use the configured route.
 - **Migration-number collisions** are file-disjoint: two PRs adding the same migration
   number won't git-conflict but break the combined tree. Scan for them.
 - **Dependabot:** GitHub-Actions version bumps are independent + safe; a
   dependency constraint-widening with pyproject-only change needs no lock regen if
   the locked version still satisfies the wider range.
-- **git merge hooksPath gotcha:** neutralize with `-c core.hooksPath=/dev/null` on
-  every git call (not `--no-verify`, which is policy-blocked).
+- **Git hook failures:** preserve the configured hooks and their `core.hooksPath`.
+  Diagnose the hook failure and resolve it without disabling hooks or using
+  `--no-verify`.
 - **switchyard is the conductor itself** — its PRs touch the batch/merge machinery;
   be extra careful with combined-CI validation on that repo.
 

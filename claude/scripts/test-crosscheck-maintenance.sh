@@ -428,6 +428,16 @@ for updater in "$REPO_ROOT/skill-sources/update-crosscheck.md" "$REPO_ROOT/claud
     exit 1
   fi
 done
+for drain_skill in "$REPO_ROOT/skill-sources/drain-repo.md" "$REPO_ROOT/claude/skill-sources/drain-repo.md" "$REPO_ROOT/codex/skill-sources/drain-repo.md" "$REPO_ROOT/codex/skills/drain-repo/SKILL.md"; do
+  if grep -Fq 'core.hooksPath=/dev/null' "$drain_skill" || grep -Fq 'Merge is YOURS to execute' "$drain_skill"; then
+    echo "drain skill still recommends bypassing configured workflow gates: $drain_skill" >&2
+    exit 1
+  fi
+  if ! grep -Fq 'Land through the configured Switchyard route' "$drain_skill" || ! grep -Fq 'Preserve native deployment and environment approvals' "$drain_skill"; then
+    echo "drain skill omits required merge or deployment gates: $drain_skill" >&2
+    exit 1
+  fi
+done
 for updater in "$REPO_ROOT/skill-sources/update-crosscheck.md" "$REPO_ROOT/codex/skill-sources/update-crosscheck.md"; do
   if ! grep -Fq 'sync-managed-claude-skills.sh" "$CROSSCHECK_DIR" "$HOME"' "$updater"; then
     echo "legacy updater does not refresh Claude commands through the managed mirror: $updater" >&2
@@ -449,6 +459,7 @@ cp "$REPO_ROOT/codex/scripts/sync-managed-codex-skills.sh" "$NATIVE_REPO/codex/s
 printf 'shipped drain skill\n' > "$NATIVE_REPO/codex/skills/drain-repo/SKILL.md"
 printf 'old shipped skill\n' > "$NATIVE_REPO/codex/skills/update-crosscheck/SKILL.md"
 printf 'new skill\n' > "$NATIVE_REPO/codex/skills/new-skill/SKILL.md"
+printf 'supporting file\n' > "$NATIVE_REPO/codex/skills/new-skill/REFERENCE.md"
 git -C "$NATIVE_REPO" init -q
 git -C "$NATIVE_REPO" config user.name "CrossCheck Test"
 git -C "$NATIVE_REPO" config user.email "crosscheck-test@example.invalid"
@@ -477,8 +488,13 @@ if ! cmp -s "$NATIVE_REPO/codex/skills/new-skill/SKILL.md" "$NATIVE_HOME/.codex/
   echo "Codex native updater did not install a new skill" >&2
   exit 1
 fi
+if ! cmp -s "$NATIVE_REPO/codex/skills/new-skill/REFERENCE.md" "$NATIVE_HOME/.codex/skills/new-skill/REFERENCE.md"; then
+  echo "Codex native updater skipped a missing file inside a newly created skill directory" >&2
+  exit 1
+fi
 
 python3 - "$REPO_ROOT/scripts/atomic-publish-file.py" "$TEMP_DIR" <<'PY'
+import errno
 import importlib.util
 import sys
 from pathlib import Path
@@ -537,6 +553,72 @@ finally:
     module._verify_parent_path = real_verify
 if (scratch / "settings-dir-moved-during-publish/settings.json").read_text() != '{"setting":"updated after rename"}\n':
     raise SystemExit("atomic publisher lost its staged settings after a target parent rename")
+
+# Settings callers use the target directory as the publisher root. Moving that
+# root after publication must be detected, with recovery outside the root.
+root_case = scratch / "settings-root-case"
+root_case.mkdir()
+root_target = root_case / "settings.json"
+root_snapshot = scratch / "root-case-snapshot.json"
+root_stage = scratch / "root-case-stage.json"
+root_target.write_text('{"rootCase":"original"}\n')
+root_snapshot.write_text('{"rootCase":"original"}\n')
+root_stage.write_text('{"rootCase":"updated"}\n')
+real_verify = module._verify_parent_path
+verify_calls = [0]
+
+def rename_root_after_publish(root_fd, root_path, relative_target, parent_fd):
+    verify_calls[0] += 1
+    if verify_calls[0] == 2:
+        Path(root_path).rename(root_case.with_name("settings-root-case-moved"))
+    return real_verify(root_fd, root_path, relative_target, parent_fd)
+
+module._verify_parent_path = rename_root_after_publish
+try:
+    module.publish_file(str(root_case), "settings.json", str(root_snapshot), str(root_stage))
+except module.ConcurrentUpdate as error:
+    if not error.recovery_path or Path(error.recovery_path).read_text() != '{"rootCase":"original"}\n':
+        raise SystemExit("publisher did not report durable recovery after its root path moved")
+else:
+    raise SystemExit("publisher accepted a moved root used by the settings installer")
+finally:
+    module._verify_parent_path = real_verify
+if (scratch / "settings-root-case-moved/settings.json").read_text() != '{"rootCase":"updated"}\n':
+    raise SystemExit("publisher lost staged settings when the publisher root moved")
+
+# If there is no private same-volume recovery location outside the target
+# parent, publication must fail before moving live settings.
+cross_volume_target = scratch / "cross-volume-preflight/settings.json"
+cross_volume_target.parent.mkdir()
+cross_volume_target.write_text('{"crossVolume":"original"}\n')
+cross_volume_snapshot = scratch / "cross-volume-snapshot.json"
+cross_volume_stage = scratch / "cross-volume-stage.json"
+cross_volume_snapshot.write_text('{"crossVolume":"original"}\n')
+cross_volume_stage.write_text('{"crossVolume":"updated"}\n')
+real_open_recovery = module._open_stable_recovery_directory
+
+def force_cross_volume(parent_path, target_device):
+    return real_open_recovery(parent_path, -1)
+
+module._open_stable_recovery_directory = force_cross_volume
+try:
+    module.publish_file(
+        str(cross_volume_target.parent),
+        "settings.json",
+        str(cross_volume_snapshot),
+        str(cross_volume_stage),
+    )
+except OSError as error:
+    if error.errno != errno.EXDEV or "refusing to replace settings" not in str(error):
+        raise
+else:
+    raise SystemExit("publisher did not fail safely when no same-volume recovery path exists")
+finally:
+    module._open_stable_recovery_directory = real_open_recovery
+if cross_volume_target.read_text() != '{"crossVolume":"original"}\n':
+    raise SystemExit("publisher changed settings before finding a same-volume recovery path")
+if list(cross_volume_target.parent.glob(".crosscheck-publish-*")):
+    raise SystemExit("publisher left temporary recovery data after a cross-volume preflight failure")
 
 # A publish error after moving the live file must restore it to the live path.
 error_dir = scratch / "publish-error"
@@ -730,13 +812,19 @@ ln -s "$SYNC_ROOT/claude/skill-sources/linked.md" "$HOME_FIXTURE/.claude/command
 printf 'user-owned command\n' > "$HOME_FIXTURE/.claude/commands/custom.md"
 printf 'skipped\n' > "$HOME_FIXTURE/.crosscheck/skip-skills"
 "$REPO_ROOT/claude/scripts/sync-managed-claude-skills.sh" "$SYNC_ROOT" "$HOME_FIXTURE" >/dev/null
-COUNT_OUTPUT="$("$REPO_ROOT/claude/scripts/sync-managed-claude-skills.sh" "$SYNC_ROOT" "$HOME_FIXTURE" --count-only 2> "$TEMP_DIR/claude-sync-count-summary")"
+COUNT_HOME="$TEMP_DIR/claude-sync-count-home"
+mkdir -p "$COUNT_HOME"
+COUNT_OUTPUT="$("$REPO_ROOT/claude/scripts/sync-managed-claude-skills.sh" "$SYNC_ROOT" "$COUNT_HOME" --count-only 2> "$TEMP_DIR/claude-sync-count-summary")"
 case "$COUNT_OUTPUT" in
   ''|*[!0-9]*)
     echo "Claude sync count mode did not return an integer: $COUNT_OUTPUT" >&2
     exit 1
     ;;
 esac
+if [ "$COUNT_OUTPUT" -eq 0 ]; then
+  echo "Claude sync count mode did not count links from a fresh home" >&2
+  exit 1
+fi
 if ! grep -Fq 'Claude command links added or refreshed:' "$TEMP_DIR/claude-sync-count-summary"; then
   echo "Claude sync count mode omitted its human-readable summary" >&2
   exit 1

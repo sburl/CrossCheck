@@ -64,6 +64,7 @@ def _open_relative_parent(
 def _verify_parent_path(
     root_fd: int, root_path: str, relative_target: str, parent_fd: int
 ) -> None:
+    _verify_root_path(root_fd, root_path)
     current_fd, _, _ = _open_relative_parent(
         root_fd, root_path, relative_target, create=False
     )
@@ -74,6 +75,21 @@ def _verify_parent_path(
             raise ConcurrentUpdate(
                 f"target directory changed during CrossCheck update: {relative_target}"
             )
+    finally:
+        os.close(current_fd)
+
+
+def _verify_root_path(root_fd: int, root_path: str) -> None:
+    """Confirm the root pathname still resolves to the directory we opened."""
+    try:
+        current_fd, current_path = _open_root(root_path)
+    except OSError as error:
+        raise ConcurrentUpdate(f"target root changed during CrossCheck update: {root_path}") from error
+    try:
+        opened = os.fstat(root_fd)
+        current = os.fstat(current_fd)
+        if current_path != root_path or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+            raise ConcurrentUpdate(f"target root changed during CrossCheck update: {root_path}")
     finally:
         os.close(current_fd)
 
@@ -236,28 +252,87 @@ def _discard_recovery(parent_fd: int, recovery_fd: int, recovery_name: str) -> N
         pass
 
 
-def _open_stable_recovery_directory() -> tuple[int, int, str]:
-    """Open a private recovery directory outside the target's parent tree."""
-    home_fd, home_path = _open_root(os.path.expanduser("~"))
+def _open_private_recovery_directory(base_path: str, target_device: int) -> tuple[int, int, str] | None:
+    try:
+        base_fd, base_path = _open_root(base_path)
+    except OSError:
+        return None
+    try:
+        base_info = os.fstat(base_fd)
+    except BaseException:
+        os.close(base_fd)
+        raise
+    if base_info.st_dev != target_device:
+        os.close(base_fd)
+        return None
     name = ".crosscheck-recovery"
+    recovery_fd: int | None = None
     try:
         try:
-            os.mkdir(name, 0o700, dir_fd=home_fd)
+            os.mkdir(name, 0o700, dir_fd=base_fd)
         except FileExistsError:
             pass
         recovery_fd = os.open(
             name,
             os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
-            dir_fd=home_fd,
+            dir_fd=base_fd,
         )
         info = os.fstat(recovery_fd)
-        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
+        if (
+            info.st_dev != target_device
+            or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) & 0o077
+        ):
             os.close(recovery_fd)
-            raise PermissionError(f"recovery directory is not private: {os.path.join(home_path, name)}")
-        return home_fd, recovery_fd, os.path.join(home_path, name)
+            recovery_fd = None
+            raise PermissionError(
+                "recovery directory is not private or on the target filesystem: "
+                f"{os.path.join(base_path, name)}"
+            )
+        return base_fd, recovery_fd, os.path.join(base_path, name)
     except BaseException:
-        os.close(home_fd)
+        if recovery_fd is not None:
+            os.close(recovery_fd)
+        os.close(base_fd)
         raise
+
+
+def _open_stable_recovery_directory(parent_path: str, target_device: int) -> tuple[int, int, str]:
+    """Find a private same-volume recovery directory outside the target tree."""
+    candidates: list[str] = []
+    home_path = os.path.realpath(os.path.expanduser("~"))
+    candidates.append(home_path)
+    ancestor = os.path.dirname(parent_path)
+    while True:
+        if ancestor not in candidates:
+            candidates.append(ancestor)
+        next_ancestor = os.path.dirname(ancestor)
+        if next_ancestor == ancestor:
+            break
+        ancestor = next_ancestor
+
+    failures: list[OSError] = []
+    for candidate in candidates:
+        try:
+            if os.path.commonpath((parent_path, candidate)) == parent_path:
+                continue
+        except ValueError:
+            continue
+        try:
+            opened = _open_private_recovery_directory(candidate, target_device)
+        except OSError as error:
+            failures.append(error)
+            continue
+        if opened is not None:
+            return opened
+    error = OSError(
+        errno.EXDEV,
+        "no private same-filesystem recovery directory exists outside the target parent; refusing to replace settings",
+        parent_path,
+    )
+    if failures:
+        raise error from failures[-1]
+    raise error
 
 
 def _new_stable_recovery_link(
@@ -301,7 +376,7 @@ def publish_file(
     staged_name: str | None = None
     recovery_fd: int | None = None
     recovery_name: str | None = None
-    stable_home_fd: int | None = None
+    stable_base_fd: int | None = None
     stable_recovery_fd: int | None = None
     stable_recovery_name: str | None = None
     recovery_path: str | None = None
@@ -326,6 +401,9 @@ def publish_file(
             snapshot_signature[1] if expected_mode is None else expected_mode,
         )
         recovery_fd, recovery_name, recovery_path = _new_recovery_directory(parent_fd, parent_path)
+        stable_base_fd, stable_recovery_fd, stable_recovery_dir = _open_stable_recovery_directory(
+            parent_path, os.fstat(parent_fd).st_dev
+        )
 
         try:
             _rename_noreplace(parent_fd, target_name, recovery_fd, "original")
@@ -333,7 +411,6 @@ def publish_file(
         except FileNotFoundError as error:
             raise ConcurrentUpdate(f"target disappeared during CrossCheck update: {target}") from error
 
-        stable_home_fd, stable_recovery_fd, stable_recovery_dir = _open_stable_recovery_directory()
         stable_recovery_name, recovery_path = _new_stable_recovery_link(
             recovery_fd, stable_recovery_fd, stable_recovery_dir
         )
@@ -415,8 +492,8 @@ def publish_file(
             os.close(recovery_fd)
         if stable_recovery_fd is not None:
             os.close(stable_recovery_fd)
-        if stable_home_fd is not None:
-            os.close(stable_home_fd)
+        if stable_base_fd is not None:
+            os.close(stable_base_fd)
         os.close(parent_fd)
         os.close(root_fd)
 
@@ -433,7 +510,10 @@ def snapshot_file(root: str, relative_target: str, output_path: str) -> bool:
         except FileNotFoundError:
             return False
         _verify_parent_path(root_fd, root_path, relative_target, parent_fd)
-        content, mode = _read_signature_at(parent_fd, target_name)
+        try:
+            content, mode = _read_signature_at(parent_fd, target_name)
+        except FileNotFoundError:
+            return False
         output_fd = os.open(
             os.path.abspath(output_path),
             os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0),
